@@ -22,6 +22,7 @@ body {
 
 .card {
   @apply bg-white rounded-card shadow-card;
+  outline: 3px solid #22c55e; /* DEPLOY TEST MARKER — remove once git pull is confirmed working */
 }
 
 .btn {
