@@ -86,10 +86,41 @@ npm start
 | `npm run dev` | Start the dev server at http://localhost:3000 |
 | `npm run build` / `npm start` | Production build / serve |
 | `npm test` | Run the unit tests |
+| `npm run typecheck` | TypeScript check, no emit |
+| `npm run verify` | `typecheck` + `test` — runs automatically before every build |
+| `npm run smoke` | End-to-end HTTP test against a **running** server |
 | `npm run db:migrate` | Apply schema changes |
 | `npm run db:seed` | (Re)load sample data |
 | `npm run db:studio` | Visual database browser at http://localhost:5555 |
 | `npm run db:reset` | Wipe the database, re-migrate, re-seed |
+
+### Testing
+
+`npm run build` is gated: npm runs `prebuild` → `verify` (type-check + unit
+tests) first, and a single failure aborts the build before `next build` starts.
+
+> Because of this, the server needs devDependencies — do **not** deploy with
+> `npm install --production`, or the build will fail with "vitest not found".
+
+The unit suites (`tests/*.test.ts`) are pure functions — pricing, coupons,
+loyalty, geo, and the payment signature/amount logic. No database or network.
+
+`npm run smoke` is separate because it needs a live server and writes to the
+database. It drives the real HTTP API: public endpoints, auth guards, input
+validation, the full order flow, payment gating, and cross-account access
+(one customer must never read or cancel another's order).
+
+```bash
+npm run dev                                   # in one terminal
+SMOKE_URL=http://localhost:3000 npm run smoke # in another
+```
+
+It signs in over OTP, so it needs `OTP_BYPASS="true"` (or a console OTP
+provider). Point `SMOKE_URL` at whichever port `next dev` actually claimed.
+
+> Don't run `npm run build` while `npm run dev` is running — they share
+> `.next/`, and the production output makes the dev server throw
+> `Cannot find module './XXXX.js'`. Fix: stop dev, `rm -rf .next`, restart.
 
 ---
 
