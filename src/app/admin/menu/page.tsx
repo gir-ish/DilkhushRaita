@@ -8,6 +8,7 @@ interface Category { id: string; name: string; displayOrder: number; active: boo
 interface BranchLite { id: string; name: string }
 interface Item {
   id: string; name: string; description: string; basePrice: number; imageEmoji: string;
+  imageUrl: string | null;
   veg: boolean; spicy: boolean; bestseller: boolean; recommended: boolean; active: boolean;
   categoryId: string; category: { name: string }; prepTimeMins: number;
   ingredients: string; allergens: string;
@@ -124,7 +125,16 @@ export default function AdminMenuPage() {
                 <tr key={it.id} className={`border-b border-cream-100 ${!it.active ? "opacity-40" : ""}`}>
                   <td className="p-3">
                     <span className="flex items-center gap-2">
-                      <span aria-hidden>{it.imageEmoji}</span>
+                      {it.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={it.imageUrl}
+                          alt=""
+                          className="h-8 w-8 rounded-md object-cover border border-cream-300"
+                        />
+                      ) : (
+                        <span aria-hidden>{it.imageEmoji}</span>
+                      )}
                       <VegMark veg={it.veg} />
                       <span className="font-semibold">{it.name}</span>
                       {it.bestseller && "⭐"}
@@ -186,6 +196,7 @@ function ItemEditor({
     name: item?.name ?? "",
     description: item?.description ?? "",
     imageEmoji: item?.imageEmoji ?? "🍛",
+    imageUrl: item?.imageUrl ?? null,
     basePrice: item?.basePrice ?? 0,
     veg: item?.veg ?? true,
     spicy: item?.spicy ?? false,
@@ -260,8 +271,11 @@ function ItemEditor({
             <input id="i-price" type="number" min={0} className="input" value={f.basePrice} onChange={(e) => setF({ ...f, basePrice: +e.target.value })} />
           </div>
           <div>
-            <label className="label" htmlFor="i-emoji">Emoji (placeholder image)</label>
+            <label className="label" htmlFor="i-emoji">Emoji (shown when there is no photo)</label>
             <input id="i-emoji" className="input" maxLength={4} value={f.imageEmoji} onChange={(e) => setF({ ...f, imageEmoji: e.target.value })} />
+          </div>
+          <div className="col-span-2">
+            <ImagePicker value={f.imageUrl} onChange={(imageUrl) => setF({ ...f, imageUrl })} />
           </div>
           <div>
             <label className="label" htmlFor="i-prep">Prep time (min)</label>
@@ -353,5 +367,119 @@ function ItemEditor({
         </div>
       </div>
     </Modal>
+  );
+}
+
+interface StoredImage { name: string; url: string; sizeKb: number }
+
+/**
+ * Photo picker for a menu item: choose an already-uploaded photo from the
+ * dropdown, upload a new one, or clear it back to the emoji placeholder.
+ * Uploads land in public/uploads/menu/, so photos dropped in there by FTP or
+ * cPanel File Manager show up in the list too.
+ */
+function ImagePicker({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (url: string | null) => void;
+}) {
+  const [images, setImages] = useState<StoredImage[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    fetch("/api/admin/menu/images")
+      .then((r) => r.json())
+      .then((d) => setImages(d.images ?? []))
+      .catch(() => setImages([]));
+  }, []);
+
+  useEffect(load, [load]);
+
+  const upload = async (file: File) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      // No Content-Type header — the browser must set the multipart boundary.
+      const r = await fetch("/api/admin/menu/images", { method: "POST", body: fd });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      onChange(d.image.url); // select what was just uploaded
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div>
+      <span className="label">Photo</span>
+      <div className="flex items-start gap-3">
+        <div className="h-20 w-20 shrink-0 rounded-xl border border-cream-300 bg-cream-100 overflow-hidden grid place-items-center">
+          {value ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={value} alt="Selected menu photo" className="h-full w-full object-cover" />
+          ) : (
+            <span className="text-xs text-maroon-800/40 text-center px-1">No photo</span>
+          )}
+        </div>
+
+        <div className="flex-1 min-w-0 space-y-2">
+          <select
+            className="input"
+            aria-label="Choose an existing photo"
+            value={value ?? ""}
+            onChange={(e) => onChange(e.target.value || null)}
+          >
+            <option value="">— No photo (use emoji) —</option>
+            {images?.map((img) => (
+              <option key={img.name} value={img.url}>
+                {img.name} ({img.sizeKb} KB)
+              </option>
+            ))}
+            {/* Keeps an externally-hosted URL visible instead of silently blanking it. */}
+            {value && !images?.some((i) => i.url === value) && (
+              <option value={value}>{value}</option>
+            )}
+          </select>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <label className={`btn-secondary !min-h-[36px] !px-3 text-sm ${busy ? "opacity-50" : "cursor-pointer"}`}>
+              {busy ? "Uploading…" : "⬆ Upload new"}
+              <input
+                type="file"
+                className="sr-only"
+                accept="image/jpeg,image/png,image/webp,image/avif"
+                disabled={busy}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) upload(file);
+                  e.target.value = ""; // allow re-picking the same file
+                }}
+              />
+            </label>
+            {value && (
+              <button type="button" className="btn-ghost !min-h-[36px] !px-3 text-sm" onClick={() => onChange(null)}>
+                Remove
+              </button>
+            )}
+            <button type="button" className="btn-ghost !min-h-[36px] !px-3 text-sm" onClick={load}>
+              ↻ Refresh list
+            </button>
+          </div>
+
+          <p className="text-xs text-maroon-800/50">
+            JPG, PNG, WebP or AVIF · max 5 MB. Saved to <code>public/uploads/menu/</code>.
+          </p>
+          <ErrorBox message={error} />
+        </div>
+      </div>
+    </div>
   );
 }

@@ -19,7 +19,16 @@ export const ItemBody = z.object({
   nameHindi: z.string().max(80).nullish(),
   description: z.string().max(500).default(""),
   imageEmoji: z.string().max(8).default("🍛"),
-  imageUrl: z.string().url().nullish(),
+  // Either an uploaded photo (/api/menu-images/<file>) or an external URL.
+  // A bare z.string().url() would reject our own relative paths.
+  imageUrl: z
+    .string()
+    .max(500)
+    .refine(
+      (v) => v.startsWith("/api/menu-images/") || /^https?:\/\//.test(v),
+      "Must be an uploaded photo or an http(s) URL"
+    )
+    .nullish(),
   basePrice: z.number().min(0),
   veg: z.boolean().default(true),
   vegan: z.boolean().default(false),

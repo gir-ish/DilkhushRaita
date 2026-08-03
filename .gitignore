@@ -10,4 +10,10 @@ next-env.d.ts
 prisma/*.db
 prisma/*.db-journal
 
+# Uploaded menu photos live on the server, not in git — this keeps `git pull`
+# from touching them and stops binaries bloating the repo. The folder itself is
+# tracked (via .gitkeep) so it exists after a fresh clone.
+public/uploads/menu/*
+!public/uploads/menu/.gitkeep
+
 .DS_Store
