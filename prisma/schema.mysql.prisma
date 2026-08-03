@@ -1,0 +1,549 @@
+// DilKhush Dhaba – Raita Wala — MySQL / MariaDB production schema
+// Used for MySQL-based hosting (e.g. cPanel "MySQL Databases"). Mirrors
+// prisma/schema.prisma exactly, with two differences:
+//   1. datasource provider = "mysql"
+//   2. explicit @db.VarChar(N) / @db.Text on fields that can hold more than
+//      191 characters — MySQL's default String mapping is VARCHAR(191)
+//      (chosen by Prisma for utf8mb4 index-key compatibility), which is too
+//      short for descriptions, notes, JSON blobs, etc. Without this, saving
+//      a long branch address, admin note or coupon description would fail
+//      or silently truncate on MySQL even though it works fine on SQLite.
+// Keep this file in sync with schema.prisma when adding/changing fields.
+// See docs/DEPLOY_CPANEL.md for how this file is used during deployment.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- users
+
+model User {
+  id           String   @id @default(cuid())
+  phone        String?  @unique
+  email        String?  @unique
+  name         String?
+  role         String   @default("CUSTOMER")
+  passwordHash String?
+  blocked      Boolean  @default(false)
+  codOnlyBlock Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  profile            CustomerProfile?
+  metrics            CustomerMetrics?
+  addresses          Address[]
+  orders             Order[]
+  favourites         Favourite[]
+  loyaltyTx          LoyaltyTransaction[]
+  redemptions        CouponRedemption[]
+  reviews            Review[]
+  tickets            SupportTicket[]
+  notifications      Notification[]
+  branchAssignments  StaffBranchAssignment[]
+  deliveryAgent      DeliveryAgent?
+  carts              Cart[]
+}
+
+model CustomerProfile {
+  id                String    @id @default(cuid())
+  userId            String    @unique
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  birthday          DateTime?
+  anniversary       DateTime?
+  notifyPromos      Boolean   @default(true)
+  storeCredit       Float     @default(0)
+  loyaltyPoints     Int       @default(0)
+  loyaltyTierId     String?
+  loyaltyTier       LoyaltyTier? @relation(fields: [loyaltyTierId], references: [id])
+  referralCode      String?   @unique
+  referredByUserId  String?
+  preferredBranchId String?
+}
+
+model Address {
+  id           String  @id @default(cuid())
+  userId       String
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label        String  @default("Home")
+  line1        String
+  line2        String?
+  landmark     String?
+  pincode      String
+  lat          Float?
+  lng          Float?
+  instructions String? @db.Text
+  isDefault    Boolean @default(false)
+  createdAt    DateTime @default(now())
+  orders       Order[]
+}
+
+// -------------------------------------------------------------- branches
+
+model Branch {
+  id                    String  @id @default(cuid())
+  slug                  String  @unique
+  name                  String
+  address               String  @db.VarChar(500)
+  pincode               String
+  lat                   Float
+  lng                   Float
+  phone                 String
+  email                 String?
+  isOpenOverride        String  @default("AUTO")
+  onlineOrderingEnabled Boolean @default(true)
+  deliveryEnabled       Boolean @default(true)
+  pickupEnabled         Boolean @default(true)
+  deliveryRadiusKm      Float   @default(6)
+  serviceablePincodesJson String @default("[]") @db.VarChar(1500)
+  minOrderValue         Float   @default(0)
+  baseDeliveryFee       Float   @default(30)
+  perKmFee              Float   @default(6)
+  freeKm                Float   @default(3)
+  freeDeliveryAbove     Float?
+  packagingFee          Float   @default(15)
+  taxPercent            Float   @default(5)
+  prepTimeMins          Int     @default(25)
+  busyMode              Boolean @default(false)
+  busyExtraMins         Int     @default(15)
+  busyPauseDelivery     Boolean @default(false)
+  busyPauseScheduled    Boolean @default(false)
+  maxActiveOrders       Int     @default(30)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  hours          BranchHours[]
+  zones          DeliveryZone[]
+  branchItems    BranchMenuItem[]
+  orders         Order[]
+  staff          StaffBranchAssignment[]
+  carts          Cart[]
+}
+
+model BranchHours {
+  id        String  @id @default(cuid())
+  branchId  String
+  branch    Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  dayOfWeek Int
+  openTime  String
+  closeTime String
+  closed    Boolean @default(false)
+
+  @@unique([branchId, dayOfWeek])
+}
+
+model DeliveryZone {
+  id           String  @id @default(cuid())
+  branchId     String
+  branch       Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  name         String
+  pincodesJson String  @default("[]") @db.VarChar(1500)
+  feeOverride  Float?
+  minOrder     Float?
+  active       Boolean @default(true)
+}
+
+// ------------------------------------------------------------------ menu
+
+model Category {
+  id           String     @id @default(cuid())
+  name         String
+  slug         String     @unique
+  displayOrder Int        @default(0)
+  active       Boolean    @default(true)
+  items        MenuItem[]
+}
+
+model MenuItem {
+  id           String  @id @default(cuid())
+  categoryId   String
+  category     Category @relation(fields: [categoryId], references: [id])
+  name         String
+  nameHindi    String?
+  description  String  @default("") @db.VarChar(600)
+  imageUrl     String? @db.VarChar(1000)
+  imageEmoji   String  @default("🍛")
+  basePrice    Float
+  veg          Boolean @default(true)
+  vegan        Boolean @default(false)
+  spicy        Boolean @default(false)
+  bestseller   Boolean @default(false)
+  recommended  Boolean @default(false)
+  prepTimeMins Int     @default(20)
+  ingredients  String  @default("") @db.VarChar(600)
+  allergens    String  @default("") @db.VarChar(400)
+  taxCategory  String  @default("STANDARD")
+  active       Boolean @default(true)
+  displayOrder Int     @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  variants    MenuItemVariant[]
+  addOns      AddOn[]
+  branchItems BranchMenuItem[]
+  orderItems  OrderItem[]
+  favourites  Favourite[]
+  cartItems   CartItem[]
+}
+
+model MenuItemVariant {
+  id         String   @id @default(cuid())
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  name       String
+  priceDelta Float    @default(0)
+  isDefault  Boolean  @default(false)
+  active     Boolean  @default(true)
+}
+
+model AddOn {
+  id         String   @id @default(cuid())
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  name       String
+  price      Float    @default(0)
+  veg        Boolean  @default(true)
+  required   Boolean  @default(false)
+  active     Boolean  @default(true)
+}
+
+model BranchMenuItem {
+  id            String   @id @default(cuid())
+  branchId      String
+  branch        Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  menuItemId    String
+  menuItem      MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  priceOverride Float?
+  available     Boolean  @default(true)
+  stockQty      Int      @default(-1)
+  availableFrom String?
+  availableTo   String?
+
+  @@unique([branchId, menuItemId])
+}
+
+model Favourite {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, menuItemId])
+}
+
+// ------------------------------------------------------------------ cart
+
+model Cart {
+  id        String     @id @default(cuid())
+  userId    String?
+  user      User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branchId  String
+  branch    Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  updatedAt DateTime   @updatedAt
+  items     CartItem[]
+}
+
+model CartItem {
+  id           String   @id @default(cuid())
+  cartId       String
+  cart         Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  menuItemId   String
+  menuItem     MenuItem @relation(fields: [menuItemId], references: [id])
+  variantName  String?
+  addOnsJson   String   @default("[]") @db.VarChar(1500)
+  qty          Int      @default(1)
+  instructions String?  @db.Text
+}
+
+// ---------------------------------------------------------------- orders
+
+model Order {
+  id              String    @id @default(cuid())
+  orderNumber     String    @unique
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  branchId        String
+  branch          Branch    @relation(fields: [branchId], references: [id])
+  type            String
+  status          String    @default("PLACED")
+  scheduledFor    DateTime?
+  addressId       String?
+  address         Address?  @relation(fields: [addressId], references: [id])
+  addressText     String?   @db.VarChar(700)
+  addressPincode  String?
+  addressLat      Float?
+  addressLng      Float?
+  contactless     Boolean   @default(false)
+  instructions    String?   @db.Text
+  cutlery         Boolean   @default(true)
+  distanceKm      Float?
+
+  subtotal        Float
+  discount        Float     @default(0)
+  deliveryFee     Float     @default(0)
+  packagingFee    Float     @default(0)
+  tax             Float     @default(0)
+  loyaltyCredit   Float     @default(0)
+  total           Float
+
+  paymentMethod   String    @default("COD")
+  paymentStatus   String    @default("PENDING")
+  couponCode      String?
+  couponId        String?
+  pointsRedeemed  Int       @default(0)
+  pointsEarned    Int       @default(0)
+  prepTimeMins    Int       @default(25)
+  etaMins         Int?
+  rejectionReason String?
+  cancelReason    String?   @db.VarChar(400)
+  staffNotes      String?   @db.Text
+  deliveryAgentId String?
+  deliveryAgent   DeliveryAgent? @relation(fields: [deliveryAgentId], references: [id])
+
+  placedAt    DateTime  @default(now())
+  acceptedAt  DateTime?
+  readyAt     DateTime?
+  outAt       DateTime?
+  deliveredAt DateTime?
+  cancelledAt DateTime?
+
+  items       OrderItem[]
+  payment     Payment?
+  refunds     Refund[]
+  redemptions CouponRedemption[]
+  review      Review?
+  tickets     SupportTicket[]
+  loyaltyTx   LoyaltyTransaction[]
+
+  @@index([branchId, status])
+  @@index([userId, placedAt])
+}
+
+model OrderItem {
+  id           String    @id @default(cuid())
+  orderId      String
+  order        Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId   String?
+  menuItem     MenuItem? @relation(fields: [menuItemId], references: [id])
+  nameSnapshot String
+  variantName  String?
+  addOnsJson   String    @default("[]") @db.VarChar(1500)
+  unitPrice    Float
+  qty          Int
+  lineTotal    Float
+  instructions String?   @db.Text
+}
+
+model Payment {
+  id              String   @id @default(cuid())
+  orderId         String   @unique
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider        String   @default("cod")
+  method          String   @default("COD")
+  status          String   @default("PENDING")
+  amount          Float
+  providerOrderId String?
+  providerRef     String?
+  webhookVerified Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Refund {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id])
+  amount    Float
+  mode      String
+  reason    String   @db.VarChar(400)
+  status    String   @default("INITIATED")
+  createdBy String
+  createdAt DateTime @default(now())
+}
+
+// --------------------------------------------------------- coupons/loyalty
+
+model Coupon {
+  id               String    @id @default(cuid())
+  code             String    @unique
+  name             String
+  description      String    @default("") @db.VarChar(400)
+  rewardType       String
+  value            Float     @default(0)
+  maxDiscount      Float?
+  freeItemId       String?
+  minCartValue     Float?
+  maxCartValue     Float?
+  branchId         String?
+  orderTypesJson   String    @default("[\"DELIVERY\",\"PICKUP\"]")
+  daysOfWeekJson   String    @default("[]")
+  startTime        String?
+  endTime          String?
+  startAt          DateTime?
+  endAt            DateTime?
+  firstOrderOnly   Boolean   @default(false)
+  minCompletedOrders Int?
+  minLifetimeSpend Float?
+  loyaltyTierId    String?
+  inactiveDays     Int?
+  paymentMethod    String?
+  totalLimit       Int?
+  perCustomerLimit Int       @default(1)
+  autoApply        Boolean   @default(false)
+  stackable        Boolean   @default(false)
+  priority         Int       @default(0)
+  active           Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  redemptions CouponRedemption[]
+}
+
+model CouponRedemption {
+  id          String   @id @default(cuid())
+  couponId    String
+  coupon      Coupon   @relation(fields: [couponId], references: [id])
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id])
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  amountSaved Float
+  createdAt   DateTime @default(now())
+
+  @@index([couponId, userId])
+}
+
+model LoyaltyTier {
+  id                 String  @id @default(cuid())
+  name               String
+  minCompletedOrders Int     @default(0)
+  minLifetimeSpend   Float   @default(0)
+  pointMultiplier    Float   @default(1)
+  freeDelivery       Boolean @default(false)
+  discountPercent    Float   @default(0)
+  benefitsText       String  @default("") @db.VarChar(400)
+  sortOrder          Int     @default(0)
+
+  profiles CustomerProfile[]
+}
+
+model LoyaltyTransaction {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId   String?
+  order     Order?   @relation(fields: [orderId], references: [id])
+  points    Int
+  type      String
+  note      String   @default("") @db.VarChar(400)
+  createdAt DateTime @default(now())
+}
+
+model CustomerMetrics {
+  id                String    @id @default(cuid())
+  userId            String    @unique
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  completedOrders   Int       @default(0)
+  cancelledOrders   Int       @default(0)
+  rejectedOrders    Int       @default(0)
+  lifetimeSpend     Float     @default(0)
+  avgOrderValue     Float     @default(0)
+  lastOrderAt       DateTime?
+  firstOrderAt      DateTime?
+  preferredBranchId String?
+}
+
+// ------------------------------------------------------- support & misc
+
+model Review {
+  id              String   @id @default(cuid())
+  orderId         String   @unique
+  order           Order    @relation(fields: [orderId], references: [id])
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  foodRating      Int
+  packagingRating Int?
+  deliveryRating  Int?
+  overallRating   Int
+  comment         String?  @db.Text
+  ownerReply      String?  @db.Text
+  createdAt       DateTime @default(now())
+}
+
+model SupportTicket {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  orderId    String?
+  order      Order?   @relation(fields: [orderId], references: [id])
+  type       String
+  message    String   @db.Text
+  status     String   @default("OPEN")
+  resolution String?  @db.Text
+  assignedTo String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model StaffBranchAssignment {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, branchId])
+}
+
+model DeliveryAgent {
+  id        String  @id @default(cuid())
+  userId    String  @unique
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  online    Boolean @default(false)
+  vehicle   String?
+  codHeld   Float   @default(0)
+  orders    Order[]
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   String   @default("IN_APP")
+  type      String
+  title     String
+  body      String   @db.VarChar(600)
+  status    String   @default("QUEUED")
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actorName String?
+  action    String
+  entity    String
+  entityId  String?
+  detail    String?  @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+}
+
+model OtpCode {
+  id         String    @id @default(cuid())
+  phone      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([phone, createdAt])
+}

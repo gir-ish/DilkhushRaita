@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- PLACEHOLDER maskable icon — replace before production -->
+  <rect width="128" height="128" fill="#7B1E1E"/>
+  <circle cx="64" cy="64" r="30" fill="#DFB53E"/>
+  <text x="64" y="74" font-size="28" text-anchor="middle">🥘</text>
+</svg>
