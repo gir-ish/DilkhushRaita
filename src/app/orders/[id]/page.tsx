@@ -14,7 +14,8 @@ const DEAD = ["REJECTED", "CANCELLED", "REFUND_INITIATED", "REFUNDED"];
 
 interface OrderDto {
   id: string; orderNumber: string; status: string; statusLabel: string; type: string;
-  placedAt: string; etaMins: number | null; scheduledFor: string | null;
+  placedAt: string; deliveredAt: string | null;
+  etaMins: number | null; scheduledFor: string | null;
   addressText: string | null; instructions: string | null; contactless: boolean;
   subtotal: number; discount: number; deliveryFee: number; packagingFee: number;
   tax: number; loyaltyCredit: number; total: number; paymentMethod: string;
@@ -57,6 +58,9 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
   const flow = order.type === "PICKUP" ? PICKUP_FLOW : FLOW;
   const dead = DEAD.includes(order.status);
   const stepIndex = flow.indexOf(order.status);
+  // DELIVERED is the end of the flow, not a step still in progress — without
+  // this the last step would pulse forever showing its number instead of a tick.
+  const completed = order.status === "DELIVERED";
 
   const repeatOrder = () => {
     router.push(`/menu/${order.branch.slug}`);
@@ -98,24 +102,50 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
             </div>
           ) : (
             <ol className="space-y-3">
-              {flow.map((s, i) => (
-                <li key={s} className="flex items-center gap-3">
-                  <span
-                    aria-hidden
-                    className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0
-                      ${i < stepIndex ? "bg-leaf-500 text-white" : i === stepIndex ? "bg-maroon-600 text-white animate-pulse" : "bg-cream-200 text-maroon-800/40"}`}
-                  >
-                    {i < stepIndex ? "✓" : i + 1}
-                  </span>
-                  <span className={i <= stepIndex ? "font-semibold" : "text-maroon-800/40"}>
-                    {labelFor(s, order.type)}
-                    {i === stepIndex && order.etaMins && s !== "DELIVERED" && (
-                      <span className="text-sm font-normal text-maroon-800/60"> · ~{order.etaMins} min total</span>
-                    )}
-                  </span>
-                </li>
-              ))}
+              {flow.map((s, i) => {
+                const done = i < stepIndex || (completed && i === stepIndex);
+                const current = i === stepIndex && !completed;
+                return (
+                  <li key={s} className="flex items-center gap-3">
+                    <span
+                      aria-hidden
+                      className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0
+                        ${done ? "bg-leaf-500 text-white" : current ? "bg-maroon-600 text-white animate-pulse" : "bg-cream-200 text-maroon-800/40"}`}
+                    >
+                      {done ? "✓" : i + 1}
+                    </span>
+                    <span className={i <= stepIndex ? "font-semibold" : "text-maroon-800/40"}>
+                      {labelFor(s, order.type)}
+                      {current && order.etaMins && (
+                        <span className="text-sm font-normal text-maroon-800/60"> · ~{order.etaMins} min total</span>
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
             </ol>
+          )}
+
+          {completed && (
+            <div className="mt-4 flex items-center gap-3 rounded-xl border border-leaf-500/30 bg-leaf-50 px-4 py-3">
+              <span
+                aria-hidden
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-leaf-500 text-xl font-bold text-white"
+              >
+                ✓
+              </span>
+              <div>
+                <p className="font-bold text-leaf-600">
+                  {order.type === "PICKUP" ? "Picked up" : "Delivered"}
+                  {order.deliveredAt && (
+                    <span className="font-normal text-maroon-800/60"> · {timeAgo(order.deliveredAt)}</span>
+                  )}
+                </p>
+                <p className="text-sm text-maroon-800/70">
+                  Thank you for ordering from {order.branch.name}!
+                </p>
+              </div>
+            </div>
           )}
           {order.status === "DELIVERED" && order.pointsEarned > 0 && (
             <p className="mt-3 rounded-xl bg-mustard-100 px-3 py-2 text-sm font-semibold">

@@ -121,7 +121,15 @@ function AccountInner() {
                     </div>
                     <div className="text-right shrink-0">
                       <p className="font-bold">{inr(o.total)}</p>
-                      <p className={`text-xs font-semibold ${o.status === "DELIVERED" ? "text-leaf-600" : ["CANCELLED", "REJECTED"].includes(o.status) ? "text-red-700" : "text-mustard-600"}`}>
+                      <p className={`text-xs font-semibold inline-flex items-center gap-1 ${o.status === "DELIVERED" ? "text-leaf-600" : ["CANCELLED", "REJECTED"].includes(o.status) ? "text-red-700" : "text-mustard-600"}`}>
+                        {o.status === "DELIVERED" && (
+                          <span
+                            aria-hidden
+                            className="grid h-4 w-4 place-items-center rounded-full bg-leaf-500 text-[10px] font-bold text-white"
+                          >
+                            ✓
+                          </span>
+                        )}
                         {o.status.replace(/_/g, " ")}
                       </p>
                     </div>
