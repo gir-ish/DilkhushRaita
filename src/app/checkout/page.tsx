@@ -36,6 +36,46 @@ interface OfferDto {
   code: string; name: string; description: string;
   eligible: boolean; reason: string | null; estimatedSavings: number;
 }
+interface PlaceOrderResponse {
+  orderId: string;
+  orderNumber: string;
+  payment?: {
+    provider: string;
+    keyId: string;
+    gatewayOrderId: string;
+    amount: number; // paise
+    currency: string;
+    customerName: string;
+    customerPhone: string;
+  };
+}
+
+// Mirrors PAYMENT_PROVIDER on the server. The server is the one that actually
+// refuses ONLINE when it is not configured — this only controls whether the
+// option is offered.
+const ONLINE_ENABLED = process.env.NEXT_PUBLIC_PAYMENT_PROVIDER === "razorpay";
+
+interface RazorpayInstance {
+  open(): void;
+  on(event: string, cb: (resp: unknown) => void): void;
+}
+declare global {
+  interface Window {
+    Razorpay?: new (options: Record<string, unknown>) => RazorpayInstance;
+  }
+}
+
+/** Loads Razorpay Checkout on demand — no cost to customers paying by COD. */
+function loadRazorpayScript(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (window.Razorpay) return resolve(true);
+    const s = document.createElement("script");
+    s.src = "https://checkout.razorpay.com/v1/checkout.js";
+    s.onload = () => resolve(true);
+    s.onerror = () => resolve(false);
+    document.body.appendChild(s);
+  });
+}
 
 export default function CheckoutPage() {
   const cart = useCart();
@@ -51,6 +91,7 @@ export default function CheckoutPage() {
   const [instructions, setInstructions] = useState("");
   const [cutlery, setCutlery] = useState(true);
   const [contactless, setContactless] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<"COD" | "ONLINE">("COD");
   const [quote, setQuote] = useState<QuoteDto | null>(null);
   const [offers, setOffers] = useState<OfferDto[] | null>(null);
   const [showOffers, setShowOffers] = useState(false);
@@ -113,6 +154,76 @@ export default function CheckoutPage() {
       .catch(() => setOffers([]));
   };
 
+  /**
+   * Opens Razorpay Checkout, then hands the result to the server to verify.
+   * The browser's own "success" callback is never treated as proof of payment —
+   * /api/payments/verify re-checks the signature and amount server-side.
+   */
+  const payWithRazorpay = async (d: PlaceOrderResponse) => {
+    const pay = d.payment!;
+    if (!(await loadRazorpayScript()) || !window.Razorpay) {
+      setError(
+        "Could not open the payment window. Check your connection and retry from My Orders — your order is saved as unpaid."
+      );
+      setPlacing(false);
+      return;
+    }
+
+    const rzp = new window.Razorpay({
+      key: pay.keyId,
+      order_id: pay.gatewayOrderId,
+      amount: pay.amount,
+      currency: pay.currency,
+      name: "DilKhush Dhaba – Raita Wala",
+      description: `Order ${d.orderNumber}`,
+      prefill: { name: pay.customerName, contact: pay.customerPhone },
+      theme: { color: "#7B1E1E" },
+      handler: async (resp: {
+        razorpay_order_id: string;
+        razorpay_payment_id: string;
+        razorpay_signature: string;
+      }) => {
+        try {
+          const vr = await fetch("/api/payments/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              orderId: d.orderId,
+              razorpayOrderId: resp.razorpay_order_id,
+              razorpayPaymentId: resp.razorpay_payment_id,
+              signature: resp.razorpay_signature,
+            }),
+          });
+          const vd = await vr.json();
+          if (!vr.ok) throw new Error(vd.error);
+          cart.clear();
+          router.push(`/orders/${d.orderId}`);
+        } catch (e) {
+          // Money may well have left the customer's account here, so never say
+          // "payment failed" — the webhook will still settle it server-side.
+          setError(
+            e instanceof Error
+              ? `${e.message} Check My Orders in a minute before paying again.`
+              : "We could not confirm the payment. Check My Orders in a minute before paying again."
+          );
+          setPlacing(false);
+        }
+      },
+      modal: {
+        ondismiss: () => {
+          setPlacing(false);
+          setError("Payment cancelled. Your order is saved as unpaid — you can pay from My Orders.");
+        },
+      },
+    } as Record<string, unknown>);
+
+    rzp.on("payment.failed", () => {
+      setPlacing(false);
+      setError("Payment failed. Nothing was charged — please try again or choose Cash on Delivery.");
+    });
+    rzp.open();
+  };
+
   const placeOrder = async () => {
     setPlacing(true);
     setError(null);
@@ -130,15 +241,20 @@ export default function CheckoutPage() {
           addressId: orderType === "DELIVERY" ? addressId : null,
           couponCode: appliedCode,
           redeemPoints,
-          paymentMethod: "COD",
+          paymentMethod,
           scheduledFor: scheduled ? new Date(scheduled).toISOString() : null,
           instructions: instructions || null,
           cutlery,
           contactless,
         }),
       });
-      const d = await res.json();
+      const d: PlaceOrderResponse & { error?: string } = await res.json();
       if (!res.ok) throw new Error(d.error);
+
+      if (d.payment) {
+        await payWithRazorpay(d);
+        return; // cart is cleared only once payment verifies
+      }
       cart.clear();
       router.push(`/orders/${d.orderId}`);
     } catch (e) {
@@ -306,13 +422,62 @@ export default function CheckoutPage() {
 
         <section className="card p-4 mb-4" aria-label="Payment method">
           <h2 className="font-semibold mb-2">Payment</h2>
-          <label className="flex items-center gap-3 rounded-xl border border-maroon-200 bg-maroon-50 p-3 text-sm">
-            <input type="radio" checked readOnly className="h-4 w-4 accent-maroon-600" />
-            💵 Cash on Delivery
-          </label>
-          <p className="text-xs text-maroon-800/50 mt-2">
-            UPI & card payments are coming soon.
-          </p>
+          {ONLINE_ENABLED ? (
+            <div className="space-y-2" role="radiogroup" aria-label="Payment method">
+              <label
+                className={`flex items-start gap-3 rounded-xl border p-3 text-sm cursor-pointer transition ${
+                  paymentMethod === "ONLINE"
+                    ? "border-maroon-400 bg-maroon-50"
+                    : "border-cream-200 hover:border-cream-400"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  className="mt-0.5 h-4 w-4 accent-maroon-600"
+                  checked={paymentMethod === "ONLINE"}
+                  onChange={() => setPaymentMethod("ONLINE")}
+                />
+                <span>
+                  <span className="font-semibold">📱 Pay online</span>
+                  <span className="block text-xs text-maroon-800/60 mt-0.5">
+                    UPI (GPay, PhonePe, Paytm), cards, netbanking &amp; wallets
+                  </span>
+                </span>
+              </label>
+              <label
+                className={`flex items-start gap-3 rounded-xl border p-3 text-sm cursor-pointer transition ${
+                  paymentMethod === "COD"
+                    ? "border-maroon-400 bg-maroon-50"
+                    : "border-cream-200 hover:border-cream-400"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  className="mt-0.5 h-4 w-4 accent-maroon-600"
+                  checked={paymentMethod === "COD"}
+                  onChange={() => setPaymentMethod("COD")}
+                />
+                <span>
+                  <span className="font-semibold">💵 Cash on Delivery</span>
+                  <span className="block text-xs text-maroon-800/60 mt-0.5">
+                    Pay the delivery agent when your order arrives
+                  </span>
+                </span>
+              </label>
+            </div>
+          ) : (
+            <>
+              <label className="flex items-center gap-3 rounded-xl border border-maroon-200 bg-maroon-50 p-3 text-sm">
+                <input type="radio" checked readOnly className="h-4 w-4 accent-maroon-600" />
+                💵 Cash on Delivery
+              </label>
+              <p className="text-xs text-maroon-800/50 mt-2">
+                UPI &amp; card payments are coming soon.
+              </p>
+            </>
+          )}
         </section>
 
         <section className="card p-4" aria-label="Bill summary">
@@ -336,7 +501,7 @@ export default function CheckoutPage() {
                 <Row l={`Points redeemed (${quote.pointsRedeemed})`} v={`−${inr(quote.totals.loyaltyCredit)}`} accent />
               )}
               <div className="border-t border-cream-200 pt-2 mt-2 flex justify-between font-bold text-base">
-                <dt>To pay (COD)</dt>
+                <dt>{paymentMethod === "ONLINE" ? "To pay now" : "To pay (COD)"}</dt>
                 <dd>{inr(quote.totals.total)}</dd>
               </div>
               {quote.etaMins && !scheduled && (
@@ -360,7 +525,11 @@ export default function CheckoutPage() {
         <div className="fixed bottom-0 left-0 right-0 bg-cream-50 border-t border-cream-200 p-4">
           <div className="mx-auto max-w-lg">
             <button onClick={placeOrder} disabled={!canPlace || placing} className="btn-primary w-full !py-4">
-              {placing ? "Placing order…" : `Place order · ${quote ? inr(quote.totals.total) : ""}`}
+              {placing
+                ? paymentMethod === "ONLINE"
+                  ? "Opening payment…"
+                  : "Placing order…"
+                : `${paymentMethod === "ONLINE" ? "Pay" : "Place order ·"} ${quote ? inr(quote.totals.total) : ""}`}
             </button>
           </div>
         </div>

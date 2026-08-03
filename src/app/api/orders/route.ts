@@ -6,6 +6,7 @@ import { buildQuote } from "@/lib/quote";
 import { genOrderNumber } from "@/lib/utils";
 import { rateLimit } from "@/lib/rate-limit";
 import { notifyUser } from "@/lib/notify";
+import { createGatewayOrder, onlinePaymentsEnabled, paymentProvider } from "@/lib/payments";
 
 const Body = z.object({
   branchId: z.string(),
@@ -40,7 +41,7 @@ export const POST = handler(async (req: Request) => {
 
   const body = Body.parse(await req.json());
 
-  if (body.paymentMethod === "ONLINE" && (process.env.PAYMENT_PROVIDER ?? "cod") === "cod")
+  if (body.paymentMethod === "ONLINE" && !onlinePaymentsEnabled())
     throw new HttpError(400, "Online payment is not enabled yet — please use Cash on Delivery");
 
   const user = await db.user.findUnique({
@@ -54,6 +55,25 @@ export const POST = handler(async (req: Request) => {
   const quote = await buildQuote(body, session.uid, true);
 
   const orderNumber = genOrderNumber();
+
+  // Open the gateway order BEFORE the transaction: if Razorpay is unreachable
+  // we abort having written nothing, rather than leaving an unpayable order
+  // behind with stock already decremented and loyalty points already spent.
+  // An unpaid Razorpay order simply expires on their side, so this is safe.
+  const gatewayOrder =
+    body.paymentMethod === "ONLINE"
+      ? await createGatewayOrder({
+          amountRupees: quote.totals.total,
+          receipt: orderNumber,
+          notes: { orderNumber, branch: quote.branch.name },
+        })
+      : null;
+  if (body.paymentMethod === "ONLINE" && !gatewayOrder)
+    throw new HttpError(
+      502,
+      "Could not start the payment. Please try again, or choose Cash on Delivery."
+    );
+
   const order = await db.$transaction(async (tx) => {
     // Deduct redeemed points atomically.
     if (quote.pointsRedeemed > 0) {
@@ -136,10 +156,11 @@ export const POST = handler(async (req: Request) => {
         },
         payment: {
           create: {
-            provider: body.paymentMethod === "COD" ? "cod" : process.env.PAYMENT_PROVIDER ?? "cod",
+            provider: body.paymentMethod === "COD" ? "cod" : paymentProvider(),
             method: body.paymentMethod,
             status: "PENDING",
             amount: quote.totals.total,
+            providerOrderId: gatewayOrder?.id ?? null,
           },
         },
       },
@@ -157,6 +178,26 @@ export const POST = handler(async (req: Request) => {
     }
     return created;
   });
+
+  // For ONLINE the order is not yet paid — hand the browser what Checkout needs
+  // and stay quiet until /api/payments/verify (or the webhook) confirms money
+  // actually arrived. Notifying now would promise an order we may never be paid for.
+  if (gatewayOrder) {
+    return NextResponse.json({
+      ok: true,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      payment: {
+        provider: "razorpay",
+        keyId: process.env.RAZORPAY_KEY_ID ?? "",
+        gatewayOrderId: gatewayOrder.id,
+        amount: gatewayOrder.amount, // paise
+        currency: gatewayOrder.currency,
+        customerName: user.name ?? "",
+        customerPhone: user.phone ?? "",
+      },
+    });
+  }
 
   await notifyUser(
     session.uid,
