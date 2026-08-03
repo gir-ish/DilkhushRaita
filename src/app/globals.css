@@ -8,6 +8,26 @@
 
 body {
   @apply bg-cream-100 text-maroon-800 font-body antialiased;
+  /* Warm ambient wash — keeps long pages from reading as flat beige. */
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(223, 181, 62, 0.16), transparent 70%),
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(123, 30, 30, 0.06), transparent 70%);
+  background-attachment: fixed;
+}
+
+/* Display type reads tighter and more deliberate at large sizes. */
+.font-display {
+  letter-spacing: -0.015em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Subtle traditional jaali pattern for section backgrounds */
@@ -20,31 +40,59 @@ body {
   background-size: 22px 22px;
 }
 
+/* ---------------------------------------------------------------- surfaces */
+
 .card {
-  @apply bg-white rounded-card shadow-card;
+  @apply bg-white rounded-card shadow-card border border-maroon-800/[0.06];
 }
 
+/* Opt-in interactivity for cards that are clickable (menu items, branches). */
+.card-hover {
+  @apply transition duration-200 ease-out hover:shadow-lift hover:-translate-y-0.5
+    hover:border-mustard-300;
+}
+
+/* Elevated panel for summaries / totals. */
+.card-elevated {
+  @apply bg-white rounded-card shadow-lift border border-maroon-800/[0.06];
+}
+
+/* ---------------------------------------------------------------- buttons */
+
 .btn {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition
+  @apply inline-flex items-center justify-center gap-2 rounded-xl font-semibold
+    transition duration-150 ease-out
     focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-maroon-600
-    disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] px-5 text-[15px];
+    disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-y-0
+    min-h-[44px] px-5 text-[15px];
 }
 .btn-primary {
-  @apply btn bg-maroon-600 text-cream-50 hover:bg-maroon-700 active:bg-maroon-800;
+  @apply btn text-cream-50 shadow-card shadow-inset
+    bg-gradient-to-b from-maroon-500 to-maroon-700
+    hover:from-maroon-600 hover:to-maroon-800 hover:shadow-lift hover:-translate-y-px
+    active:translate-y-0 active:shadow-card;
 }
 .btn-secondary {
-  @apply btn bg-mustard-300 text-maroon-800 hover:bg-mustard-400;
+  @apply btn text-maroon-800 shadow-card shadow-inset
+    bg-gradient-to-b from-mustard-300 to-mustard-400
+    hover:from-mustard-400 hover:to-mustard-500 hover:shadow-lift hover:-translate-y-px
+    active:translate-y-0 active:shadow-card;
 }
 .btn-outline {
-  @apply btn border-2 border-maroon-600 text-maroon-700 hover:bg-maroon-50;
+  @apply btn border-2 border-maroon-600 text-maroon-700 bg-white/60
+    hover:bg-maroon-600 hover:text-cream-50 hover:border-maroon-600;
 }
 .btn-ghost {
   @apply btn text-maroon-700 hover:bg-maroon-50;
 }
 
+/* ---------------------------------------------------------------- forms */
+
 .input {
   @apply w-full rounded-xl border border-cream-300 bg-white px-4 py-3 text-[15px]
-    focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-maroon-500
+    transition duration-150
+    hover:border-cream-400
+    focus:outline-none focus:ring-2 focus:ring-maroon-500/70 focus:border-maroon-500
     placeholder:text-maroon-800/40 min-h-[44px];
 }
 
@@ -52,17 +100,42 @@ body {
   @apply block text-sm font-semibold text-maroon-700 mb-1;
 }
 
+.form-error {
+  @apply text-sm text-red-700 mt-1;
+}
+
+/* ---------------------------------------------------------------- chips */
+
 .chip {
   @apply inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium
     border border-cream-300 bg-white text-maroon-700 whitespace-nowrap min-h-[36px]
+    transition duration-150 ease-out
+    hover:border-mustard-400 hover:bg-mustard-100
     focus-visible:outline focus-visible:outline-2 focus-visible:outline-maroon-600;
 }
 .chip-active {
-  @apply bg-maroon-600 text-cream-50 border-maroon-600;
+  @apply bg-maroon-600 text-cream-50 border-maroon-600 shadow-card
+    hover:bg-maroon-700 hover:border-maroon-700 hover:text-cream-50;
 }
 
-.form-error {
-  @apply text-sm text-red-700 mt-1;
+/* ---------------------------------------------------------------- accents */
+
+/* Small uppercase kicker above headings. */
+.eyebrow {
+  @apply text-xs font-bold uppercase tracking-[0.18em] text-mustard-600;
+}
+
+/* Ornamental centred divider — a spice-coloured rule with a diamond. */
+.divider-ornament {
+  @apply flex items-center justify-center gap-3 text-mustard-400;
+}
+.divider-ornament::before,
+.divider-ornament::after {
+  content: "";
+  @apply h-px w-14 bg-gradient-to-r from-transparent to-mustard-400;
+}
+.divider-ornament::after {
+  @apply bg-gradient-to-l from-transparent to-mustard-400;
 }
 
 @media print {
@@ -71,5 +144,6 @@ body {
   }
   body {
     background: white;
+    background-image: none;
   }
 }

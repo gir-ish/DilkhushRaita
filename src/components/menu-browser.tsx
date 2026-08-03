@@ -187,12 +187,14 @@ export function MenuBrowser({ slug }: { slug: string }) {
 
 function ItemCard({ item, fav, onOpen }: { item: MenuItemDto; fav: boolean; onOpen: () => void }) {
   return (
-    <article className={`card p-3 flex gap-3 ${!item.available ? "opacity-60" : ""}`}>
+    <article
+      className={`card p-3 flex gap-3 ${item.available ? "card-hover" : "opacity-60"}`}
+    >
       <FoodImage
         emoji={item.imageEmoji}
         url={item.imageUrl}
         name={item.name}
-        className="h-24 w-24 rounded-xl shrink-0"
+        className="h-24 w-24 rounded-xl shrink-0 ring-1 ring-maroon-800/5"
       />
       <div className="min-w-0 flex-1 flex flex-col">
         <div className="flex items-center gap-2">
@@ -205,8 +207,8 @@ function ItemCard({ item, fav, onOpen }: { item: MenuItemDto; fav: boolean; onOp
         <p className="text-xs text-maroon-800/60 line-clamp-2">{item.description}</p>
         <div className="mt-auto flex items-center justify-between pt-2">
           <div>
-            <span className="font-bold">{inr(item.price)}</span>
-            <span className="text-xs text-maroon-800/50 ml-2">
+            <span className="font-bold text-maroon-700 text-[17px]">{inr(item.price)}</span>
+            <span className="block text-xs text-maroon-800/50">
               ⏱ {item.prepTimeMins}m · ★ 4.{(item.name.length % 5) + 3}
               {/* rating placeholder until reviews accumulate */}
             </span>

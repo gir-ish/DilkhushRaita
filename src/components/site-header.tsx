@@ -16,15 +16,26 @@ export function SiteHeader({ showCart = true }: { showCart?: boolean }) {
   }, []);
 
   return (
-    <header className="sticky top-0 z-40 bg-cream-50/95 backdrop-blur border-b border-cream-200 no-print">
+    <header className="sticky top-0 z-40 bg-cream-50/85 backdrop-blur-md border-b border-cream-300/70 shadow-[0_1px_3px_rgba(74,17,17,0.05)] no-print">
       <div className="mx-auto max-w-5xl px-4 h-16 flex items-center justify-between gap-3">
-        <Link href="/" className="flex items-center gap-2 min-w-0" aria-label="DilKhush Dhaba home">
-          <span aria-hidden className="text-2xl">🥘</span>
+        <Link
+          href="/"
+          className="flex items-center gap-2.5 min-w-0 group"
+          aria-label="DilKhush Dhaba home"
+        >
+          <span
+            aria-hidden
+            className="text-xl grid place-items-center h-10 w-10 shrink-0 rounded-full
+              bg-gradient-to-br from-mustard-200 to-mustard-400 shadow-card
+              transition duration-200 group-hover:scale-105"
+          >
+            🥘
+          </span>
           <span className="min-w-0">
             <span className="block font-display font-bold text-maroon-700 leading-tight truncate">
               DilKhush Dhaba
             </span>
-            <span className="block text-[11px] font-semibold tracking-wide text-mustard-600 -mt-0.5">
+            <span className="block text-[10px] font-bold tracking-[0.2em] text-mustard-600 -mt-0.5">
               RAITA WALA
             </span>
           </span>
