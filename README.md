@@ -122,6 +122,13 @@ provider). Point `SMOKE_URL` at whichever port `next dev` actually claimed.
 > `.next/`, and the production output makes the dev server throw
 > `Cannot find module './XXXX.js'`. Fix: stop dev, `rm -rf .next`, restart.
 
+**Run `npm run build` before pushing, not just `npm run verify`.** `verify` is
+type-check plus unit tests; it cannot see prerender errors. A client hook like
+`useSearchParams()` outside a `<Suspense>` boundary passes `next dev`, passes
+`tsc`, passes every test — and then fails the production build during static
+generation. `build` runs `verify` first via `prebuild`, so it is the only
+command you actually need.
+
 ---
 
 ## Test accounts

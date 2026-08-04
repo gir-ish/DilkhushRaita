@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ErrorBox, Modal, Spinner, VegMark } from "@/components/ui";
 import { inr } from "@/lib/utils";
@@ -42,7 +42,13 @@ interface Line {
   qty: number;
 }
 
-export default function CounterPage() {
+/**
+ * Wrapped in Suspense below: useSearchParams() opts the page out of static
+ * prerendering unless it sits inside a suspense boundary, which fails the
+ * production build (it passes `next dev` and type-check, so a full build is
+ * the only thing that catches it).
+ */
+function CounterInner() {
   const router = useRouter();
   const params = useSearchParams();
   const [branches, setBranches] = useState<BranchLite[]>([]);
@@ -766,6 +772,15 @@ function CheckoutModal({
         </button>
       </div>
     </Modal>
+  );
+}
+
+
+export default function CounterPage() {
+  return (
+    <Suspense fallback={<Spinner label="Loading counter…" />}>
+      <CounterInner />
+    </Suspense>
   );
 }
 
