@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 import { db } from "./db";
 import { getSession, type SessionPayload } from "./session";
 import { STAFF_ROLES, type Role } from "./constants";
@@ -22,6 +23,17 @@ export function handler<T extends unknown[]>(
       return await fn(...args);
     } catch (e) {
       if (e instanceof HttpError) return jsonError(e.status, e.message);
+      // A schema failure is the caller sending bad input, not a server fault.
+      // Without this every invalid request became an opaque 500, which hides
+      // real faults in the logs and tells the user nothing useful.
+      if (e instanceof ZodError) {
+        const first = e.issues[0];
+        const field = first?.path.filter((p) => typeof p !== "number").join(".");
+        return jsonError(
+          400,
+          first ? (field ? `${field}: ${first.message}` : first.message) : "Invalid request"
+        );
+      }
       console.error("[api]", e);
       return jsonError(500, "Something went wrong. Please try again.");
     }

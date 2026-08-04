@@ -230,17 +230,19 @@ if (signedIn && slug) {
       check("GET /api/orders/:id → 200", g.status === 200, `got ${g.status}`);
     }
 
+    // Asserting 400 exactly, not >=400: a 500 also "rejects" the request but
+    // means an unhandled exception, which is what this previously masked.
     const qty0 = await req("/api/orders", {
       method: "POST",
       body: JSON.stringify({ ...orderBody, items: [{ menuItemId: item.id, qty: 0 }] }),
     });
-    check("rejects qty 0", qty0.status >= 400, `got ${qty0.status}`);
+    check("rejects qty 0 with 400 (not 500)", qty0.status === 400, `got ${qty0.status}`);
 
     const empty = await req("/api/orders", {
       method: "POST",
       body: JSON.stringify({ ...orderBody, items: [] }),
     });
-    check("rejects an empty order", empty.status >= 400, `got ${empty.status}`);
+    check("rejects an empty order with 400 (not 500)", empty.status === 400, `got ${empty.status}`);
 
     // Online must be refused unless PAYMENT_PROVIDER is a real gateway, no
     // matter what the client asks for.
