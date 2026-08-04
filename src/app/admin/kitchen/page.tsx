@@ -81,7 +81,7 @@ export default function KitchenPage() {
                   </span>
                 </div>
                 <p className="text-sm font-semibold text-maroon-800/60 mt-0.5">
-                  {o.type === "PICKUP" ? "🛍️ PICKUP" : "🛵 DELIVERY"} · {o.status.replace(/_/g, " ")}
+                  {o.type === "DINE_IN" ? "🍽️ DINE-IN" : o.type === "PICKUP" ? "🛍️ PICKUP" : "🛵 DELIVERY"} · {o.status.replace(/_/g, " ")}
                   {o.scheduledFor && <span className="text-red-600"> · ⏰ {new Date(o.scheduledFor).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>}
                 </p>
                 <ul className="mt-3 space-y-2 text-xl leading-snug">
@@ -121,6 +121,14 @@ export default function KitchenPage() {
                   {o.status === "READY" && (
                     <p className="text-center text-base font-bold text-leaf-600">Waiting for handover 🛍️</p>
                   )}
+                  {/* The order number was the only way in, which is easy to
+                      miss on a kitchen screen. */}
+                  <button
+                    onClick={() => setSelected(o)}
+                    className="btn-ghost w-full mt-2 !text-base"
+                  >
+                    🔍 Full order details
+                  </button>
                 </div>
               </article>
             );

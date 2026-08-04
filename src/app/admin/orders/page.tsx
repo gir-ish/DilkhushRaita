@@ -9,15 +9,26 @@ import {
   OrderDetailModal,
   beep,
 } from "@/components/admin/order-detail-modal";
+import { BranchTabs, type BranchTab } from "@/components/admin/branch-tabs";
 
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<AdminOrder[] | null>(null);
+  const [branches, setBranches] = useState<BranchTab[]>([]);
+  const [branchId, setBranchId] = useState("all");
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
   const [activeOnly, setActiveOnly] = useState(true);
   const [selected, setSelected] = useState<AdminOrder | null>(null);
   const prevPlacedIds = useRef<Set<string> | null>(null);
+
+  useEffect(() => {
+    // Scoped endpoint — a branch manager only ever sees their own branches.
+    fetch("/api/admin/branches")
+      .then((r) => (r.ok ? r.json() : { branches: [] }))
+      .then((d) => setBranches(d.branches ?? []))
+      .catch(() => setBranches([]));
+  }, []);
 
   const load = useCallback(() => {
     const params = new URLSearchParams();
@@ -56,10 +67,24 @@ export default function AdminOrdersPage() {
       Notification.requestPermission();
   }, []);
 
+  // Matched on slug, not display name — names are editable in the dashboard
+  // and two branches could be renamed to collide.
+  // Counts come from the unfiltered list so each tab keeps its own total even
+  // while a different branch is selected.
+  const branchCounts = (orders ?? []).reduce<Record<string, number>>((acc, o) => {
+    const b = branches.find((x) => x.slug === o.branch.slug);
+    if (b) acc[b.id] = (acc[b.id] ?? 0) + 1;
+    return acc;
+  }, {});
+  const selectedSlug = branches.find((b) => b.id === branchId)?.slug;
+  const visible = (orders ?? []).filter(
+    (o) => branchId === "all" || o.branch.slug === selectedSlug
+  );
+
   return (
     <div>
-      <div className="flex flex-wrap gap-2 items-center mb-4 no-print">
-        <h1 className="font-display text-2xl font-bold text-maroon-700 mr-auto">Orders</h1>
+      <div className="flex flex-wrap gap-2 items-center mb-3 no-print">
+        <h1 className="font-display text-3xl font-bold text-maroon-700 mr-auto">Orders</h1>
         <input
           type="search"
           className="input !w-56"
@@ -74,20 +99,30 @@ export default function AdminOrdersPage() {
             <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
           ))}
         </select>
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 text-sm font-semibold">
           <input type="checkbox" className="h-4 w-4 accent-maroon-600" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} />
           Active only
         </label>
       </div>
 
+      <BranchTabs
+        branches={branches}
+        value={branchId}
+        onChange={setBranchId}
+        counts={branchCounts}
+        className="mb-4 no-print"
+      />
+
       <ErrorBox message={error} />
       {!orders ? (
         <Spinner label="Loading orders…" />
-      ) : orders.length === 0 ? (
-        <p className="text-center py-16 text-maroon-800/50">No orders match.</p>
+      ) : visible.length === 0 ? (
+        <p className="text-center py-16 text-maroon-800/50">
+          No orders match{branchId !== "all" ? " for this branch" : ""}.
+        </p>
       ) : (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {orders.map((o) => (
+        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {visible.map((o) => (
             <button
               key={o.id}
               onClick={() => setSelected(o)}
@@ -97,18 +132,29 @@ export default function AdminOrdersPage() {
                 o.status === "DELIVERED" ? "border-l-leaf-500" : "border-l-cream-300"
               }`}
             >
-              <div className="flex justify-between items-start">
-                <span className="font-bold">{o.orderNumber}</span>
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-cream-200">{o.status.replace(/_/g, " ")}</span>
+              <div className="flex justify-between items-start gap-2">
+                <span className="font-bold text-lg">{o.orderNumber}</span>
+                <span className="text-xs font-bold px-2 py-1 rounded-full bg-cream-200 whitespace-nowrap">{o.status.replace(/_/g, " ")}</span>
               </div>
-              <p className="text-sm mt-1">
-                {o.user.name ?? "Customer"} · {o.type === "PICKUP" ? "🛍️ Pickup" : "🛵 Delivery"} · <strong>{inr(o.total)}</strong> ({o.paymentMethod})
+              {/* Branch up front and colour-coded: with two queues side by side
+                  the branch is the easiest thing to misread. */}
+              <span
+                className={`inline-block mt-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                  o.branch.slug === "rohini"
+                    ? "bg-maroon-100 text-maroon-700"
+                    : "bg-mustard-100 text-mustard-600"
+                }`}
+              >
+                🏪 {o.branch.name.replace(/^DilKhush Dhaba\s*[–-]\s*/, "")}
+              </span>
+              <p className="text-[15px] mt-1.5">
+                {o.user.name ?? "Customer"} · {o.type === "DINE_IN" ? "🍽️ Dine-in" : o.type === "PICKUP" ? "🛍️ Pickup" : "🛵 Delivery"} · <strong>{inr(o.total)}</strong> ({o.paymentMethod})
               </p>
               <p className="text-xs text-maroon-800/60 truncate mt-1">
                 {o.items.map((i) => `${i.qty}×${i.nameSnapshot}`).join(", ")}
               </p>
               <p className="text-xs text-maroon-800/40 mt-1">
-                {o.branch.name} · {timeAgo(o.placedAt)}
+                {timeAgo(o.placedAt)}
                 {o.scheduledFor && ` · ⏰ ${new Date(o.scheduledFor).toLocaleString("en-IN", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}`}
               </p>
             </button>
