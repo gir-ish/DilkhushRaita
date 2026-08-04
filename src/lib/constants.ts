@@ -36,6 +36,15 @@ export const ORDER_STATUSES = [
 ] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
+export const ORDER_TYPES = ["DELIVERY", "PICKUP", "DINE_IN"] as const;
+export type OrderType = (typeof ORDER_TYPES)[number];
+
+export const ORDER_TYPE_LABELS: Record<string, string> = {
+  DELIVERY: "Delivery",
+  PICKUP: "Self-pickup",
+  DINE_IN: "Dine-in",
+};
+
 /** Statuses an order never leaves — nothing further is expected of anyone. */
 export const TERMINAL_STATUSES: OrderStatus[] = [
   "DELIVERED",
@@ -57,6 +66,23 @@ export const STATUS_TRANSITIONS: Record<string, OrderStatus[]> = {
   CANCELLED: ["REFUND_INITIATED"],
   REFUND_INITIATED: ["REFUNDED"],
 };
+
+/** Only meaningful when something physically leaves the restaurant. */
+export const DELIVERY_ONLY_STATUSES: OrderStatus[] = ["ASSIGNED", "OUT_FOR_DELIVERY"];
+
+/**
+ * Next statuses allowed from `status` for an order of `type`.
+ *
+ * A dine-in or pickup order is never assigned to a rider or sent out for
+ * delivery, so those options are removed rather than offered and then
+ * rejected. Used by the dashboard AND enforced server-side, so a crafted
+ * request cannot push a dine-in order onto the delivery track.
+ */
+export function nextStatusesFor(status: string, orderType: string): OrderStatus[] {
+  const all = STATUS_TRANSITIONS[status] ?? [];
+  if (orderType === "DELIVERY") return all;
+  return all.filter((s) => !DELIVERY_ONLY_STATUSES.includes(s));
+}
 
 export const STATUS_LABELS: Record<string, string> = {
   PLACED: "Order placed",

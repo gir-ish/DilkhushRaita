@@ -1,4 +1,5 @@
 import { parseJson, round2, withinTimeWindow } from "./utils";
+import { ORDER_TYPE_LABELS } from "./constants";
 
 /** Structural type matching the Prisma Coupon model (pure — no DB import). */
 export interface CouponLike {
@@ -35,7 +36,7 @@ export interface CouponLike {
 
 export interface CouponContext {
   subtotal: number;
-  orderType: "DELIVERY" | "PICKUP";
+  orderType: "DELIVERY" | "PICKUP" | "DINE_IN";
   paymentMethod: string;
   branchId: string;
   now: Date;
@@ -81,8 +82,16 @@ export function evaluateCoupon(coupon: CouponLike, ctx: CouponContext): CouponEv
     return no("Not valid at this branch");
 
   const types = parseJson<string[]>(coupon.orderTypesJson, ["DELIVERY", "PICKUP"]);
-  if (!types.includes(ctx.orderType))
-    return no(ctx.orderType === "DELIVERY" ? "Valid on pickup orders only" : "Valid on delivery orders only");
+  if (!types.includes(ctx.orderType)) {
+    // Naming the allowed types beats guessing: with three order types the old
+    // "must be the other one" phrasing was wrong for dine-in.
+    const label = (t: string) => ORDER_TYPE_LABELS[t] ?? t;
+    return no(
+      types.length > 0
+        ? `Valid on ${types.map(label).join(" / ").toLowerCase()} orders only`
+        : "Not valid for this order type"
+    );
+  }
 
   if (coupon.paymentMethod && coupon.paymentMethod !== ctx.paymentMethod)
     return no(`Valid only with ${coupon.paymentMethod === "COD" ? "Cash on Delivery" : "online payment"}`);

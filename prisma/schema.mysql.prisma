@@ -271,6 +271,7 @@ model Order {
   branchId        String
   branch          Branch    @relation(fields: [branchId], references: [id])
   type            String
+  tableNo         String?
   status          String    @default("PLACED")
   scheduledFor    DateTime?
   addressId       String?
@@ -338,6 +339,8 @@ model OrderItem {
   qty          Int
   lineTotal    Float
   instructions String?   @db.Text
+  round        Int       @default(1)
+  addedAt      DateTime  @default(now())
 }
 
 model Payment {

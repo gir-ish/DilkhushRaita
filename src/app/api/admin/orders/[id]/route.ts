@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { allowedBranchIds, handler, HttpError, requireStaff } from "@/lib/guard";
-import { REJECTION_REASONS, STATUS_TRANSITIONS } from "@/lib/constants";
+import { REJECTION_REASONS, nextStatusesFor } from "@/lib/constants";
 import { onOrderCancelled, onOrderDelivered } from "@/lib/order-effects";
 import { notifyUser } from "@/lib/notify";
 import { audit } from "@/lib/audit";
@@ -83,7 +83,9 @@ export const PATCH = handler(
         break;
       }
       case "status": {
-        const allowed = STATUS_TRANSITIONS[order.status] ?? [];
+        // Type-aware: a dine-in or pickup order must not be pushed onto the
+        // delivery track, whatever the client sends.
+        const allowed = nextStatusesFor(order.status, order.type);
         if (!allowed.includes(body.status as never))
           throw new HttpError(400, `Cannot move from ${order.status} to ${body.status}`);
         if (session.role === "KITCHEN" && !["PREPARING", "READY"].includes(body.status))
@@ -111,6 +113,8 @@ export const PATCH = handler(
       case "assign": {
         if (!["OWNER", "BRANCH_MANAGER", "DELIVERY_MANAGER", "CASHIER"].includes(session.role))
           throw new HttpError(403, "Not allowed");
+        if (order.type !== "DELIVERY")
+          throw new HttpError(400, "Only delivery orders need a delivery agent");
         if (!["READY", "ACCEPTED", "PREPARING"].includes(order.status))
           throw new HttpError(400, "Assign an agent once the order is being prepared or ready");
         const agent = await db.deliveryAgent.findUnique({ where: { id: body.agentId } });

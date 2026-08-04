@@ -269,7 +269,8 @@ model Order {
   user            User      @relation(fields: [userId], references: [id])
   branchId        String
   branch          Branch    @relation(fields: [branchId], references: [id])
-  type            String // DELIVERY | PICKUP
+  type            String // DELIVERY | PICKUP | DINE_IN
+  tableNo         String? // dine-in only, e.g. "4" or "Terrace 2"
   status          String    @default("PLACED") // see ORDER_STATUSES in constants.ts
   scheduledFor    DateTime?
   addressId       String?
@@ -337,6 +338,10 @@ model OrderItem {
   qty          Int
   lineTotal    Float
   instructions String?
+  // Dine-in tabs are added to over several rounds. The kitchen must be able to
+  // tell a newly ordered item from one it already cooked and served.
+  round        Int       @default(1)
+  addedAt      DateTime  @default(now())
 }
 
 model Payment {

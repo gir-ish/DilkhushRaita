@@ -9,6 +9,7 @@ import { useCart } from "@/components/cart-context";
 import { useRouter } from "next/navigation";
 
 const FLOW = ["PLACED", "ACCEPTED", "PREPARING", "READY", "OUT_FOR_DELIVERY", "DELIVERED"];
+// Pickup and dine-in never leave the restaurant, so no delivery leg.
 const PICKUP_FLOW = ["PLACED", "ACCEPTED", "PREPARING", "READY", "DELIVERED"];
 const DEAD = ["REJECTED", "CANCELLED", "REFUND_INITIATED", "REFUNDED"];
 
@@ -55,7 +56,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
   if (error) return (<><SiteHeader /><main className="max-w-lg mx-auto p-6"><ErrorBox message={error} /></main></>);
   if (!order) return (<><SiteHeader /><Spinner label="Loading order…" /></>);
 
-  const flow = order.type === "PICKUP" ? PICKUP_FLOW : FLOW;
+  const flow = order.type === "DELIVERY" ? FLOW : PICKUP_FLOW;
   const dead = DEAD.includes(order.status);
   const stepIndex = flow.indexOf(order.status);
   // DELIVERED is the end of the flow, not a step still in progress — without
@@ -136,7 +137,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
               </span>
               <div>
                 <p className="font-bold text-leaf-600">
-                  {order.type === "PICKUP" ? "Picked up" : "Delivered"}
+                  {order.type === "DINE_IN" ? "Served" : order.type === "PICKUP" ? "Picked up" : "Delivered"}
                   {order.deliveredAt && (
                     <span className="font-normal text-maroon-800/60"> · {timeAgo(order.deliveredAt)}</span>
                   )}
@@ -254,9 +255,10 @@ function labelFor(s: string, type: string) {
     PLACED: "Order placed",
     ACCEPTED: "Accepted by restaurant",
     PREPARING: "Being freshly prepared",
-    READY: type === "PICKUP" ? "Ready for pickup" : "Packed & ready",
+    READY:
+      type === "DINE_IN" ? "Ready to serve" : type === "PICKUP" ? "Ready for pickup" : "Packed & ready",
     OUT_FOR_DELIVERY: "Out for delivery",
-    DELIVERED: type === "PICKUP" ? "Picked up" : "Delivered",
+    DELIVERED: type === "DINE_IN" ? "Served" : type === "PICKUP" ? "Picked up" : "Delivered",
   };
   return map[s] ?? s;
 }

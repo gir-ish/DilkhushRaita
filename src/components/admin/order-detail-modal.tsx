@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ErrorBox, Modal } from "@/components/ui";
 import { inr, parseJson } from "@/lib/utils";
-import { REJECTION_REASONS, STATUS_TRANSITIONS } from "@/lib/constants";
+import { REJECTION_REASONS, nextStatusesFor } from "@/lib/constants";
 
 export interface AdminOrder {
   id: string; orderNumber: string; status: string; type: string; total: number;
@@ -74,14 +74,23 @@ export function OrderDetailModal({
     }
   };
 
-  const next = STATUS_TRANSITIONS[order.status] ?? [];
+  // Dine-in and pickup orders never go out for delivery, so those buttons are
+  // not offered at all rather than shown and then rejected by the server.
+  const next = nextStatusesFor(order.status, order.type);
 
   return (
     <Modal open onClose={onClose} title={`${order.orderNumber} · ${order.status.replace(/_/g, " ")}`} wide>
       <div className="space-y-4">
         <section className="text-sm space-y-1 no-print">
           <p><strong>{order.user.name ?? "Customer"}</strong> · {order.user.phone && <a className="underline" href={`tel:${order.user.phone}`}>{order.user.phone}</a>}</p>
-          <p>{order.type === "PICKUP" ? "🛍️ Self-pickup" : `🛵 ${order.addressText ?? "Delivery"}`}{order.contactless && " · Contactless"}</p>
+          <p>
+            {order.type === "DINE_IN"
+              ? "🍽️ Dine-in (counter)"
+              : order.type === "PICKUP"
+                ? "🛍️ Self-pickup"
+                : `🛵 ${order.addressText ?? "Delivery"}`}
+            {order.contactless && " · Contactless"}
+          </p>
           <p>💳 {order.paymentMethod} · {order.paymentStatus} {order.couponCode && `· 🎟️ ${order.couponCode}`}</p>
           {order.scheduledFor && <p>⏰ Scheduled: {new Date(order.scheduledFor).toLocaleString("en-IN")}</p>}
           {order.instructions && <p className="rounded-lg bg-mustard-100 px-3 py-2">📣 “{order.instructions}”</p>}

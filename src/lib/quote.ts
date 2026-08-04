@@ -18,7 +18,7 @@ export interface QuoteItemInput {
 
 export interface QuoteRequest {
   branchId: string;
-  orderType: "DELIVERY" | "PICKUP";
+  orderType: "DELIVERY" | "PICKUP" | "DINE_IN";
   items: QuoteItemInput[];
   addressId?: string | null;
   couponCode?: string | null;
@@ -43,7 +43,7 @@ export interface QuoteResult {
   branch: { id: string; name: string; slug: string };
   open: boolean;
   openReason?: string;
-  orderType: "DELIVERY" | "PICKUP";
+  orderType: "DELIVERY" | "PICKUP" | "DINE_IN";
   lines: QuotedLine[];
   warnings: string[]; // non-fatal in quote mode; fatal at order time
   distanceKm: number | null;

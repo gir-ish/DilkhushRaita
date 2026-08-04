@@ -33,7 +33,8 @@ export function deliveryFeeFor(
 export interface TotalsInput {
   lines: PricedLine[];
   cfg: FeeConfig;
-  orderType: "DELIVERY" | "PICKUP";
+  // DINE_IN behaves like PICKUP for money: no delivery fee (see line below).
+  orderType: "DELIVERY" | "PICKUP" | "DINE_IN";
   distanceKm?: number | null;
   discount?: number; // from coupon engine, already capped
   freeDelivery?: boolean; // coupon or loyalty benefit
