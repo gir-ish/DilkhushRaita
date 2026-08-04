@@ -65,7 +65,15 @@ export interface QuoteResult {
   totals: ReturnType<typeof computeTotals>;
   paymentMethod: "COD" | "ONLINE";
   scheduledFor: Date | null;
-  address: { id: string; text: string; pincode: string; lat: number | null; lng: number | null } | null;
+  address: {
+    id: string;
+    text: string;
+    pincode: string;
+    lat: number | null;
+    lng: number | null;
+    contactName: string | null;
+    contactPhone: string | null;
+  } | null;
 }
 
 /**
@@ -223,6 +231,8 @@ export async function buildQuote(
         pincode: a.pincode,
         lat: a.lat,
         lng: a.lng,
+        contactName: a.contactName,
+        contactPhone: a.contactPhone,
       };
       const svc = checkServiceable(branch, { lat: a.lat, lng: a.lng, pincode: a.pincode });
       serviceable = svc.serviceable;

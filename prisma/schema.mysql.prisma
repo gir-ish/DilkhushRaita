@@ -77,6 +77,8 @@ model Address {
   lat          Float?
   lng          Float?
   instructions String? @db.Text
+  contactName  String?
+  contactPhone String?
   isDefault    Boolean @default(false)
   createdAt    DateTime @default(now())
   orders       Order[]
@@ -280,6 +282,8 @@ model Order {
   addressPincode  String?
   addressLat      Float?
   addressLng      Float?
+  contactName     String?
+  contactPhone    String?
   contactless     Boolean   @default(false)
   instructions    String?   @db.Text
   cutlery         Boolean   @default(true)

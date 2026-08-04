@@ -18,6 +18,7 @@ interface OrderDto {
   placedAt: string; deliveredAt: string | null;
   etaMins: number | null; scheduledFor: string | null;
   addressText: string | null; instructions: string | null; contactless: boolean;
+  contactName: string | null; contactPhone: string | null;
   subtotal: number; discount: number; deliveryFee: number; packagingFee: number;
   tax: number; loyaltyCredit: number; total: number; paymentMethod: string;
   paymentStatus: string; couponCode: string | null; rejectionReason: string | null;
@@ -211,6 +212,11 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
             <p className="text-sm mt-3">
               <strong>Deliver to:</strong> {order.addressText}
               {order.contactless && " · 🚪 Contactless"}
+              {order.contactPhone && (
+                <span className="block text-maroon-800/70 mt-0.5">
+                  📞 {order.contactName ?? "Contact"}: {order.contactPhone}
+                </span>
+              )}
             </p>
           )}
         </section>

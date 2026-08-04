@@ -75,6 +75,10 @@ model Address {
   lat          Float?
   lng          Float?
   instructions String?
+  // Who to hand this delivery to, when that is not the account holder —
+  // ordering for a parent, a colleague, a hostel room. Null = use the account.
+  contactName  String?
+  contactPhone String? // +91XXXXXXXXXX
   isDefault    Boolean @default(false)
   createdAt    DateTime @default(now())
   orders       Order[]
@@ -279,6 +283,10 @@ model Order {
   addressPincode  String?
   addressLat      Float?
   addressLng      Float?
+  // Snapshot of the delivery contact at order time, so editing or deleting the
+  // saved address later cannot change who the agent was told to call.
+  contactName     String?
+  contactPhone    String?
   contactless     Boolean   @default(false)
   instructions    String?
   cutlery         Boolean   @default(true)

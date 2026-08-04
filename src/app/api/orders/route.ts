@@ -125,6 +125,10 @@ export const POST = handler(async (req: Request) => {
         addressPincode: quote.address?.pincode ?? null,
         addressLat: quote.address?.lat ?? null,
         addressLng: quote.address?.lng ?? null,
+        // Snapshot: editing or deleting the saved address later must not change
+        // who the delivery agent was told to call for THIS order.
+        contactName: quote.address?.contactName ?? null,
+        contactPhone: quote.address?.contactPhone ?? null,
         contactless: body.contactless,
         instructions: body.instructions ?? null,
         cutlery: body.cutlery,

@@ -13,6 +13,7 @@ export interface AdminOrder {
   instructions: string | null; cutlery: boolean; contactless: boolean;
   addressText: string | null; staffNotes: string | null; prepTimeMins: number;
   tableNo: string | null;
+  contactName: string | null; contactPhone: string | null;
   couponCode: string | null;
   items: { id: string; nameSnapshot: string; variantName: string | null; addOnsJson: string; qty: number; lineTotal: number; instructions: string | null }[];
   user: { name: string | null; phone: string | null };
@@ -85,6 +86,14 @@ export function OrderDetailModal({
       <div className="space-y-4">
         <section className="text-sm space-y-1 no-print">
           <p><strong>{order.user.name ?? "Customer"}</strong> · {order.user.phone && <a className="underline" href={`tel:${order.user.phone}`}>{order.user.phone}</a>}</p>
+          {/* A different receiver at the address — call this number, not the
+              account holder, who may not be there. */}
+          {order.contactPhone && (
+            <p className="rounded-lg bg-mustard-100 px-3 py-2 font-semibold">
+              📞 Deliver to {order.contactName ?? "contact"}:{" "}
+              <a className="underline" href={`tel:${order.contactPhone}`}>{order.contactPhone}</a>
+            </p>
+          )}
           <p>
             {order.type === "DINE_IN"
               ? "🍽️ Dine-in (counter)"
