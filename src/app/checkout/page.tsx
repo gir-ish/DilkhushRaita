@@ -11,6 +11,7 @@ import { inr } from "@/lib/utils";
 interface AddressDto {
   id: string; label: string; line1: string; line2: string | null;
   landmark: string | null; pincode: string; isDefault: boolean;
+  contactName: string | null; contactPhone: string | null;
   lat: number | null; lng: number | null;
 }
 interface QuoteDto {
@@ -96,6 +97,7 @@ export default function CheckoutPage() {
   const [offers, setOffers] = useState<OfferDto[] | null>(null);
   const [showOffers, setShowOffers] = useState(false);
   const [showAddAddress, setShowAddAddress] = useState(false);
+  const [editingAddress, setEditingAddress] = useState<AddressDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
 
@@ -332,20 +334,58 @@ export default function CheckoutPage() {
             ) : (
               <div className="space-y-2">
                 {addresses.map((a) => (
-                  <label key={a.id} className="flex items-start gap-3 cursor-pointer rounded-xl border border-cream-200 p-3">
-                    <input
-                      type="radio"
-                      name="address"
-                      className="mt-1 h-4 w-4 accent-maroon-600"
-                      checked={addressId === a.id}
-                      onChange={() => setAddressId(a.id)}
-                    />
-                    <span className="text-sm">
-                      <strong>{a.label}</strong> — {a.line1}
-                      {a.line2 ? `, ${a.line2}` : ""}
-                      {a.landmark ? ` (near ${a.landmark})` : ""}, {a.pincode}
+                  <div
+                    key={a.id}
+                    className={`flex items-start gap-3 rounded-xl border p-3 transition ${
+                      addressId === a.id ? "border-maroon-400 bg-maroon-50" : "border-cream-200"
+                    }`}
+                  >
+                    {/* The row is a label so tapping anywhere selects it, but
+                        Edit/Delete sit outside it — nested buttons inside a
+                        label would toggle the radio when clicked. */}
+                    <label className="flex items-start gap-3 cursor-pointer flex-1 min-w-0">
+                      <input
+                        type="radio"
+                        name="address"
+                        className="mt-1 h-4 w-4 accent-maroon-600 shrink-0"
+                        checked={addressId === a.id}
+                        onChange={() => setAddressId(a.id)}
+                      />
+                      <span className="text-sm min-w-0">
+                        <strong>{a.label}</strong> — {a.line1}
+                        {a.line2 ? `, ${a.line2}` : ""}
+                        {a.landmark ? ` (near ${a.landmark})` : ""}, {a.pincode}
+                        {a.contactPhone && (
+                          <span className="block text-xs text-maroon-800/60 mt-0.5">
+                            📞 {a.contactName ? `${a.contactName} · ` : ""}{a.contactPhone}
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                    <span className="flex flex-col gap-1 shrink-0 text-xs">
+                      <button
+                        type="button"
+                        className="underline text-maroon-600"
+                        onClick={() => setEditingAddress(a)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="underline text-red-700"
+                        onClick={async () => {
+                          if (!confirm(`Delete this ${a.label} address?`)) return;
+                          const r = await fetch(`/api/me/addresses/${a.id}`, { method: "DELETE" });
+                          if (r.ok) {
+                            if (addressId === a.id) setAddressId(null);
+                            loadAddresses();
+                          } else setError((await r.json()).error);
+                        }}
+                      >
+                        Delete
+                      </button>
                     </span>
-                  </label>
+                  </div>
                 ))}
               </div>
             )}
@@ -567,10 +607,16 @@ export default function CheckoutPage() {
           )}
         </Modal>
 
-        <AddAddressModal
-          open={showAddAddress}
-          onClose={() => setShowAddAddress(false)}
-          onSaved={(id) => { setShowAddAddress(false); loadAddresses(); setAddressId(id); }}
+        <AddressModal
+          open={showAddAddress || editingAddress !== null}
+          existing={editingAddress}
+          onClose={() => { setShowAddAddress(false); setEditingAddress(null); }}
+          onSaved={(id) => {
+            setShowAddAddress(false);
+            setEditingAddress(null);
+            loadAddresses();
+            setAddressId(id);
+          }}
         />
       </main>
     </>
@@ -586,22 +632,44 @@ function Row({ l, v, accent }: { l: string; v: string; accent?: boolean }) {
   );
 }
 
-function AddAddressModal({
+/** Add a new address, or edit an existing one when `existing` is passed. */
+function AddressModal({
   open,
+  existing,
   onClose,
   onSaved,
 }: {
   open: boolean;
+  existing: AddressDto | null;
   onClose: () => void;
   onSaved: (id: string) => void;
 }) {
   const [form, setForm] = useState({
     label: "Home", line1: "", line2: "", landmark: "", pincode: "", instructions: "",
+    contactName: "", contactPhone: "",
   });
   const [useGps, setUseGps] = useState(false);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Reset on every open so a previous edit never leaks into a new address.
+  useEffect(() => {
+    if (!open) return;
+    setError(null);
+    setCoords(existing?.lat != null && existing?.lng != null ? { lat: existing.lat, lng: existing.lng } : null);
+    setForm({
+      label: existing?.label ?? "Home",
+      line1: existing?.line1 ?? "",
+      line2: existing?.line2 ?? "",
+      landmark: existing?.landmark ?? "",
+      pincode: existing?.pincode ?? "",
+      instructions: "",
+      contactName: existing?.contactName ?? "",
+      // Stored as +91XXXXXXXXXX; the field edits the 10 digits.
+      contactPhone: (existing?.contactPhone ?? "").replace(/^\+91/, ""),
+    });
+  }, [open, existing]);
 
   const grabLocation = () => {
     setUseGps(true);
@@ -612,22 +680,31 @@ function AddAddressModal({
   };
 
   const save = async () => {
+    if (form.contactPhone && form.contactPhone.length !== 10) {
+      setError("The contact mobile must be 10 digits, or leave it blank.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/me/addresses", {
-        method: "POST",
+      const res = await fetch(
+        existing ? `/api/me/addresses/${existing.id}` : "/api/me/addresses",
+        {
+        method: existing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
           line2: form.line2 || null,
           landmark: form.landmark || null,
           instructions: form.instructions || null,
+          contactName: form.contactName.trim() || null,
+          contactPhone: form.contactPhone || null,
           lat: coords?.lat ?? null,
           lng: coords?.lng ?? null,
           isDefault: true,
         }),
-      });
+      }
+      );
       const d = await res.json();
       if (!res.ok) throw new Error(d.error);
       onSaved(d.address.id);
@@ -639,7 +716,7 @@ function AddAddressModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Add delivery address">
+    <Modal open={open} onClose={onClose} title={existing ? "Edit delivery address" : "Add delivery address"}>
       <form onSubmit={(e) => { e.preventDefault(); save(); }} className="space-y-3">
         <div>
           <span className="label">Save as</span>
@@ -657,12 +734,30 @@ function AddAddressModal({
           </div>
         </div>
         <div>
-          <label htmlFor="a-line1" className="label">House / flat no. & street *</label>
-          <input id="a-line1" required className="input" maxLength={150} value={form.line1} onChange={(e) => setForm({ ...form, line1: e.target.value })} />
+          <label htmlFor="a-line1" className="label">House / flat / building no. &amp; street *</label>
+          <input
+            id="a-line1"
+            required
+            className="input"
+            maxLength={150}
+            placeholder="e.g. B-42, 2nd floor, Sector 7"
+            value={form.line1}
+            onChange={(e) => setForm({ ...form, line1: e.target.value })}
+          />
+          <p className="text-xs text-maroon-800/50 mt-1">
+            Include the flat or house number — riders lose the most time on this.
+          </p>
         </div>
         <div>
           <label htmlFor="a-line2" className="label">Locality / area</label>
-          <input id="a-line2" className="input" maxLength={150} value={form.line2} onChange={(e) => setForm({ ...form, line2: e.target.value })} />
+          <input
+            id="a-line2"
+            className="input"
+            maxLength={150}
+            placeholder="e.g. Rohini West"
+            value={form.line2}
+            onChange={(e) => setForm({ ...form, line2: e.target.value })}
+          />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -676,14 +771,56 @@ function AddAddressModal({
         </div>
         <div>
           <label htmlFor="a-instr" className="label">Delivery instructions</label>
-          <input id="a-instr" className="input" maxLength={300} value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} />
+          <input id="a-instr" className="input" maxLength={300} placeholder="e.g. ring the bell twice, gate code 1234" value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} />
         </div>
+
+        {/* Ordering for someone else is common — a parent, a colleague, a
+            hostel room. Without this the rider only has the account holder's
+            number, who may not even be at the address. */}
+        <fieldset className="rounded-xl border border-cream-300 p-3">
+          <legend className="px-1 text-sm font-semibold text-maroon-700">
+            Who receives it? (optional)
+          </legend>
+          <p className="text-xs text-maroon-800/50 mb-2">
+            Leave blank if it&apos;s you — we&apos;ll use your own name and number.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="a-cname" className="label">Name</label>
+              <input
+                id="a-cname"
+                className="input"
+                maxLength={60}
+                placeholder="e.g. Mummy"
+                value={form.contactName}
+                onChange={(e) => setForm({ ...form, contactName: e.target.value })}
+              />
+            </div>
+            <div>
+              <label htmlFor="a-cphone" className="label">Mobile</label>
+              <div className="flex">
+                <span className="inline-flex items-center px-2 rounded-l-xl border border-r-0 border-cream-300 bg-cream-100 text-sm font-semibold">
+                  +91
+                </span>
+                <input
+                  id="a-cphone"
+                  className="input !rounded-l-none"
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="98XXXXXXXX"
+                  value={form.contactPhone}
+                  onChange={(e) => setForm({ ...form, contactPhone: e.target.value.replace(/\D/g, "") })}
+                />
+              </div>
+            </div>
+          </div>
+        </fieldset>
         <button type="button" onClick={grabLocation} className="btn-outline w-full">
           {coords ? "📍 Location pinned ✓" : useGps ? "Locating…" : "📍 Pin my exact location (recommended)"}
         </button>
         <ErrorBox message={error} />
         <button type="submit" disabled={busy} className="btn-primary w-full">
-          {busy ? "Saving…" : "Save address"}
+          {busy ? "Saving…" : existing ? "Save changes" : "Save address"}
         </button>
       </form>
     </Modal>
