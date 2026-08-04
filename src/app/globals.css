@@ -156,4 +156,32 @@ body {
     background: white;
     background-image: none;
   }
+
+  /* A bill or kitchen ticket is open (see PrintSheet, which portals itself to
+     <body> so it is a sibling of the app root). Everything else is removed from
+     layout rather than merely hidden: `visibility: hidden` leaves the order
+     queue's full-height boxes behind, and the browser then emits a second,
+     blank sheet after the bill. */
+  body.printing-sheet > *:not(.print-root) {
+    display: none !important;
+  }
+  body.printing-sheet {
+    /* The modal underneath locks the page while it is open. */
+    overflow: visible !important;
+  }
+  .print-sheet {
+    /* Thermal roll width, minus the @page margins below. */
+    width: 72mm;
+    /* Never split a bill across sheets — that is the whole point of this. */
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .print-sheet table {
+    break-inside: auto;
+  }
+
+  @page {
+    size: 80mm auto;
+    margin: 4mm;
+  }
 }

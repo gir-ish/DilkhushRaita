@@ -62,6 +62,40 @@ export function istDayOfWeek(d: Date) {
   );
 }
 
+/**
+ * Order timestamps are always shown in Indian time, whatever the device clock
+ * is set to — a bill reprinted from a laptop in another zone has to match the
+ * time the counter actually wrote on it.
+ */
+const IST = "Asia/Kolkata";
+
+/** "05 Aug 2026" */
+export function istDate(iso: string | Date) {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: IST,
+  }).format(new Date(iso));
+}
+
+/** "02:48 AM" */
+export function istTime(iso: string | Date) {
+  return new Intl.DateTimeFormat("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: IST,
+  })
+    .format(new Date(iso))
+    .toUpperCase();
+}
+
+/** "05 Aug 2026, 02:48 AM" */
+export function istDateTime(iso: string | Date) {
+  return `${istDate(iso)}, ${istTime(iso)}`;
+}
+
 export function timeAgo(iso: string | Date) {
   const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
   if (mins < 1) return "just now";

@@ -48,7 +48,18 @@ export const GET = handler(async (req: Request) => {
     include: {
       items: true,
       user: { select: { name: true, phone: true } },
-      branch: { select: { name: true, slug: true } },
+      // address/phone/taxPercent are the bill header — printing a bill must not
+      // need a second round trip.
+      branch: {
+        select: {
+          name: true,
+          slug: true,
+          address: true,
+          pincode: true,
+          phone: true,
+          taxPercent: true,
+        },
+      },
       deliveryAgent: { include: { user: { select: { name: true } } } },
     },
   });

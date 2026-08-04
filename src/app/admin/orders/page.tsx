@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ErrorBox, Spinner } from "@/components/ui";
-import { inr, timeAgo } from "@/lib/utils";
+import { inr, istDateTime, timeAgo } from "@/lib/utils";
 import { STATUS_TRANSITIONS } from "@/lib/constants";
 import {
   AdminOrder,
@@ -83,23 +83,35 @@ export default function AdminOrdersPage() {
 
   return (
     <div>
+      {/* Nothing in this page may be wider than the viewport: the admin header
+          is `sticky`, which pins it vertically only, so any horizontal overflow
+          drags the header sideways along with the page. */}
       <div className="flex flex-wrap gap-2 items-center mb-3 no-print">
-        <h1 className="font-display text-3xl font-bold text-maroon-700 mr-auto">Orders</h1>
+        <h1 className="font-display text-2xl sm:text-3xl font-bold text-maroon-700 w-full sm:w-auto sm:mr-auto">
+          Orders
+        </h1>
         <input
           type="search"
-          className="input !w-56"
+          className="input !w-full sm:!w-56"
           placeholder="Order no / name / phone"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           aria-label="Search orders"
         />
-        <select className="input !w-auto" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status filter">
+        {/* min-w-0 lets the select shrink past its longest option ("REFUND
+            INITIATED") instead of pushing the row off the screen. */}
+        <select
+          className="input !w-auto min-w-0 flex-1 sm:flex-none"
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          aria-label="Status filter"
+        >
           <option value="all">All statuses</option>
           {Object.keys(STATUS_TRANSITIONS).concat("DELIVERED").map((s) => (
             <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
           ))}
         </select>
-        <label className="flex items-center gap-2 text-sm font-semibold">
+        <label className="flex items-center gap-2 text-sm font-semibold whitespace-nowrap">
           <input type="checkbox" className="h-4 w-4 accent-maroon-600" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} />
           Active only
         </label>
@@ -126,15 +138,18 @@ export default function AdminOrdersPage() {
             <button
               key={o.id}
               onClick={() => setSelected(o)}
-              className={`card p-4 text-left hover:shadow-lift transition border-l-4 ${
+              /* min-w-0: a grid item defaults to min-width:auto, so without it
+                 the card refuses to shrink below the un-truncated width of the
+                 item summary line and spills off a narrow screen. */
+              className={`card min-w-0 p-3.5 sm:p-4 text-left hover:shadow-lift transition border-l-4 ${
                 o.status === "PLACED" ? "border-l-red-600 animate-pulse" :
                 ["PREPARING", "ACCEPTED"].includes(o.status) ? "border-l-mustard-400" :
                 o.status === "DELIVERED" ? "border-l-leaf-500" : "border-l-cream-300"
               }`}
             >
               <div className="flex justify-between items-start gap-2">
-                <span className="font-bold text-lg">{o.orderNumber}</span>
-                <span className="text-xs font-bold px-2 py-1 rounded-full bg-cream-200 whitespace-nowrap">{o.status.replace(/_/g, " ")}</span>
+                <span className="font-bold text-base sm:text-lg truncate">{o.orderNumber}</span>
+                <span className="text-[10px] sm:text-xs font-bold px-2 py-1 rounded-full bg-cream-200 whitespace-nowrap shrink-0">{o.status.replace(/_/g, " ")}</span>
               </div>
               {/* Branch up front and colour-coded: with two queues side by side
                   the branch is the easiest thing to misread. */}
@@ -147,16 +162,24 @@ export default function AdminOrdersPage() {
               >
                 🏪 {o.branch.name.replace(/^DilKhush Dhaba\s*[–-]\s*/, "")}
               </span>
-              <p className="text-[15px] mt-1.5">
+              <p className="text-sm sm:text-[15px] mt-1.5">
                 {o.user.name ?? "Customer"} · {o.type === "DINE_IN" ? "🍽️ Dine-in" : o.type === "PICKUP" ? "🛍️ Pickup" : "🛵 Delivery"} · <strong>{inr(o.total)}</strong> ({o.paymentMethod})
               </p>
               <p className="text-xs text-maroon-800/60 truncate mt-1">
                 {o.items.map((i) => `${i.qty}×${i.nameSnapshot}`).join(", ")}
               </p>
-              <p className="text-xs text-maroon-800/40 mt-1">
-                {timeAgo(o.placedAt)}
-                {o.scheduledFor && ` · ⏰ ${new Date(o.scheduledFor).toLocaleString("en-IN", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}`}
+              {/* Exact stamp first, "8 min ago" second: the relative time is what
+                  you scan while working, but the absolute one is what you quote
+                  back to a customer, so both have to be on the card. */}
+              <p className="text-xs text-maroon-800/50 mt-1">
+                🕒 {istDateTime(o.placedAt)}{" "}
+                <span className="text-maroon-800/40">· {timeAgo(o.placedAt)}</span>
               </p>
+              {o.scheduledFor && (
+                <p className="text-xs font-semibold text-maroon-800/60">
+                  ⏰ Scheduled {istDateTime(o.scheduledFor)}
+                </p>
+              )}
             </button>
           ))}
         </div>

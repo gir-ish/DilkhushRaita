@@ -4,7 +4,7 @@ import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
 import { ErrorBox, Modal, Spinner } from "@/components/ui";
-import { inr, parseJson, timeAgo } from "@/lib/utils";
+import { inr, istDateTime, parseJson, timeAgo } from "@/lib/utils";
 import { useCart } from "@/components/cart-context";
 import { useRouter } from "next/navigation";
 
@@ -80,6 +80,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
             <p className="text-sm text-maroon-800/60">
               {order.branch.name} · placed {timeAgo(order.placedAt)}
             </p>
+            <p className="text-xs text-maroon-800/50">🕒 {istDateTime(order.placedAt)}</p>
           </div>
           <button onClick={() => window.print()} className="btn-outline !min-h-[38px] !px-3 text-sm no-print">
             🧾 Invoice

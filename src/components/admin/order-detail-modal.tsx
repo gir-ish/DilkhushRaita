@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { ErrorBox, Modal } from "@/components/ui";
-import { inr, parseJson } from "@/lib/utils";
+import { inr, istDateTime, parseJson } from "@/lib/utils";
 import { REJECTION_REASONS, nextStatusesFor } from "@/lib/constants";
+import { PrintSheet } from "./print-sheet";
 
 export interface AdminOrder {
   id: string; orderNumber: string; status: string; type: string; total: number;
@@ -15,9 +16,11 @@ export interface AdminOrder {
   tableNo: string | null;
   contactName: string | null; contactPhone: string | null;
   couponCode: string | null;
-  items: { id: string; nameSnapshot: string; variantName: string | null; addOnsJson: string; qty: number; lineTotal: number; instructions: string | null }[];
+  items: { id: string; nameSnapshot: string; variantName: string | null; addOnsJson: string; qty: number; unitPrice: number; lineTotal: number; instructions: string | null }[];
   user: { name: string | null; phone: string | null };
-  branch: { name: string; slug: string };
+  // address/pincode/phone/taxPercent print the bill header. Optional because a
+  // PATCH response echoes the order without its branch relation.
+  branch: { name: string; slug: string; address?: string; pincode?: string; phone?: string; taxPercent?: number };
   deliveryAgent: { user: { name: string | null } } | null;
 }
 
@@ -52,6 +55,7 @@ export function OrderDetailModal({
   const [refund, setRefund] = useState({ amount: 0, mode: "STORE_CREDIT", reason: "" });
   const [showRefund, setShowRefund] = useState(false);
   const [showSettle, setShowSettle] = useState(false);
+  const [printing, setPrinting] = useState<"bill" | "kot" | null>(null);
 
   useEffect(() => {
     if (!kitchenMode)
@@ -103,17 +107,17 @@ export function OrderDetailModal({
             {order.contactless && " · Contactless"}
           </p>
           <p>💳 {order.paymentMethod} · {order.paymentStatus} {order.couponCode && `· 🎟️ ${order.couponCode}`}</p>
-          {order.scheduledFor && <p>⏰ Scheduled: {new Date(order.scheduledFor).toLocaleString("en-IN")}</p>}
+          {/* The exact stamp, not "12 min ago" — this is the figure that has to
+              match the bill when a customer queries a charge. */}
+          <p className="text-maroon-800/70">🕒 Placed {istDateTime(order.placedAt)} IST</p>
+          {order.scheduledFor && <p>⏰ Scheduled: {istDateTime(order.scheduledFor)}</p>}
           {order.instructions && <p className="rounded-lg bg-mustard-100 px-3 py-2">📣 “{order.instructions}”</p>}
           <p className="text-maroon-800/50">Cutlery: {order.cutlery ? "yes" : "no"}</p>
         </section>
 
-        {/* Kitchen ticket: order no, items, add-ons, instructions, type, time — no payment/customer details */}
+        {/* On-screen item list. Printing goes through PrintSheet, which renders
+            its own bill and kitchen ticket. */}
         <section className={kitchenMode ? "text-lg" : "text-sm"}>
-          <div className="hidden print:block text-sm font-bold mb-2">
-            {order.orderNumber} · {order.type} · {new Date(order.placedAt).toLocaleTimeString("en-IN")}
-            {order.scheduledFor && ` · SCHEDULED ${new Date(order.scheduledFor).toLocaleString("en-IN")}`}
-          </div>
           <table className="w-full">
             <tbody>
               {order.items.map((it) => {
@@ -268,10 +272,17 @@ export function OrderDetailModal({
 
         {!kitchenMode && (
           <div className="flex flex-wrap gap-2 border-t border-cream-200 pt-3 no-print">
-            <button onClick={() => window.print()} className="btn-ghost text-sm">🖨️ Print ticket</button>
+            <button onClick={() => setPrinting("bill")} className="btn-secondary text-sm">🧾 Bill</button>
+            <button onClick={() => setPrinting("kot")} className="btn-ghost text-sm">👨‍🍳 KOT</button>
             {order.user.phone && <a href={`tel:${order.user.phone}`} className="btn-ghost text-sm">📞 Call customer</a>}
             <button onClick={() => setShowRefund((v) => !v)} className="btn-ghost text-sm">💰 Refund</button>
           </div>
+        )}
+
+        {printing && (
+          // Keyed: PrintSheet keeps the chosen variant in its own state, so
+          // without this, re-opening it as a KOT would show the last bill.
+          <PrintSheet key={printing} order={order} variant={printing} onClose={() => setPrinting(null)} />
         )}
 
         {showRefund && (

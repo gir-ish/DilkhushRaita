@@ -45,7 +45,7 @@ export function BranchTabs({
         onClick={() => onChange(id)}
         aria-pressed={active}
         className={cn(
-          "flex items-center gap-2 rounded-xl px-5 py-3 text-[15px] font-bold whitespace-nowrap transition",
+          "flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-bold whitespace-nowrap transition sm:px-5 sm:py-3 sm:text-[15px]",
           active
             ? "bg-maroon-600 text-cream-50 shadow-card"
             : "bg-white text-maroon-700 border border-cream-300 hover:border-mustard-400 hover:bg-mustard-100"
@@ -68,7 +68,9 @@ export function BranchTabs({
 
   return (
     <div
-      className={cn("flex gap-2 overflow-x-auto pb-1", className)}
+      /* Swipeable on a phone; no-scrollbar keeps the desktop scrollbar from
+         drawing a grey slab across the middle of the dashboard. */
+      className={cn("flex gap-2 overflow-x-auto no-scrollbar pb-1", className)}
       role="group"
       aria-label="Filter by branch"
     >
