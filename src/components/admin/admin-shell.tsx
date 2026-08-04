@@ -10,6 +10,7 @@ const NAV = [
   ["/admin/kitchen", "👨‍🍳 Kitchen", ["OWNER", "BRANCH_MANAGER", "KITCHEN"]],
   ["/admin/menu", "🍛 Menu", ["OWNER", "BRANCH_MANAGER"]],
   ["/admin/branches", "🏪 Branches", ["OWNER", "BRANCH_MANAGER"]],
+  ["/admin/agents", "🛵 Agents", ["OWNER", "BRANCH_MANAGER", "DELIVERY_MANAGER"]],
   ["/admin/coupons", "🎟️ Marketing", ["OWNER", "MARKETING"]],
   ["/admin/customers", "👥 Customers", ["OWNER", "BRANCH_MANAGER", "MARKETING"]],
   ["/admin/reports", "📈 Reports", ["OWNER", "BRANCH_MANAGER", "CASHIER", "MARKETING"]],

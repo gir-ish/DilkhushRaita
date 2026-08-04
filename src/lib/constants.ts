@@ -36,6 +36,15 @@ export const ORDER_STATUSES = [
 ] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
+/** Statuses an order never leaves — nothing further is expected of anyone. */
+export const TERMINAL_STATUSES: OrderStatus[] = [
+  "DELIVERED",
+  "REJECTED",
+  "CANCELLED",
+  "REFUND_INITIATED",
+  "REFUNDED",
+];
+
 // Allowed status transitions (staff-driven).
 export const STATUS_TRANSITIONS: Record<string, OrderStatus[]> = {
   PLACED: ["ACCEPTED", "REJECTED", "CANCELLED"],
