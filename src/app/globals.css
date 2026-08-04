@@ -138,6 +138,16 @@ body {
   @apply bg-gradient-to-l from-transparent to-mustard-400;
 }
 
+/* Swipeable rows (branch tabs, category chips, admin nav) still scroll, but
+   without the chunky bar that a desktop browser draws across them. */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 @media print {
   .no-print {
     display: none !important;

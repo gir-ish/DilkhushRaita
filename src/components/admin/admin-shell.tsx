@@ -65,7 +65,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         <nav
-          className="px-2 sm:px-4 flex gap-1.5 overflow-x-auto pb-2.5 max-w-7xl mx-auto"
+          className="px-2 sm:px-4 flex gap-1.5 overflow-x-auto no-scrollbar pb-2.5 max-w-7xl mx-auto"
           aria-label="Admin sections"
         >
           {NAV.map(([href, label]) => {

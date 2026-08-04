@@ -66,6 +66,11 @@ function CounterInner() {
   // starting a new order.
   const [addingTo, setAddingTo] = useState<OpenTab | null>(null);
   const [settling, setSettling] = useState<OpenTab | null>(null);
+  // Phone only: the cart lives in a sheet behind the bottom bar.
+  const [cartOpen, setCartOpen] = useState(false);
+  // Brief flash on the bottom bar so a tap is visibly acknowledged when the
+  // cart itself is off-screen.
+  const [bump, setBump] = useState(false);
 
   const branchId = menu?.branch.id ?? null;
 
@@ -119,7 +124,20 @@ function CounterInner() {
       .catch((e) => setError(e.message));
   }, [slug]);
 
+  // Removing the last line from the sheet would otherwise leave a dead panel
+  // with every button disabled.
+  useEffect(() => {
+    if (lines.length === 0) setCartOpen(false);
+  }, [lines.length]);
+
+  useEffect(() => {
+    if (!bump) return;
+    const t = setTimeout(() => setBump(false), 320);
+    return () => clearTimeout(t);
+  }, [bump]);
+
   const add = (item: MenuItem, variant: Variant | null, addOns: AddOn[]) => {
+    setBump(true);
     const key = [item.id, variant?.id ?? "", ...addOns.map((a) => a.id).sort()].join("|");
     const unitPrice =
       item.price + (variant?.priceDelta ?? 0) + addOns.reduce((s, a) => s + a.price, 0);
@@ -172,16 +190,67 @@ function CounterInner() {
   const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.qty, 0);
   const count = lines.reduce((s, l) => s + l.qty, 0);
 
+  const submitLabel = addingTo
+    ? `Send round ${addingTo.rounds + 1} →`
+    : mode === "DINE_IN"
+      ? "Open tab →"
+      : "Charge →";
+
+  /** Adding to a tab posts straight away; anything else needs the customer step. */
+  const submit = async () => {
+    if (!addingTo) {
+      setCartOpen(false);
+      return setCheckout(true);
+    }
+    setError(null);
+    try {
+      const r = await fetch(`/api/admin/counter/tabs/${addingTo.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: lines.map((l) => ({
+            menuItemId: l.menuItemId,
+            variantId: l.variantId,
+            addOnIds: l.addOnIds,
+            qty: l.qty,
+          })),
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      setLines([]);
+      setAddingTo(null);
+      setCartOpen(false);
+      loadTabs();
+    } catch (e) {
+      // Close the sheet: the error banner sits at the top of the page and would
+      // otherwise be hidden behind it, so the failure would look like a no-op.
+      setCartOpen(false);
+      setError(e instanceof Error ? e.message : "Could not add to the tab");
+    }
+  };
+
   return (
-    <div>
-      <div className="flex flex-wrap items-baseline gap-3 mb-3">
-        <h1 className="font-display text-3xl font-bold text-maroon-700">Counter</h1>
+    <>
+      {/* Nothing in here may widen the page. The admin header is `sticky`,
+          which pins it vertically only, so horizontal overflow slides the
+          whole page — header included — sideways. The fixed cart bar and the
+          modals sit outside this block.
+          The bottom padding clears that bar; without it the last row of dishes
+          sits underneath it and cannot be tapped. */}
+      <div className={lines.length > 0 ? "pb-28 lg:pb-0" : undefined}>
+      <div className="flex flex-wrap items-baseline gap-x-3 mb-3">
+        <h1 className="font-display text-2xl sm:text-3xl font-bold text-maroon-700">Counter</h1>
         <p className="text-sm text-maroon-800/60">Take a walk-in or dine-in order</p>
       </div>
 
       {/* Which branch you are billing to must be impossible to misread. */}
       {branches.length > 1 && (
-        <div className="flex gap-2 overflow-x-auto pb-1 mb-3" role="group" aria-label="Branch">
+        <div
+          className="flex gap-2 overflow-x-auto no-scrollbar pb-1 mb-3"
+          role="group"
+          aria-label="Branch"
+        >
           {branches.map((b) => {
             const active = slug === b.slug;
             return (
@@ -194,7 +263,7 @@ function CounterInner() {
                   setLines([]);
                   setSlug(b.slug);
                 }}
-                className={`rounded-xl px-5 py-3 text-[15px] font-bold whitespace-nowrap transition ${
+                className={`rounded-xl px-4 sm:px-5 py-2.5 sm:py-3 text-sm sm:text-[15px] font-bold whitespace-nowrap transition ${
                   active
                     ? "bg-maroon-600 text-cream-50 shadow-card"
                     : "bg-white text-maroon-700 border border-cream-300 hover:border-mustard-400 hover:bg-mustard-100"
@@ -228,13 +297,13 @@ function CounterInner() {
               setAddingTo(null);
               setMode(m);
             }}
-            className={`flex-1 sm:flex-none rounded-xl px-5 py-3 text-left transition ${
+            className={`flex-1 sm:flex-none rounded-xl px-3 sm:px-5 py-2.5 sm:py-3 text-left transition ${
               mode === m
                 ? "bg-maroon-600 text-cream-50 shadow-card"
                 : "bg-white text-maroon-700 border border-cream-300 hover:border-mustard-400 hover:bg-mustard-100"
             }`}
           >
-            <span className="block text-[15px] font-bold">{label}</span>
+            <span className="block text-sm sm:text-[15px] font-bold">{label}</span>
             <span className={`block text-xs ${mode === m ? "text-cream-50/75" : "text-maroon-800/50"}`}>
               {hint}
             </span>
@@ -278,7 +347,13 @@ function CounterInner() {
 
       <div className="grid lg:grid-cols-3 gap-4 mt-2">
         {/* ---------------------------------------------------------- menu */}
-        <div className="lg:col-span-2">
+        {/* min-w-0 is load-bearing. A grid item defaults to min-width:auto,
+            i.e. it refuses to shrink below its min-content — and the category
+            chip row's min-content is the full un-scrolled width of every chip
+            (~1000px). Without this the column inflates to that width and drags
+            the menu grid off the side of the screen. overflow-x-auto lets the
+            chips scroll but does not shrink what they report as a minimum. */}
+        <div className="lg:col-span-2 min-w-0">
           <input
             className="input"
             placeholder="Search the menu…"
@@ -287,7 +362,7 @@ function CounterInner() {
             onChange={(e) => setQ(e.target.value)}
           />
           {menu && (
-            <div className="flex gap-2 overflow-x-auto py-2">
+            <div className="flex gap-2 overflow-x-auto no-scrollbar py-2">
               <button className={`chip ${cat === "all" ? "chip-active" : ""}`} onClick={() => setCat("all")}>
                 All
               </button>
@@ -309,23 +384,25 @@ function CounterInner() {
             filtered.map((c) => (
               <section key={c.id} className="mt-3">
                 <h2 className="font-semibold text-maroon-700 mb-2">{c.name}</h2>
-                <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                {/* Two per row even on a phone: one dish per row turns a short
+                    menu into a very long scroll between taps. */}
+                <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
                   {c.items.map((it) => (
                     <button
                       key={it.id}
                       onClick={() => tap(it)}
                       disabled={!it.available}
                       // Tall enough to hit reliably on a tablet mid-service.
-                      className="card card-hover p-4 text-left min-h-[92px] flex flex-col justify-between disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
+                      className="card card-hover p-3 sm:p-4 text-left min-h-[88px] sm:min-h-[92px] flex flex-col justify-between disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
                     >
-                      <span className="flex items-start gap-2">
-                        <VegMark veg={it.veg} className="mt-1" />
-                        <span className="font-semibold text-[15px] leading-snug">{it.name}</span>
+                      <span className="flex items-start gap-1.5 sm:gap-2">
+                        <VegMark veg={it.veg} className="mt-0.5 sm:mt-1" />
+                        <span className="font-semibold text-sm sm:text-[15px] leading-snug">{it.name}</span>
                       </span>
-                      <span className="flex items-center justify-between mt-2">
-                        <span className="font-bold text-maroon-700 text-lg">{inr(it.price)}</span>
+                      <span className="flex items-center justify-between gap-1 mt-2">
+                        <span className="font-bold text-maroon-700 text-base sm:text-lg">{inr(it.price)}</span>
                         {(it.variants.length > 0 || it.addOns.length > 0) && (
-                          <span className="rounded-full bg-cream-200 px-2 py-0.5 text-[10px] font-bold text-maroon-700">
+                          <span className="rounded-full bg-cream-200 px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] font-bold text-maroon-700">
                             OPTIONS
                           </span>
                         )}
@@ -341,114 +418,70 @@ function CounterInner() {
           )}
         </div>
 
-        {/* ---------------------------------------------------------- cart */}
-        <aside className="lg:sticky lg:top-4 h-fit">
+        {/* ------------------------------------------------- cart (desktop) */}
+        <aside className="hidden lg:block lg:sticky lg:top-4 h-fit">
           <div className="card p-4">
             <h2 className="font-semibold mb-2">
               Current order {count > 0 && <span className="text-maroon-800/50">· {count} item{count > 1 ? "s" : ""}</span>}
             </h2>
-
-            {lines.length === 0 ? (
-              <p className="text-sm text-maroon-800/50 py-6 text-center">
-                Tap dishes to add them.
-              </p>
-            ) : (
-              <ul className="divide-y divide-cream-200 text-sm max-h-[45vh] overflow-y-auto">
-                {lines.map((l) => (
-                  <li key={l.key} className="py-2">
-                    <div className="flex justify-between gap-2">
-                      <span className="min-w-0">
-                        <span className="font-medium">{l.name}</span>
-                        {l.variantName && (
-                          <span className="text-maroon-800/60"> ({l.variantName})</span>
-                        )}
-                        {l.addOnNames.length > 0 && (
-                          <span className="block text-xs text-maroon-800/50">
-                            + {l.addOnNames.join(", ")}
-                          </span>
-                        )}
-                      </span>
-                      <span className="font-semibold shrink-0">{inr(l.unitPrice * l.qty)}</span>
-                    </div>
-                    <div className="flex items-center gap-1 mt-1.5">
-                      <button
-                        onClick={() => setQty(l.key, -1)}
-                        className="grid h-9 w-9 place-items-center rounded-lg border border-cream-300 text-xl font-bold text-maroon-700 hover:bg-maroon-50 active:scale-95"
-                        aria-label={`One less ${l.name}`}
-                      >
-                        −
-                      </button>
-                      <span className="w-9 text-center text-lg font-bold" aria-live="polite">{l.qty}</span>
-                      <button
-                        onClick={() => setQty(l.key, 1)}
-                        className="grid h-9 w-9 place-items-center rounded-lg border border-cream-300 text-xl font-bold text-maroon-700 hover:bg-maroon-50 active:scale-95"
-                        aria-label={`One more ${l.name}`}
-                      >
-                        +
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <div className="border-t-2 border-cream-200 mt-3 pt-3 flex justify-between items-baseline">
-              <span className="font-bold text-lg">Subtotal</span>
-              <span className="font-bold text-2xl text-maroon-700">{inr(subtotal)}</span>
-            </div>
-            <p className="text-xs text-maroon-800/50 mt-1">
-              Taxes and packaging are added by the server on the final bill.
-            </p>
-
-            <div className="grid grid-cols-3 gap-2 mt-4">
-              <button
-                onClick={() => setLines([])}
-                disabled={lines.length === 0}
-                className="btn-outline !text-red-700 !border-red-700"
-              >
-                Clear
-              </button>
-              <button
-                onClick={async () => {
-                  if (!addingTo) return setCheckout(true);
-                  // Adding to an existing tab needs no customer step — the tab
-                  // already knows who it belongs to.
-                  setError(null);
-                  try {
-                    const r = await fetch(`/api/admin/counter/tabs/${addingTo.id}`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        items: lines.map((l) => ({
-                          menuItemId: l.menuItemId,
-                          variantId: l.variantId,
-                          addOnIds: l.addOnIds,
-                          qty: l.qty,
-                        })),
-                      }),
-                    });
-                    const d = await r.json();
-                    if (!r.ok) throw new Error(d.error);
-                    setLines([]);
-                    setAddingTo(null);
-                    loadTabs();
-                  } catch (e) {
-                    setError(e instanceof Error ? e.message : "Could not add to the tab");
-                  }
-                }}
-                disabled={lines.length === 0}
-                className="btn-primary col-span-2 !py-4 !text-lg"
-              >
-                {addingTo
-                  ? `Send round ${addingTo.rounds + 1} →`
-                  : mode === "DINE_IN"
-                    ? "Open tab →"
-                    : "Charge →"}
-              </button>
-            </div>
+            <CartPanel
+              lines={lines}
+              subtotal={subtotal}
+              setQty={setQty}
+              onClear={() => setLines([])}
+              onSubmit={submit}
+              submitLabel={submitLabel}
+            />
           </div>
         </aside>
       </div>
+      </div>
+
+      {/* --------------------------------------------------- cart (phone) */}
+      {/* On a phone the aside would sit below the whole menu, so the running
+          total and the charge button are pinned instead — a tap on a dish is
+          otherwise completely silent. */}
+      {lines.length > 0 && (
+        <div className="lg:hidden fixed inset-x-0 bottom-0 z-30 border-t border-cream-300 bg-white/95 backdrop-blur px-3 py-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] pb-[max(0.625rem,env(safe-area-inset-bottom))]">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCartOpen(true)}
+              className={`flex min-h-[52px] flex-1 items-center gap-2 rounded-xl border px-3 text-left transition ${
+                bump ? "border-mustard-400 bg-mustard-100" : "border-cream-300 bg-cream-50"
+              }`}
+              aria-label={`Review order, ${count} items, subtotal ${inr(subtotal)}`}
+            >
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-maroon-600 text-sm font-bold text-cream-50">
+                {count}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-lg font-bold leading-tight text-maroon-700">{inr(subtotal)}</span>
+                <span className="block text-[11px] font-semibold text-maroon-800/50">Tap to review</span>
+              </span>
+            </button>
+            {/* `!` because .btn sets min-h-[44px] later in the cascade. */}
+            <button onClick={submit} className="btn-primary !min-h-[52px] shrink-0 !px-4 !text-[15px]">
+              {submitLabel}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {cartOpen && (
+        <Modal open onClose={() => setCartOpen(false)} title={`Current order · ${count} item${count === 1 ? "" : "s"}`}>
+          <CartPanel
+            lines={lines}
+            subtotal={subtotal}
+            setQty={setQty}
+            onClear={() => {
+              setLines([]);
+              setCartOpen(false);
+            }}
+            onSubmit={submit}
+            submitLabel={submitLabel}
+          />
+        </Modal>
+      )}
 
       {configuring && (
         <OptionsModal
@@ -486,7 +519,96 @@ function CounterInner() {
           }}
         />
       )}
-    </div>
+    </>
+  );
+}
+
+/**
+ * The cart body, shared by the desktop sidebar and the phone sheet so the two
+ * can never drift apart.
+ */
+function CartPanel({
+  lines,
+  subtotal,
+  setQty,
+  onClear,
+  onSubmit,
+  submitLabel,
+}: {
+  lines: Line[];
+  subtotal: number;
+  setQty: (key: string, delta: number) => void;
+  onClear: () => void;
+  onSubmit: () => void;
+  submitLabel: string;
+}) {
+  return (
+    <>
+      {lines.length === 0 ? (
+        <p className="text-sm text-maroon-800/50 py-6 text-center">Tap dishes to add them.</p>
+      ) : (
+        <ul className="divide-y divide-cream-200 text-sm max-h-[45vh] overflow-y-auto">
+          {lines.map((l) => (
+            <li key={l.key} className="py-2">
+              <div className="flex justify-between gap-2">
+                <span className="min-w-0">
+                  <span className="font-medium">{l.name}</span>
+                  {l.variantName && <span className="text-maroon-800/60"> ({l.variantName})</span>}
+                  {l.addOnNames.length > 0 && (
+                    <span className="block text-xs text-maroon-800/50">+ {l.addOnNames.join(", ")}</span>
+                  )}
+                </span>
+                <span className="font-semibold shrink-0">{inr(l.unitPrice * l.qty)}</span>
+              </div>
+              <div className="flex items-center gap-1 mt-1.5">
+                <button
+                  onClick={() => setQty(l.key, -1)}
+                  className="grid h-10 w-10 sm:h-9 sm:w-9 place-items-center rounded-lg border border-cream-300 text-xl font-bold text-maroon-700 hover:bg-maroon-50 active:scale-95"
+                  aria-label={`One less ${l.name}`}
+                >
+                  −
+                </button>
+                <span className="w-10 sm:w-9 text-center text-lg font-bold" aria-live="polite">
+                  {l.qty}
+                </span>
+                <button
+                  onClick={() => setQty(l.key, 1)}
+                  className="grid h-10 w-10 sm:h-9 sm:w-9 place-items-center rounded-lg border border-cream-300 text-xl font-bold text-maroon-700 hover:bg-maroon-50 active:scale-95"
+                  aria-label={`One more ${l.name}`}
+                >
+                  +
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="border-t-2 border-cream-200 mt-3 pt-3 flex justify-between items-baseline">
+        <span className="font-bold text-lg">Subtotal</span>
+        <span className="font-bold text-2xl text-maroon-700">{inr(subtotal)}</span>
+      </div>
+      <p className="text-xs text-maroon-800/50 mt-1">
+        Taxes and packaging are added by the server on the final bill.
+      </p>
+
+      <div className="grid grid-cols-3 gap-2 mt-4">
+        <button
+          onClick={onClear}
+          disabled={lines.length === 0}
+          className="btn-outline !text-red-700 !border-red-700"
+        >
+          Clear
+        </button>
+        <button
+          onClick={onSubmit}
+          disabled={lines.length === 0}
+          className="btn-primary col-span-2 !py-4 !text-lg"
+        >
+          {submitLabel}
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -809,7 +931,7 @@ function OpenTabs({
       </h2>
       <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
         {tabs.map((t) => (
-          <div key={t.id} className="card p-4 border-l-4 border-l-mustard-400">
+          <div key={t.id} className="card p-3 sm:p-4 border-l-4 border-l-mustard-400">
             <div className="flex items-start justify-between gap-2">
               <span className="font-bold text-lg">
                 {t.tableNo ? `🪑 Table ${t.tableNo}` : `🍽️ ${t.orderNumber}`}
@@ -826,10 +948,10 @@ function OpenTabs({
             </p>
             <p className="mt-2 text-2xl font-bold text-maroon-700">{inr(t.total)}</p>
             <div className="grid grid-cols-2 gap-2 mt-3">
-              <button onClick={() => onAdd(t)} className="btn-secondary !min-h-[42px]">
+              <button onClick={() => onAdd(t)} className="btn-secondary !min-h-[46px] !px-2">
                 ➕ Add items
               </button>
-              <button onClick={() => onSettle(t)} className="btn-primary !min-h-[42px]">
+              <button onClick={() => onSettle(t)} className="btn-primary !min-h-[46px] !px-2">
                 💳 Bill
               </button>
             </div>
