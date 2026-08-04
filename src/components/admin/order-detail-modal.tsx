@@ -12,6 +12,7 @@ export interface AdminOrder {
   paymentMethod: string; paymentStatus: string; placedAt: string; scheduledFor: string | null;
   instructions: string | null; cutlery: boolean; contactless: boolean;
   addressText: string | null; staffNotes: string | null; prepTimeMins: number;
+  tableNo: string | null;
   couponCode: string | null;
   items: { id: string; nameSnapshot: string; variantName: string | null; addOnsJson: string; qty: number; lineTotal: number; instructions: string | null }[];
   user: { name: string | null; phone: string | null };
@@ -49,6 +50,7 @@ export function OrderDetailModal({
   const [agents, setAgents] = useState<{ id: string; name: string | null }[]>([]);
   const [refund, setRefund] = useState({ amount: 0, mode: "STORE_CREDIT", reason: "" });
   const [showRefund, setShowRefund] = useState(false);
+  const [showSettle, setShowSettle] = useState(false);
 
   useEffect(() => {
     if (!kitchenMode)
@@ -183,6 +185,67 @@ export function OrderDetailModal({
             </button>
           )}
         </div>
+
+        {/* An unpaid dine-in tab is still open even after it is marked served,
+            so billing and adding another round must be reachable from here —
+            not only from the Counter screen. */}
+        {!kitchenMode && order.type === "DINE_IN" && order.paymentStatus !== "PAID" && (
+          <div className="rounded-xl border border-mustard-400 bg-mustard-100 p-3 no-print">
+            <p className="text-sm font-bold text-maroon-700">
+              🍽️ Open tab{order.tableNo ? ` · Table ${order.tableNo}` : ""} — {inr(order.total)} unpaid
+            </p>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <a
+                href={`/admin/counter?tab=${order.id}`}
+                className="btn-secondary !min-h-[40px] text-center"
+              >
+                ➕ Add items
+              </a>
+              <button
+                disabled={busy}
+                onClick={() => setShowSettle(true)}
+                className="btn-primary !min-h-[40px]"
+              >
+                💳 Bill &amp; settle
+              </button>
+            </div>
+            {showSettle && (
+              <div className="mt-3 border-t border-mustard-400/60 pt-3">
+                <span className="label">Paid by</span>
+                <div className="flex gap-2">
+                  {(["CASH", "ONLINE"] as const).map((m) => (
+                    <button
+                      key={m}
+                      disabled={busy}
+                      onClick={async () => {
+                        setBusy(true);
+                        setError(null);
+                        try {
+                          const r = await fetch(`/api/admin/counter/tabs/${order.id}`, {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ paymentMethod: m }),
+                          });
+                          const d = await r.json();
+                          if (!r.ok) throw new Error(d.error);
+                          onChanged({ ...order, paymentStatus: "PAID", status: "DELIVERED" });
+                        } catch (e) {
+                          setError(e instanceof Error ? e.message : "Could not settle the tab");
+                        } finally {
+                          setBusy(false);
+                          setShowSettle(false);
+                        }
+                      }}
+                      className="chip"
+                    >
+                      {m === "CASH" ? "💵 Cash" : "📱 UPI / Card"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {!kitchenMode && order.type === "DELIVERY" && ["ACCEPTED", "PREPARING", "READY"].includes(order.status) && agents.length > 0 && (
           <div className="flex items-center gap-2 no-print">

@@ -67,6 +67,20 @@ export const STATUS_TRANSITIONS: Record<string, OrderStatus[]> = {
   REFUND_INITIATED: ["REFUNDED"],
 };
 
+/**
+ * Statuses that close a dine-in tab.
+ *
+ * Deliberately excludes DELIVERED: food is served before the customer pays, so
+ * a served tab is still open and still billable. Only payment — or the order
+ * being cancelled/refunded — closes it.
+ */
+export const TAB_CLOSED_STATUSES: OrderStatus[] = [
+  "REJECTED",
+  "CANCELLED",
+  "REFUND_INITIATED",
+  "REFUNDED",
+];
+
 /** Only meaningful when something physically leaves the restaurant. */
 export const DELIVERY_ONLY_STATUSES: OrderStatus[] = ["ASSIGNED", "OUT_FOR_DELIVERY"];
 

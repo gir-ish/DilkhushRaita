@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { allowedBranchIds, handler, requireStaff } from "@/lib/guard";
-import { TERMINAL_STATUSES } from "@/lib/constants";
+import { TAB_CLOSED_STATUSES } from "@/lib/constants";
 
 /**
  * Open dine-in tabs — tables that are still eating and have not paid.
  *
- * A tab is a DINE_IN order that is neither finished nor settled. Staff add
- * further rounds to it and bill once at the end.
+ * A tab is an unpaid DINE_IN order. Marking it served (DELIVERED) does NOT
+ * close it — in a restaurant the food arrives before the bill — so it stays
+ * here, billable, until payment is taken.
  */
 export const GET = handler(async (req: Request) => {
   const s = await requireStaff("BRANCH_MANAGER", "CASHIER");
@@ -18,7 +19,7 @@ export const GET = handler(async (req: Request) => {
     where: {
       type: "DINE_IN",
       paymentStatus: "PENDING",
-      status: { notIn: [...TERMINAL_STATUSES] },
+      status: { notIn: [...TAB_CLOSED_STATUSES] },
       ...(branchId ? { branchId } : {}),
       ...(scope ? { branchId: { in: scope } } : {}),
     },

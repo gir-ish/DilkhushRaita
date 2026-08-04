@@ -5,7 +5,7 @@ import { allowedBranchIds, handler, HttpError, requireStaff } from "@/lib/guard"
 import { audit } from "@/lib/audit";
 import { buildQuote } from "@/lib/quote";
 import { computeTotals } from "@/lib/pricing";
-import { TERMINAL_STATUSES } from "@/lib/constants";
+import { TAB_CLOSED_STATUSES } from "@/lib/constants";
 import type { SessionPayload } from "@/lib/session";
 import { onOrderDelivered } from "@/lib/order-effects";
 
@@ -15,7 +15,8 @@ async function loadOpenTab(id: string, session: SessionPayload) {
   if (!order) throw new HttpError(404, "Tab not found");
   if (order.type !== "DINE_IN") throw new HttpError(400, "That order is not a dine-in tab");
   if (order.paymentStatus === "PAID") throw new HttpError(409, "That tab is already settled");
-  if (TERMINAL_STATUSES.includes(order.status as never))
+  // DELIVERED is intentionally not a blocker: served but unpaid is still open.
+  if (TAB_CLOSED_STATUSES.includes(order.status as never))
     throw new HttpError(409, `That tab is already ${order.status.toLowerCase()}`);
 
   const scope = await allowedBranchIds(session);
@@ -115,7 +116,9 @@ export const POST = handler(
           total: totals.total,
           // The table has ordered again, so there is food to cook — put it back
           // in front of the kitchen even if the previous round was marked READY.
-          ...(order.status === "READY" ? { status: "ACCEPTED", readyAt: null } : {}),
+          ...(["READY", "DELIVERED"].includes(order.status)
+            ? { status: "ACCEPTED", readyAt: null, deliveredAt: null }
+            : {}),
         },
       });
     });

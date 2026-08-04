@@ -50,7 +50,12 @@ export async function onOrderDelivered(orderId: string) {
       },
     }),
     db.order.update({ where: { id: order.id }, data: { pointsEarned: earned } }),
-    ...(order.paymentMethod === "COD"
+    // Delivering a COD order means the agent took the cash, so it settles
+    // itself. A dine-in tab is also "COD", but serving the food is NOT payment
+    // — the customer pays at the till afterwards. Auto-settling it here would
+    // record money that was never collected and drop the tab off the counter
+    // before anyone could bill it.
+    ...(order.paymentMethod === "COD" && order.type !== "DINE_IN"
       ? [
           db.payment.update({
             where: { orderId: order.id },

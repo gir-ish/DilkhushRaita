@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ErrorBox, Modal, Spinner, VegMark } from "@/components/ui";
 import { inr } from "@/lib/utils";
 
@@ -44,6 +44,7 @@ interface Line {
 
 export default function CounterPage() {
   const router = useRouter();
+  const params = useSearchParams();
   const [branches, setBranches] = useState<BranchLite[]>([]);
   const [slug, setSlug] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuData | null>(null);
@@ -71,6 +72,17 @@ export default function CounterPage() {
   }, [branchId]);
 
   useEffect(loadTabs, [loadTabs]);
+
+  // Deep link from Orders -> "Add items" on an open tab.
+  const wantedTab = params.get("tab");
+  useEffect(() => {
+    if (!wantedTab || !tabs) return;
+    const t = tabs.find((x) => x.id === wantedTab);
+    if (t) {
+      setMode("DINE_IN");
+      setAddingTo(t);
+    }
+  }, [wantedTab, tabs]);
 
   useEffect(() => {
     // /api/admin/branches is scoped to the branches this staff member actually
