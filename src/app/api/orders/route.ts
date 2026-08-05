@@ -60,19 +60,31 @@ export const POST = handler(async (req: Request) => {
   // we abort having written nothing, rather than leaving an unpayable order
   // behind with stock already decremented and loyalty points already spent.
   // An unpaid Razorpay order simply expires on their side, so this is safe.
-  const gatewayOrder =
-    body.paymentMethod === "ONLINE"
-      ? await createGatewayOrder({
-          amountRupees: quote.totals.total,
-          receipt: orderNumber,
-          notes: { orderNumber, branch: quote.branch.name },
-        })
-      : null;
-  if (body.paymentMethod === "ONLINE" && !gatewayOrder)
-    throw new HttpError(
-      502,
-      "Could not start the payment. Please try again, or choose Cash on Delivery."
-    );
+  let gatewayOrder = null;
+  if (body.paymentMethod === "ONLINE") {
+    const result = await createGatewayOrder({
+      amountRupees: quote.totals.total,
+      receipt: orderNumber,
+      notes: { orderNumber, branch: quote.branch.name },
+    });
+    if (!result.ok) {
+      // A sub-₹1 total is the customer's own discounts working, not a fault —
+      // tell them to switch method instead of implying the site is broken.
+      if (result.reason === "amount-too-small")
+        throw new HttpError(
+          400,
+          "This order is too small to pay for online. Please choose Cash on Delivery."
+        );
+      // "auth" stays a 502 deliberately: our keys being wrong is a server
+      // problem, and a 401 here would read as "you are signed out" and bounce
+      // the customer to the login page mid-checkout.
+      throw new HttpError(
+        502,
+        "Could not start the payment. Please try again, or choose Cash on Delivery."
+      );
+    }
+    gatewayOrder = result.order;
+  }
 
   const order = await db.$transaction(async (tx) => {
     // Deduct redeemed points atomically.

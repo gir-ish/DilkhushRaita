@@ -1,6 +1,8 @@
 import { createHmac } from "crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  createGatewayOrder,
+  MIN_ORDER_PAISE,
   onlinePaymentsEnabled,
   paymentProvider,
   toPaise,
@@ -159,6 +161,23 @@ describe("verifyWebhookSignature", () => {
   it("rejects everything when the webhook secret is not configured", () => {
     delete process.env.RAZORPAY_WEBHOOK_SECRET;
     expect(verifyWebhookSignature(body, sign(body))).toBe(false);
+  });
+});
+
+describe("createGatewayOrder minimum amount", () => {
+  // The guard must run before the network call, so no fetch mock is needed —
+  // if one of these ever reaches Razorpay the test will fail on the response.
+  it("refuses totals below ₹1 without calling the gateway", async () => {
+    for (const rupees of [0, 0.5, 0.99]) {
+      const r = await createGatewayOrder({ amountRupees: rupees, receipt: "DK-TEST" });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toBe("amount-too-small");
+    }
+  });
+
+  it("treats exactly ₹1 as the boundary", () => {
+    expect(toPaise(0.99)).toBeLessThan(MIN_ORDER_PAISE);
+    expect(toPaise(1)).toBe(MIN_ORDER_PAISE);
   });
 });
 

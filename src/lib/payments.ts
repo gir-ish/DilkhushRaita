@@ -59,6 +59,21 @@ export interface RazorpayOrder {
   status: string;
 }
 
+/** Razorpay refuses anything below ₹1, with an opaque BAD_REQUEST_ERROR. */
+export const MIN_ORDER_PAISE = 100;
+
+/**
+ * Why a gateway order could not be opened. The caller needs these apart because
+ * they are not the same kind of problem: "auth" means *our* keys are wrong and
+ * every online order will fail until someone fixes the env, whereas "gateway"
+ * and "network" are usually transient and worth retrying.
+ */
+export type GatewayOrderFailure = "amount-too-small" | "auth" | "gateway" | "network";
+
+export type GatewayOrderResult =
+  | { ok: true; order: RazorpayOrder }
+  | { ok: false; reason: GatewayOrderFailure };
+
 /**
  * Creates the gateway-side order the Checkout modal is opened against.
  * `receipt` should be our own order number so payments can be reconciled.
@@ -67,13 +82,25 @@ export async function createGatewayOrder(opts: {
   amountRupees: number;
   receipt: string;
   notes?: Record<string, string>;
-}): Promise<RazorpayOrder | null> {
+}): Promise<GatewayOrderResult> {
+  const amount = toPaise(opts.amountRupees);
+
+  // Checked here rather than at the call site so every path into the gateway is
+  // covered. A 100%-off coupon plus loyalty credit really can drive a total to
+  // ₹0, and without this the customer would just see "could not start payment".
+  if (amount < MIN_ORDER_PAISE) {
+    console.error(
+      `[pay][razorpay] refusing to open an order for ${amount}p (minimum ${MIN_ORDER_PAISE}p) on receipt ${opts.receipt}`
+    );
+    return { ok: false, reason: "amount-too-small" };
+  }
+
   try {
     const res = await fetch(`${RAZORPAY_API}/orders`, {
       method: "POST",
       headers: { authorization: authHeader(), "Content-Type": "application/json" },
       body: JSON.stringify({
-        amount: toPaise(opts.amountRupees),
+        amount,
         currency: "INR",
         receipt: opts.receipt,
         notes: opts.notes ?? {},
@@ -83,13 +110,22 @@ export async function createGatewayOrder(opts: {
       error?: unknown;
     };
     if (!res.ok || !data.id) {
+      if (res.status === 401) {
+        // Loud on purpose: this is a deployment fault, not a customer fault.
+        // Nothing will be payable until RAZORPAY_KEY_ID/SECRET are corrected.
+        console.error(
+          "[pay][razorpay] AUTH FAILED (401) — check RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET:",
+          data
+        );
+        return { ok: false, reason: "auth" };
+      }
       console.error("[pay][razorpay] create order failed:", res.status, data);
-      return null;
+      return { ok: false, reason: "gateway" };
     }
-    return data as RazorpayOrder;
+    return { ok: true, order: data as RazorpayOrder };
   } catch (e) {
     console.error("[pay][razorpay] network error creating order:", e);
-    return null;
+    return { ok: false, reason: "network" };
   }
 }
 
