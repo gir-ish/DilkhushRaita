@@ -187,6 +187,31 @@ export async function fetchPayment(paymentId: string): Promise<RazorpayPayment |
   }
 }
 
+/**
+ * The gateway's own view of an order. `amount_paid` is the honest test of
+ * whether money arrived — a customer can make several attempts against one
+ * gateway order, so a single failed payment does not mean the order is dead.
+ */
+export async function gatewayOrderIsPaid(providerOrderId: string): Promise<boolean | null> {
+  try {
+    const res = await fetch(`${RAZORPAY_API}/orders/${providerOrderId}`, {
+      headers: { authorization: authHeader() },
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      status?: string;
+      amount_paid?: number;
+    };
+    if (!res.ok) {
+      console.error("[pay][razorpay] fetch order failed:", res.status, data);
+      return null; // unknown — caller must not treat this as "unpaid"
+    }
+    return data.status === "paid" || (data.amount_paid ?? 0) > 0;
+  } catch (e) {
+    console.error("[pay][razorpay] network error fetching order:", e);
+    return null;
+  }
+}
+
 export type MarkPaidResult = "paid" | "already-paid" | "not-found" | "amount-mismatch";
 
 /**

@@ -214,7 +214,16 @@ export default function CheckoutPage() {
       modal: {
         ondismiss: () => {
           setPlacing(false);
-          setError("Payment cancelled. Your order is saved as unpaid — you can pay from My Orders.");
+          // Close the order out rather than leaving it in the kitchen queue as
+          // an unpaid PLACED order. The server re-checks with Razorpay first,
+          // so a payment that actually went through is never voided here.
+          fetch("/api/payments/abandon", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ orderId: d.orderId }),
+            keepalive: true, // must survive the customer navigating away
+          }).catch(() => {});
+          setError("Payment cancelled — the order was not placed. Your cart is still here if you want to try again.");
         },
       },
     } as Record<string, unknown>);

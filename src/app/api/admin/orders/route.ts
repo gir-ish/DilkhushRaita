@@ -29,6 +29,21 @@ export const GET = handler(async (req: Request) => {
   if (status && status !== "all") where.status = status;
   if (active === "1") where.status = { in: ACTIVE_STATUSES };
   if (paymentStatus && paymentStatus !== "all") where.paymentStatus = paymentStatus;
+
+  const and: unknown[] = [];
+  // An online order is written to the database before its payment window even
+  // opens, so an unpaid one is not yet a real order. Keep it out of the working
+  // queue entirely — otherwise the kitchen cooks food nobody has paid for, and
+  // a customer who simply closed the tab leaves a ticket behind.
+  if (active === "1")
+    and.push({ NOT: { paymentMethod: "ONLINE", paymentStatus: { not: "PAID" } } });
+  // Abandoned online payments are noise rather than business, so the default
+  // list hides them. Still reachable by filtering explicitly on CANCELLED.
+  if (!status || status === "all")
+    and.push({
+      NOT: { status: "CANCELLED", paymentMethod: "ONLINE", paymentStatus: { not: "PAID" } },
+    });
+  if (and.length) where.AND = and;
   if (date) {
     const d = new Date(date);
     where.placedAt = { gte: d, lt: new Date(d.getTime() + 86400000) };
