@@ -12,7 +12,15 @@ export const GET = handler(
       where: { id, userId: session.uid },
       include: {
         items: true,
-        branch: { select: { name: true, slug: true, phone: true, address: true } },
+        // pincode/taxPercent complete the bill header, and the customer's own
+        // name and number print on it — the invoice must not need a second call.
+        branch: {
+          select: {
+            name: true, slug: true, phone: true, address: true,
+            pincode: true, taxPercent: true,
+          },
+        },
+        user: { select: { name: true, phone: true } },
         deliveryAgent: { include: { user: { select: { name: true, phone: true } } } },
         refunds: true,
         review: true,

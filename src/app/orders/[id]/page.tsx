@@ -4,6 +4,7 @@ import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
 import { ErrorBox, Modal, Spinner } from "@/components/ui";
+import { PrintSheet } from "@/components/admin/print-sheet";
 import { inr, istDateTime, parseJson, timeAgo } from "@/lib/utils";
 import { useCart } from "@/components/cart-context";
 import { useRouter } from "next/navigation";
@@ -23,8 +24,12 @@ interface OrderDto {
   tax: number; loyaltyCredit: number; total: number; paymentMethod: string;
   paymentStatus: string; couponCode: string | null; rejectionReason: string | null;
   cancelReason: string | null; pointsEarned: number;
-  items: { id: string; nameSnapshot: string; variantName: string | null; addOnsJson: string; qty: number; unitPrice: number; lineTotal: number }[];
-  branch: { name: string; slug: string; phone: string; address: string };
+  // cutlery/tableNo/user/branch extras are what PrintSheet needs to render the
+  // same bill the counter prints — see PrintableOrder.
+  cutlery: boolean; tableNo: string | null;
+  items: { id: string; nameSnapshot: string; variantName: string | null; addOnsJson: string; qty: number; unitPrice: number; lineTotal: number; instructions: string | null }[];
+  user: { name: string | null; phone: string | null };
+  branch: { name: string; slug: string; phone: string; address: string; pincode: string; taxPercent: number };
   deliveryAgent: { user: { name: string | null; phone: string | null } } | null;
   refunds: { id: string; amount: number; mode: string; status: string }[];
   review: { overallRating: number } | null;
@@ -37,6 +42,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
   const [order, setOrder] = useState<OrderDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showReview, setShowReview] = useState(false);
+  const [showBill, setShowBill] = useState(false);
 
   const load = useCallback(() => {
     fetch(`/api/orders/${id}`)
@@ -82,7 +88,10 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
             </p>
             <p className="text-xs text-maroon-800/50">🕒 {istDateTime(order.placedAt)}</p>
           </div>
-          <button onClick={() => window.print()} className="btn-outline !min-h-[38px] !px-3 text-sm no-print">
+          <button
+            onClick={() => setShowBill(true)}
+            className="btn-outline !min-h-[38px] !px-3 text-sm no-print"
+          >
             🧾 Invoice
           </button>
         </div>
@@ -169,7 +178,8 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
           </section>
         )}
 
-        {/* Items & bill (also serves as printable invoice) */}
+        {/* On-screen summary. "🧾 Invoice" prints through PrintSheet instead —
+            this section is removed from layout while a bill is open. */}
         <section className="card p-4 mt-4" aria-label="Order details">
           <h2 className="font-semibold mb-2">Items</h2>
           <ul className="divide-y divide-cream-200 text-sm">
@@ -252,6 +262,12 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
         </section>
 
         <ReviewModal open={showReview} onClose={() => setShowReview(false)} orderId={order.id} onDone={load} />
+
+        {/* The same bill the counter prints. allowKot is off: a kitchen ticket
+            is a staff document and has no place in a customer's invoice. */}
+        {showBill && (
+          <PrintSheet order={order} allowKot={false} onClose={() => setShowBill(false)} />
+        )}
       </main>
     </>
   );

@@ -3,7 +3,53 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { inr, istDate, istTime, parseJson } from "@/lib/utils";
-import type { AdminOrder } from "./order-detail-modal";
+
+/**
+ * Exactly the fields a bill or kitchen ticket prints — nothing else.
+ *
+ * Deliberately narrower than AdminOrder so the customer's order page can print
+ * the same bill without inventing staff-only fields (staffNotes, prepTimeMins)
+ * that it has no business knowing. AdminOrder satisfies this structurally, so
+ * the dashboard passes its orders through unchanged.
+ */
+export interface PrintableOrder {
+  orderNumber: string;
+  type: string;
+  tableNo: string | null;
+  placedAt: string;
+  scheduledFor: string | null;
+  addressText: string | null;
+  instructions: string | null;
+  cutlery: boolean;
+  couponCode: string | null;
+  subtotal: number;
+  discount: number;
+  deliveryFee: number;
+  packagingFee: number;
+  tax: number;
+  loyaltyCredit: number;
+  total: number;
+  paymentMethod: string;
+  paymentStatus: string;
+  items: {
+    id: string;
+    nameSnapshot: string;
+    variantName: string | null;
+    addOnsJson: string;
+    qty: number;
+    unitPrice: number;
+    lineTotal: number;
+    instructions: string | null;
+  }[];
+  user: { name: string | null; phone: string | null };
+  branch: {
+    name: string;
+    address?: string;
+    pincode?: string;
+    phone?: string;
+    taxPercent?: number;
+  };
+}
 
 const TYPE_LABEL: Record<string, string> = {
   DINE_IN: "Dine-in",
@@ -37,7 +83,7 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
 
 /* -------------------------------------------------------------- the bill */
 
-function Bill({ order }: { order: AdminOrder }) {
+function Bill({ order }: { order: PrintableOrder }) {
   const fees = order.deliveryFee + order.packagingFee;
   const off = order.discount + order.loyaltyCredit;
 
@@ -189,7 +235,7 @@ function Bill({ order }: { order: AdminOrder }) {
 
 /* ------------------------------------------------- the kitchen order ticket */
 
-function Kot({ order }: { order: AdminOrder }) {
+function Kot({ order }: { order: PrintableOrder }) {
   return (
     <div className="font-mono text-[13px] leading-snug text-black">
       <header className="text-center">
@@ -265,10 +311,13 @@ export function PrintSheet({
   order,
   variant: initial = "bill",
   onClose,
+  allowKot = true,
 }: {
-  order: AdminOrder;
+  order: PrintableOrder;
   variant?: "bill" | "kot";
   onClose: () => void;
+  /** Off for customers — a kitchen ticket is a staff document. */
+  allowKot?: boolean;
 }) {
   const [variant, setVariant] = useState<"bill" | "kot">(initial);
   const [mounted, setMounted] = useState(false);
@@ -300,20 +349,24 @@ export function PrintSheet({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex flex-wrap gap-2 no-print">
-          <div className="flex flex-1 overflow-hidden rounded-xl border border-white/40">
-            {(["bill", "kot"] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => setVariant(v)}
-                aria-pressed={variant === v}
-                className={`min-h-[44px] flex-1 px-3 text-sm font-bold transition ${
-                  variant === v ? "bg-white text-maroon-700" : "bg-white/15 text-white"
-                }`}
-              >
-                {v === "bill" ? "🧾 Bill" : "👨‍🍳 KOT"}
-              </button>
-            ))}
-          </div>
+          {allowKot ? (
+            <div className="flex flex-1 overflow-hidden rounded-xl border border-white/40">
+              {(["bill", "kot"] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setVariant(v)}
+                  aria-pressed={variant === v}
+                  className={`min-h-[44px] flex-1 px-3 text-sm font-bold transition ${
+                    variant === v ? "bg-white text-maroon-700" : "bg-white/15 text-white"
+                  }`}
+                >
+                  {v === "bill" ? "🧾 Bill" : "👨‍🍳 KOT"}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex-1" />
+          )}
           <button onClick={() => window.print()} className="btn-secondary !min-h-[44px]">
             🖨️ Print
           </button>
