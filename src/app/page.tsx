@@ -2,7 +2,7 @@ import { SiteHeader } from "@/components/site-header";
 import { BranchPicker } from "@/components/branch-picker";
 
 const HIGHLIGHTS = [
-  { icon: "🔥", title: "Tandoor Fresh", copy: "Breads and tikkas straight off the clay oven." },
+  { icon: "🔥", title: "Tawa Fresh", copy: "Breads and tikkas straight off the clay oven." },
   { icon: "🌿", title: "Slow Cooked", copy: "Dal makhani simmered overnight, never rushed." },
   { icon: "🛵", title: "Hot on Arrival", copy: "Insulated delivery across Rohini & NSP." },
 ];
