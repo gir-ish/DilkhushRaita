@@ -30,6 +30,22 @@ describe("loyalty", () => {
     expect(redeemablePoints(1000, 100)).toBe(200); // 200 pts = ₹100
   });
 
+  // The scheme is repriced from the dashboard, so every calculation has to
+  // follow the supplied rates rather than the built-in defaults.
+  it("honours custom rates", () => {
+    const rates = { pointsPer10Rupees: 1, pointValueRupees: 0.25, minPointsToRedeem: 200 };
+    expect(pointsValue(100, rates)).toBe(25);
+    expect(redeemablePoints(199, 500, rates)).toBe(0); // under the new floor
+    expect(redeemablePoints(200, 500, rates)).toBe(200);
+    // ₹100 payable at ₹0.25/point caps redemption at 400 points.
+    expect(redeemablePoints(1000, 100, rates)).toBe(400);
+  });
+
+  it("honours a custom earn rate", () => {
+    const rates = { pointsPer10Rupees: 2, pointValueRupees: 0.5, minPointsToRedeem: 100 };
+    expect(pointsEarned(349, 1, rates)).toBe(69);
+  });
+
   it("assigns the highest qualifying tier (both thresholds required)", () => {
     expect(tierFor(tiers, { completedOrders: 0, lifetimeSpend: 0 })?.name).toBe("New Customer");
     expect(tierFor(tiers, { completedOrders: 5, lifetimeSpend: 1000 })?.name).toBe("Regular");

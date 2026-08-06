@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { handler, requireCustomer } from "@/lib/guard";
 import { getSession } from "@/lib/session";
 import { tierFor, pointsValue } from "@/lib/loyalty";
+import { loyaltyRates } from "@/lib/loyalty-settings";
 
 /** Session + profile summary. Returns { user: null } when signed out. */
 export const GET = handler(async () => {
@@ -36,7 +37,7 @@ export const GET = handler(async () => {
       referralCode: user.profile?.referralCode ?? null,
       storeCredit: user.profile?.storeCredit ?? 0,
       loyaltyPoints: user.profile?.loyaltyPoints ?? 0,
-      pointsValue: pointsValue(user.profile?.loyaltyPoints ?? 0),
+      pointsValue: pointsValue(user.profile?.loyaltyPoints ?? 0, await loyaltyRates()),
       completedOrders: user.metrics?.completedOrders ?? 0,
       tier: tier ? { name: tier.name, benefits: tier.benefitsText } : null,
       nextTier: next

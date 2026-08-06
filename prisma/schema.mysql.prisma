@@ -440,6 +440,16 @@ model LoyaltyTier {
   profiles CustomerProfile[]
 }
 
+/// What a DilKhush point is worth. A single row ("singleton") so the owner can
+/// reprice the loyalty scheme from the dashboard instead of needing a deploy.
+model LoyaltySettings {
+  id                String   @id @default("singleton")
+  pointsPer10Rupees Float    @default(1)
+  pointValueRupees  Float    @default(0.5)
+  minPointsToRedeem Int      @default(100)
+  updatedAt         DateTime @updatedAt
+}
+
 model LoyaltyTransaction {
   id        String   @id @default(cuid())
   userId    String

@@ -25,6 +25,8 @@ interface QuoteDto {
   meetsMinOrder: boolean;
   pointsBalance: number;
   pointsRedeemed: number;
+  pointValueRupees: number;
+  minPointsToRedeem: number;
   tierName: string | null;
   freeDelivery: boolean;
   coupon: {
@@ -438,11 +440,14 @@ export default function CheckoutPage() {
           <button className="text-sm underline text-maroon-600 mt-2" onClick={openOffers}>
             View all offers
           </button>
-          {quote && quote.pointsBalance >= 100 && (
+          {/* Rate and minimum come from the quote, never from literals here —
+              the owner can reprice points from the dashboard, and this line has
+              to quote whatever they set. */}
+          {quote && quote.pointsBalance >= quote.minPointsToRedeem && (
             <label className="flex items-center gap-2 mt-3 text-sm cursor-pointer">
               <input type="checkbox" className="h-4 w-4 accent-maroon-600" checked={redeemPoints} onChange={(e) => setRedeemPoints(e.target.checked)} />
               Redeem {quote.pointsRedeemed > 0 ? quote.pointsRedeemed : ""} DilKhush points
-              (balance: {quote.pointsBalance} = {inr(quote.pointsBalance * 0.5)})
+              (balance: {quote.pointsBalance} = {inr(quote.pointsBalance * quote.pointValueRupees)})
             </label>
           )}
           {quote?.tierName && (

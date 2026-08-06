@@ -4,6 +4,7 @@ import { computeTotals, deliveryFeeFor, subtotalOf } from "./pricing";
 import { evaluateCoupon, type CouponEvaluation } from "./coupons";
 import { tierFor } from "./loyalty";
 import { pointsValue, redeemablePoints } from "./loyalty";
+import { loyaltyRates } from "./loyalty-settings";
 import { checkServiceable, etaMins, isBranchOpen, roadKm } from "./geo";
 import { hhmm, parseJson, round2, withinTimeWindow } from "./utils";
 import { ACTIVE_STATUSES } from "./constants";
@@ -62,6 +63,9 @@ export interface QuoteResult {
   tierName: string | null;
   pointsBalance: number;
   pointsRedeemed: number;
+  /** Live scheme rates, so the browser never has to hardcode what a point is worth. */
+  pointValueRupees: number;
+  minPointsToRedeem: number;
   totals: ReturnType<typeof computeTotals>;
   paymentMethod: "COD" | "ONLINE";
   scheduledFor: Date | null;
@@ -91,6 +95,9 @@ export async function buildQuote(
     if (strict) throw new HttpError(400, msg);
     warnings.push(msg);
   };
+
+  // Cached, so this is not a database round trip on every keystroke at checkout.
+  const rates = await loyaltyRates();
 
   if (!req.items?.length) throw new HttpError(400, "Your cart is empty");
   if (req.items.length > 50) throw new HttpError(400, "Too many items in cart");
@@ -374,8 +381,8 @@ export async function buildQuote(
       discount,
       freeDelivery,
     });
-    pointsRedeemed = redeemablePoints(pointsBalance, provisional.total);
-    loyaltyCredit = pointsValue(pointsRedeemed);
+    pointsRedeemed = redeemablePoints(pointsBalance, provisional.total, rates);
+    loyaltyCredit = pointsValue(pointsRedeemed, rates);
   }
 
   const totals = computeTotals({
@@ -422,6 +429,8 @@ export async function buildQuote(
     tierName,
     pointsBalance,
     pointsRedeemed,
+    pointValueRupees: rates.pointValueRupees,
+    minPointsToRedeem: rates.minPointsToRedeem,
     totals,
     paymentMethod,
     scheduledFor,

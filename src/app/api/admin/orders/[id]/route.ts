@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { allowedBranchIds, handler, HttpError, requireStaff } from "@/lib/guard";
-import { REJECTION_REASONS, nextStatusesFor } from "@/lib/constants";
+import { POINT_VALUE_RUPEES, REJECTION_REASONS, nextStatusesFor } from "@/lib/constants";
 import { onOrderCancelled, onOrderDelivered } from "@/lib/order-effects";
 import { notifyUser } from "@/lib/notify";
 import { audit } from "@/lib/audit";
@@ -154,7 +154,10 @@ export const PATCH = handler(
               data: { storeCredit: { increment: body.amount } },
             });
           if (body.mode === "LOYALTY_POINTS") {
-            const pts = Math.round(body.amount * 2); // ₹1 = 2 points (100 pts = ₹50)
+            // Derived from the point's rupee value, not a literal: refunding
+            // ₹100 as points must hand back ₹100 of points whatever a point is
+            // currently worth.
+            const pts = Math.round(body.amount / POINT_VALUE_RUPEES);
             await tx.customerProfile.update({
               where: { userId: order.userId },
               data: { loyaltyPoints: { increment: pts } },

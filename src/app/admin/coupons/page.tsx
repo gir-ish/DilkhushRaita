@@ -10,7 +10,18 @@ interface CouponRow {
   firstOrderOnly: boolean; autoApply: boolean; active: boolean;
   perCustomerLimit: number; totalLimit: number | null;
   startAt: string | null; endAt: string | null;
+  // Needed to prefill the edit form; the list API returns the whole row.
+  minCompletedOrders: number | null; inactiveDays: number | null;
+  orderTypesJson: string;
   redemptionCount: number; totalSaved: number;
+}
+
+/** ISO → the "YYYY-MM-DDTHH:mm" a datetime-local input expects, in local time. */
+function toLocalInput(iso: string | null) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 interface Tier {
   id?: string; name: string; minCompletedOrders: number; minLifetimeSpend: number;
@@ -23,6 +34,7 @@ export default function MarketingPage() {
   const [tiers, setTiers] = useState<Tier[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
+  const [editing, setEditing] = useState<CouponRow | null>(null);
 
   const load = useCallback(() => {
     fetch("/api/admin/coupons")
@@ -81,7 +93,14 @@ export default function MarketingPage() {
                         {c.active ? "ACTIVE" : "OFF"}
                       </span>
                     </td>
-                    <td className="p-3">
+                    <td className="p-3 whitespace-nowrap">
+                      <button
+                        className="underline text-maroon-600"
+                        onClick={() => setEditing(c)}
+                      >
+                        Edit
+                      </button>
+                      <span className="text-maroon-800/30 px-2">·</span>
                       <button
                         className="underline text-maroon-600"
                         onClick={async () => {
@@ -104,21 +123,53 @@ export default function MarketingPage() {
         )}
       </section>
 
+      <PointValueEditor />
       {tiers && <TierEditor tiers={tiers} onSaved={load} />}
-      {showNew && <NewCouponModal onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); load(); }} />}
+      {showNew && <CouponModal onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); load(); }} />}
+      {editing && (
+        // Keyed so switching straight from one coupon to another refills the
+        // form instead of keeping the first one's state.
+        <CouponModal
+          key={editing.id}
+          coupon={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); load(); }}
+        />
+      )}
     </div>
   );
 }
 
-function NewCouponModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+/** Create a coupon, or edit an existing one — same rules, same preview. */
+function CouponModal({
+  coupon,
+  onClose,
+  onSaved,
+}: {
+  coupon?: CouponRow;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const editing = !!coupon;
   const [f, setF] = useState({
-    code: "", name: "", description: "", rewardType: "PERCENT",
-    value: 10, maxDiscount: "" as string | number, minCartValue: "" as string | number,
-    firstOrderOnly: false, inactiveDays: "" as string | number,
-    minCompletedOrders: "" as string | number,
-    totalLimit: "" as string | number, perCustomerLimit: 1,
-    autoApply: false, startAt: "", endAt: "",
-    orderTypes: ["DELIVERY", "PICKUP"] as string[],
+    code: coupon?.code ?? "",
+    name: coupon?.name ?? "",
+    description: coupon?.description ?? "",
+    rewardType: coupon?.rewardType ?? "PERCENT",
+    value: coupon?.value ?? 10,
+    maxDiscount: (coupon?.maxDiscount ?? "") as string | number,
+    minCartValue: (coupon?.minCartValue ?? "") as string | number,
+    firstOrderOnly: coupon?.firstOrderOnly ?? false,
+    inactiveDays: (coupon?.inactiveDays ?? "") as string | number,
+    minCompletedOrders: (coupon?.minCompletedOrders ?? "") as string | number,
+    totalLimit: (coupon?.totalLimit ?? "") as string | number,
+    perCustomerLimit: coupon?.perCustomerLimit ?? 1,
+    autoApply: coupon?.autoApply ?? false,
+    startAt: toLocalInput(coupon?.startAt ?? null),
+    endAt: toLocalInput(coupon?.endAt ?? null),
+    orderTypes: (coupon
+      ? (JSON.parse(coupon.orderTypesJson || '["DELIVERY","PICKUP"]') as string[])
+      : ["DELIVERY", "PICKUP"]) as string[],
   });
   const [preview, setPreview] = useState<{ eligibleCustomers: number | string; exampleCart: number; exampleDiscount: number; maxLiability: number | null; warning: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -143,8 +194,10 @@ function NewCouponModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
     setBusy(true);
     setError(null);
     try {
-      const r = await fetch("/api/admin/coupons", {
-        method: "POST",
+      const r = await fetch(
+        editing ? `/api/admin/coupons/${coupon!.id}` : "/api/admin/coupons",
+        {
+        method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           code: f.code, name: f.name, description: f.description,
@@ -161,7 +214,8 @@ function NewCouponModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
           startAt: f.startAt ? new Date(f.startAt).toISOString() : null,
           endAt: f.endAt ? new Date(f.endAt).toISOString() : null,
         }),
-      });
+      }
+      );
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       onSaved();
@@ -172,7 +226,7 @@ function NewCouponModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
   };
 
   return (
-    <Modal open onClose={onClose} title="New coupon" wide>
+    <Modal open onClose={onClose} title={editing ? `Edit ${coupon!.code}` : "New coupon"} wide>
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div>
           <label className="label" htmlFor="c-code">Code *</label>
@@ -270,11 +324,114 @@ function NewCouponModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
           </div>
         )}
         <ErrorBox message={error} />
+        {editing && coupon!.redemptionCount > 0 && (
+          <p className="text-xs text-maroon-800/60">
+            ⚠️ Already redeemed {coupon!.redemptionCount}× — edits apply to future
+            orders only, and past redemptions keep the terms they were given.
+          </p>
+        )}
         <button onClick={save} disabled={busy || !f.code || !f.name} className="btn-primary w-full">
-          {busy ? "Creating…" : "Create coupon"}
+          {busy ? "Saving…" : editing ? "Save changes" : "Create coupon"}
         </button>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * What a DilKhush point is worth. These three numbers multiply into every
+ * order, so the editor shows the resulting cashback rate before you save —
+ * "0.5" on its own does not read as "we give away 5% of revenue".
+ */
+function PointValueEditor() {
+  const [f, setF] = useState<{ pointsPer10Rupees: number; pointValueRupees: number; minPointsToRedeem: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    fetch("/api/admin/loyalty-settings")
+      .then((r) => r.json())
+      .then((d) => d.settings && setF({
+        pointsPer10Rupees: d.settings.pointsPer10Rupees,
+        pointValueRupees: d.settings.pointValueRupees,
+        minPointsToRedeem: d.settings.minPointsToRedeem,
+      }))
+      .catch(() => setError("Could not load point settings"));
+  }, []);
+  useEffect(load, [load]);
+
+  if (!f) return null;
+
+  const cashback = (f.pointsPer10Rupees * f.pointValueRupees) / 10;
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch("/api/admin/loyalty-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(f),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card p-4" aria-label="Point value">
+      <h2 className="font-display text-xl font-bold text-maroon-700 mb-1">DilKhush points</h2>
+      <p className="text-sm text-maroon-800/60 mb-3">
+        Applies to every branch, immediately. Point <em>balances</em> are stored as
+        counts, so changing the value also changes what customers&apos; existing
+        points are worth.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-3 text-sm">
+        <div>
+          <label className="label" htmlFor="lp-earn">Points earned per ₹10 spent</label>
+          <input id="lp-earn" type="number" step="0.1" min={0} className="input"
+            value={f.pointsPer10Rupees}
+            onChange={(e) => setF({ ...f, pointsPer10Rupees: +e.target.value })} />
+        </div>
+        <div>
+          <label className="label" htmlFor="lp-value">One point is worth (₹)</label>
+          <input id="lp-value" type="number" step="0.05" min={0.01} className="input"
+            value={f.pointValueRupees}
+            onChange={(e) => setF({ ...f, pointValueRupees: +e.target.value })} />
+        </div>
+        <div>
+          <label className="label" htmlFor="lp-min">Minimum points before redeeming</label>
+          <input id="lp-min" type="number" step="10" min={1} className="input"
+            value={f.minPointsToRedeem}
+            onChange={(e) => setF({ ...f, minPointsToRedeem: +e.target.value })} />
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-xl bg-cream-100 p-3 text-sm">
+        <p>
+          💸 That is <strong>{(cashback * 100).toFixed(1)}% back</strong> on every order
+          at the base tier — and <strong>{(cashback * 200).toFixed(1)}%</strong> for a
+          2× tier. {f.minPointsToRedeem} points = {inr(f.minPointsToRedeem * f.pointValueRupees)}.
+        </p>
+        {cashback > 0.05 && (
+          <p className="text-red-700 mt-1">
+            ⚠️ Above 5% back before tier multipliers — check this against your margin.
+          </p>
+        )}
+      </div>
+
+      <ErrorBox message={error} />
+      <button onClick={save} disabled={busy} className="btn-primary mt-3">
+        {busy ? "Saving…" : saved ? "Saved ✓" : "Save point value"}
+      </button>
+    </section>
   );
 }
 

@@ -1,5 +1,6 @@
 import { db } from "./db";
 import { pointsEarned, tierFor } from "./loyalty";
+import { loyaltyRates } from "./loyalty-settings";
 import { notifyUser } from "./notify";
 import { round2 } from "./utils";
 
@@ -19,7 +20,11 @@ export async function onOrderDelivered(orderId: string) {
   const completed = metrics.completedOrders + 1;
   const spend = round2(metrics.lifetimeSpend + order.total);
   const currentTier = tierFor(tiers, { completedOrders: completed, lifetimeSpend: spend });
-  const earned = pointsEarned(order.subtotal, currentTier?.pointMultiplier ?? 1);
+  const earned = pointsEarned(
+    order.subtotal,
+    currentTier?.pointMultiplier ?? 1,
+    await loyaltyRates()
+  );
 
   await db.$transaction([
     db.customerMetrics.update({
