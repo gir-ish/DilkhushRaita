@@ -1,69 +1,233 @@
+import { Fragment } from "react";
 import { SiteHeader } from "@/components/site-header";
 import { BranchPicker } from "@/components/branch-picker";
+import { Ticker } from "@/components/ticker";
+import { ArchCrest, FlourishRule } from "@/components/ornament";
 
-const HIGHLIGHTS = [
-  { icon: "🔥", title: "Tawa Fresh", copy: "Breads and tikkas straight off the clay oven." },
-  { icon: "🌿", title: "Slow Cooked", copy: "Dal makhani simmered overnight, never rushed." },
-  { icon: "🛵", title: "Hot on Arrival", copy: "Insulated delivery across Rohini & NSP." },
+const TICKER = [
+  "Tawa fresh",
+  "Dal simmered overnight",
+  "Raita churned daily",
+  "Pure veg options",
+  "Rohini & NSP",
+  "Delivery & pickup",
 ];
+
+const CRAFT = [
+  {
+    numeral: "I",
+    icon: "🔥",
+    title: "Tawa Fresh",
+    copy: "Rotis and parathas come off the tawa and go straight into the box. Nothing waits under a lamp.",
+  },
+  {
+    numeral: "II",
+    icon: "🌿",
+    title: "Slow Cooked",
+    copy: "The dal makhani sits on a low flame overnight, until the cream and the butter stop being separate things.",
+  },
+  {
+    numeral: "III",
+    icon: "🛵",
+    title: "Hot on Arrival",
+    copy: "Insulated bags and short routes across Rohini and NSP, so it reaches you at the heat it left at.",
+  },
+];
+
+const TRUST = [
+  { icon: "⭐", label: "4.6 average rating" },
+  { icon: "📍", label: "Rohini & NSP, Delhi" },
+  { icon: "🟢", label: "Pure veg options" },
+];
+
+/** Splits a line into masked, index-staggered words for the rise animation. */
+function StaggerWords({ text, delayMs = 0 }: { text: string; delayMs?: number }) {
+  const words = text.split(" ");
+  return (
+    <>
+      {words.map((w, i) => (
+        // The separating space is a sibling of the mask, never inside it: a
+        // space within an `overflow: hidden` inline-block collapses, and the
+        // words would run together once the animation settled.
+        <Fragment key={`${w}-${i}`}>
+          <span
+            className="word"
+            style={{ "--i": i, "--delay": `${delayMs}ms` } as React.CSSProperties}
+          >
+            <i>{w}</i>
+          </span>
+          {i < words.length - 1 ? " " : null}
+        </Fragment>
+      ))}
+    </>
+  );
+}
 
 export default function LandingPage() {
   return (
     <>
       <SiteHeader showCart={false} />
+      <Ticker items={TICKER} />
+
       <main className="min-h-screen">
-        <section className="pattern-jaali relative overflow-hidden">
-          <div className="mx-auto max-w-5xl px-4 pt-14 pb-10 text-center animate-fade-up">
-            <p className="font-display text-mustard-600 font-semibold tracking-wide text-base sm:text-lg">
-              दिल से बना, दिल तक पहुँचा
-            </p>
-            <h1 className="font-display text-5xl sm:text-6xl font-bold text-maroon-700 mt-3 leading-[1.05]">
-              DilKhush Dhaba
-            </h1>
-            <p className="divider-ornament mt-4 font-display text-lg font-semibold text-mustard-600">
-              Raita Wala
-            </p>
-            <p className="mt-5 text-maroon-800/75 max-w-xl mx-auto text-base sm:text-lg leading-relaxed">
-              Authentic North Indian dhaba food — dal makhani simmered overnight, tandoor-fresh
-              breads, and the raita that gave us our name.
-            </p>
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm font-semibold text-maroon-700">
-              <span className="inline-flex items-center gap-1.5">
-                <span aria-hidden>⭐</span> 4.6 average rating
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span aria-hidden>📍</span> Rohini &amp; NSP, Delhi
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span aria-hidden>🟢</span> Pure veg options
-              </span>
+        {/* ------------------------------------------------------------ hero */}
+        <section className="relative overflow-hidden">
+          <div
+            aria-hidden
+            className="pattern-jaali absolute inset-0 [mask-image:radial-gradient(ellipse_70%_60%_at_50%_20%,black,transparent_75%)]"
+          />
+
+          <div className="relative mx-auto max-w-5xl px-4 pt-10 pb-16 sm:pt-14">
+            <div className="text-center">
+              {/* The arch is the signature: a two-centred Mughal profile with a
+                  jaali screen inside, drawn on as the page settles. */}
+              <ArchCrest className="draw mx-auto w-[190px] sm:w-[230px] text-mustard-500" />
+
+              {/* No negative margin here: the arch's jambs run all the way to
+                  the bottom of its viewBox, so pulling the kicker up would
+                  cross the tracked-out capitals straight through them. */}
+              <p className="eyebrow mt-2">A North Delhi kitchen</p>
+
+              <p className="font-display text-mustard-600 text-fluid-lg font-medium mt-4">
+                <StaggerWords text="दिल से बना, दिल तक पहुँचा" delayMs={420} />
+              </p>
+
+              <h1 className="font-display text-foil wipe-in text-fluid-4xl font-semibold tracking-wordmark mt-2 [animation-delay:250ms]">
+                DilKhush Dhaba
+              </h1>
+
+              <p className="divider-ornament mt-4 font-display text-fluid-lg font-medium text-mustard-600">
+                Raita Wala
+              </p>
+
+              <p className="mt-7 mx-auto max-w-xl text-fluid-base text-maroon-800/75">
+                <StaggerWords
+                  text="Authentic North Indian dhaba food — dal makhani simmered overnight, hot rotis off the tawa, and the raita that gave us our name."
+                  delayMs={620}
+                />
+              </p>
+
+              <ul className="mt-9 flex flex-wrap items-center justify-center gap-y-3 text-sm font-semibold text-maroon-700">
+                {TRUST.map((t, i) => (
+                  <li
+                    key={t.label}
+                    className={`inline-flex items-center gap-2 px-4 sm:px-5 ${
+                      i > 0 ? "sm:border-l sm:border-maroon-800/15" : ""
+                    }`}
+                  >
+                    <span aria-hidden className="text-mustard-500">
+                      {t.icon}
+                    </span>
+                    {t.label}
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
         </section>
 
+        {/* ----------------------------------------------------------- story */}
+        <section className="mx-auto max-w-5xl px-4 pb-16" aria-labelledby="story">
+          <div className="frame px-6 py-10 sm:px-14 sm:py-14">
+            <div className="max-w-2xl mx-auto">
+              <p className="eyebrow text-center">Our kitchen</p>
+              <h2
+                id="story"
+                className="font-display text-fluid-3xl font-semibold text-maroon-700 text-center mt-2"
+              >
+                Cooked the long way round
+              </h2>
+              <FlourishRule className="draw mx-auto w-44 mt-5 text-mustard-500" />
+
+              <p className="dropcap mt-7 text-fluid-base text-maroon-800/80 leading-relaxed">
+                Every dhaba worth the name is built on patience. Ours starts before the shutters go
+                up: black urad soaking since the night before, onions browning slowly enough to go
+                sweet instead of bitter, the tawa coming up to heat in its own time. Nothing here
+                is finished in a hurry, because the things that make this food taste like home are
+                the ones that cannot be rushed.
+              </p>
+              <p className="mt-4 text-fluid-base text-maroon-800/75 leading-relaxed">
+                The raita is churned fresh every morning — thick, cold, flecked with roasted jeera.
+                It is the thing people come back for, and the reason the board outside says{" "}
+                <em className="text-maroon-700 not-italic font-semibold">Raita Wala</em>.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* -------------------------------------------------------- branches */}
+        <section className="mx-auto max-w-5xl px-4">
+          <header className="text-center mb-8">
+            <p className="eyebrow">Two kitchens</p>
+            <h2 className="font-display text-fluid-2xl font-semibold text-maroon-700 mt-1.5">
+              Choose your branch
+            </h2>
+            <FlourishRule className="mx-auto w-40 mt-4 text-mustard-500" />
+          </header>
+        </section>
+
         <BranchPicker />
 
-        <section className="mx-auto max-w-5xl px-4 pb-12" aria-label="Why order from us">
-          <div className="grid gap-4 sm:grid-cols-3">
-            {HIGHLIGHTS.map((h) => (
-              <div key={h.title} className="card p-5 text-center">
-                <span aria-hidden className="text-3xl">
-                  {h.icon}
+        {/* ----------------------------------------------------------- craft */}
+        <section className="mx-auto max-w-5xl px-4 py-16" aria-labelledby="craft">
+          <header className="text-center mb-10">
+            <p className="eyebrow">Why order from us</p>
+            <h2
+              id="craft"
+              className="font-display text-fluid-2xl font-semibold text-maroon-700 mt-1.5"
+            >
+              Three things we refuse to rush
+            </h2>
+          </header>
+
+          <div className="grid gap-6 sm:grid-cols-3">
+            {CRAFT.map((c, i) => (
+              <article
+                key={c.title}
+                className="reveal card p-7 text-center"
+                style={{ "--i": i } as React.CSSProperties}
+              >
+                <span
+                  aria-hidden
+                  className="mx-auto grid place-items-center h-16 w-16 rounded-full text-2xl
+                    bg-gradient-to-b from-mustard-100 to-cream-200
+                    ring-1 ring-mustard-400/40
+                    shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"
+                >
+                  {c.icon}
                 </span>
-                <h2 className="font-display text-lg font-bold text-maroon-700 mt-2">{h.title}</h2>
-                <p className="text-sm text-maroon-800/70 mt-1 leading-relaxed">{h.copy}</p>
-              </div>
+                {/* Roman numerals read as a set rather than a list of features. */}
+                <p className="font-display text-mustard-500 text-lg font-semibold tracking-[0.2em] mt-4">
+                  {c.numeral}
+                </p>
+                <h3 className="font-display text-fluid-lg font-semibold text-maroon-700 mt-1">
+                  {c.title}
+                </h3>
+                <p className="text-sm text-maroon-800/70 mt-2.5 leading-relaxed">{c.copy}</p>
+              </article>
             ))}
           </div>
         </section>
 
-        <footer className="border-t border-cream-300/70 bg-cream-50/60">
-          <div className="mx-auto max-w-5xl px-4 py-8 text-center text-sm text-maroon-800/60">
-            <p className="font-display text-base font-bold text-maroon-700">
+        {/* ---------------------------------------------------------- footer */}
+        <footer className="border-t border-maroon-800/10 bg-cream-50/70">
+          <div className="mx-auto max-w-5xl px-4 py-14 text-center">
+            <span
+              aria-hidden
+              className="mx-auto grid place-items-center h-12 w-12 rounded-full
+                bg-gradient-to-b from-mustard-200 to-mustard-500 ring-1 ring-mustard-600/60
+                shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_2px_6px_-2px_rgba(61,18,17,0.4)]"
+            >
+              <span className="font-display text-lg font-semibold text-maroon-800">DK</span>
+            </span>
+            <p className="font-display text-fluid-lg font-semibold text-maroon-700 mt-4">
               DilKhush Dhaba – Raita Wala
             </p>
-            <p className="mt-1">Rohini &amp; NSP, Delhi · Delivery &amp; Pickup</p>
-            <p className="mt-3 text-xs text-maroon-800/45">
+            <p className="text-sm text-maroon-800/65 mt-1">
+              Rohini &amp; NSP, Delhi · Delivery &amp; Pickup
+            </p>
+            <FlourishRule className="mx-auto w-40 my-7 text-mustard-500" />
+            <p className="text-xs text-maroon-800/45">
               © {new Date().getFullYear()} DilKhush Dhaba – Raita Wala. All rights reserved.
             </p>
           </div>

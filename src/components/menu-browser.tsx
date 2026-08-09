@@ -87,20 +87,43 @@ export function MenuBrowser({ slug }: { slug: string }) {
 
   return (
     <div>
-      <div className="pt-5 pb-3 flex flex-wrap items-center gap-x-4 gap-y-1">
-        <h1 className="font-display text-2xl font-bold text-maroon-700">{branch.name}</h1>
-        <Badge tone={branch.open ? "green" : "gray"}>
-          {branch.open ? "Open" : (branch.openReason ?? "Closed")}
-        </Badge>
-        {branch.busyMode && <Badge tone="maroon">Busy — longer prep times</Badge>}
-        <span className="text-sm text-maroon-800/60">
-          ⏱ ~{branch.prepTimeMins} min prep
-          {branch.minOrderValue > 0 && ` · Min order ${inr(branch.minOrderValue)}`}
-        </span>
-        <Link href="/" className="text-sm underline text-maroon-600">change branch</Link>
-      </div>
+      <header className="pt-7 pb-5">
+        <p className="eyebrow">Our menu</p>
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mt-1.5">
+          <h1 className="font-display text-fluid-2xl font-semibold text-maroon-700">
+            {branch.name}
+          </h1>
+          <Badge tone={branch.open ? "green" : "gray"}>
+            {branch.open ? "Open" : (branch.openReason ?? "Closed")}
+          </Badge>
+          {branch.busyMode && <Badge tone="maroon">Busy — longer prep times</Badge>}
+        </div>
+        <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-maroon-800/60">
+          <span className="money">⏱ ~{branch.prepTimeMins} min prep</span>
+          {branch.minOrderValue > 0 && (
+            <>
+              <span aria-hidden className="text-mustard-400">
+                ◆
+              </span>
+              <span className="money">Min order {inr(branch.minOrderValue)}</span>
+            </>
+          )}
+          <span aria-hidden className="text-mustard-400">
+            ◆
+          </span>
+          <Link
+            href="/"
+            className="link-classic font-semibold text-maroon-600 hover:text-maroon-700"
+          >
+            change branch
+          </Link>
+        </p>
+      </header>
 
-      <div className="sticky top-16 z-30 bg-cream-100 pb-2 pt-1 -mx-4 px-4">
+      {/* The whole filter bar travels with the page. The gradient tail below it
+          keeps dish cards from appearing to slice through the bar as they
+          scroll under its bottom edge. */}
+      <div className="sticky top-16 z-30 -mx-4 px-4 pt-2 pb-2 bg-cream-100/92 backdrop-blur-md border-b border-maroon-800/10 after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-gradient-to-b after:from-cream-100/80 after:to-transparent after:pointer-events-none">
         <label htmlFor="menu-search" className="sr-only">Search the menu</label>
         <input
           id="menu-search"
@@ -110,7 +133,7 @@ export function MenuBrowser({ slug }: { slug: string }) {
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <div className="flex gap-2 overflow-x-auto py-2" role="tablist" aria-label="Categories">
+        <div className="rail py-2.5" role="tablist" aria-label="Categories">
           <button className={`chip ${cat === "all" ? "chip-active" : ""}`} onClick={() => setCat("all")}>
             All
           </button>
@@ -124,7 +147,7 @@ export function MenuBrowser({ slug }: { slug: string }) {
             </button>
           ))}
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Filters">
+        <div className="rail pb-1" aria-label="Filters">
           <button className={`chip ${vegOnly ? "chip-active" : ""}`} onClick={() => setVegOnly(!vegOnly)} aria-pressed={vegOnly}>🟢 Veg</button>
           <button className={`chip ${veganOnly ? "chip-active" : ""}`} onClick={() => setVeganOnly(!veganOnly)} aria-pressed={veganOnly}>🌱 Vegan</button>
           <button className={`chip ${spicyOnly ? "chip-active" : ""}`} onClick={() => setSpicyOnly(!spicyOnly)} aria-pressed={spicyOnly}>🌶 Spicy</button>
@@ -144,15 +167,35 @@ export function MenuBrowser({ slug }: { slug: string }) {
       </div>
 
       {filtered.length === 0 && (
-        <p className="py-10 text-center text-maroon-800/60">No dishes match — try clearing filters.</p>
+        <div className="py-16 text-center">
+          <p className="text-4xl" aria-hidden>
+            🍽
+          </p>
+          <p className="mt-3 font-display text-fluid-lg font-semibold text-maroon-700">
+            Nothing matches those filters
+          </p>
+          <p className="mt-1 text-sm text-maroon-800/60">
+            Try clearing a filter or searching for something else.
+          </p>
+        </div>
       )}
 
       {filtered.map((c) => (
-        <section key={c.id} aria-labelledby={`cat-${c.id}`} className="mt-6">
-          <h2 id={`cat-${c.id}`} className="font-display text-xl font-bold text-maroon-700 mb-3">
-            {c.name}
-          </h2>
-          <div className="grid gap-3 sm:grid-cols-2">
+        <section key={c.id} aria-labelledby={`cat-${c.id}`} className="mt-9 first:mt-7">
+          <div className="flex items-center gap-4 mb-4">
+            <h2
+              id={`cat-${c.id}`}
+              className="font-display text-fluid-xl font-semibold text-maroon-700 whitespace-nowrap"
+            >
+              {c.name}
+            </h2>
+            {/* Rule runs out to the margin, as a menu section head does. */}
+            <span aria-hidden className="rule-ornament flex-1" />
+            <span className="text-xs font-semibold text-maroon-800/40 money">
+              {c.items.length}
+            </span>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
             {c.items.map((item) => (
               <ItemCard
                 key={item.id}
@@ -174,12 +217,22 @@ export function MenuBrowser({ slug }: { slug: string }) {
       )}
 
       {cart.count > 0 && (
-        <Link
-          href="/cart"
-          className="fixed bottom-4 left-4 right-4 sm:left-auto sm:w-80 btn-primary shadow-lift z-40 !py-4"
-        >
-          🛒 View cart · {cart.count} item{cart.count > 1 ? "s" : ""} · {inr(cart.displayTotal)}
-        </Link>
+        <div className="fixed bottom-0 inset-x-0 z-40 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] pointer-events-none sm:left-auto sm:w-96">
+          <Link
+            href="/cart"
+            className="btn-primary w-full !min-h-[56px] !text-base shadow-lift pointer-events-auto animate-sheet-up"
+          >
+            <span aria-hidden>🛒</span>
+            <span className="font-semibold">
+              {cart.count} item{cart.count > 1 ? "s" : ""}
+            </span>
+            <span aria-hidden className="text-cream-50/40">
+              |
+            </span>
+            <span className="money">{inr(cart.displayTotal)}</span>
+            <span className="ml-auto text-cream-50/85">View cart →</span>
+          </Link>
+        </div>
       )}
     </div>
   );
@@ -188,37 +241,68 @@ export function MenuBrowser({ slug }: { slug: string }) {
 function ItemCard({ item, fav, onOpen }: { item: MenuItemDto; fav: boolean; onOpen: () => void }) {
   return (
     <article
-      className={`card p-3 flex gap-3 ${item.available ? "card-hover" : "opacity-60"}`}
+      className={`card p-3.5 flex gap-3.5 ${item.available ? "card-hover" : "opacity-55 saturate-50"}`}
     >
-      <FoodImage
-        emoji={item.imageEmoji}
-        url={item.imageUrl}
-        name={item.name}
-        className="h-24 w-24 rounded-xl shrink-0 ring-1 ring-maroon-800/5"
-      />
+      <div className="relative shrink-0">
+        <FoodImage
+          emoji={item.imageEmoji}
+          url={item.imageUrl}
+          name={item.name}
+          className="h-[104px] w-[104px] rounded-xl ring-1 ring-maroon-800/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]"
+        />
+        {item.bestseller && (
+          <span className="absolute -top-1.5 -left-1.5 rounded-full bg-gradient-to-b from-mustard-300 to-mustard-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-maroon-800 ring-2 ring-cream-50 shadow-sm">
+            ★ Best
+          </span>
+        )}
+        {fav && (
+          <span
+            className="absolute -bottom-1.5 -right-1.5 grid h-6 w-6 place-items-center rounded-full bg-cream-50 text-xs ring-1 ring-maroon-800/10 shadow-sm"
+            aria-label="Favourite"
+          >
+            ❤️
+          </span>
+        )}
+      </div>
+
       <div className="min-w-0 flex-1 flex flex-col">
         <div className="flex items-center gap-2">
           <VegMark veg={item.veg} />
-          {item.bestseller && <Badge tone="mustard">⭐ Bestseller</Badge>}
-          {item.spicy && <span aria-label="Spicy" title="Spicy">🌶</span>}
-          {fav && <span aria-label="Favourite">❤️</span>}
-        </div>
-        <h3 className="font-semibold text-maroon-800 leading-tight mt-1">{item.name}</h3>
-        <p className="text-xs text-maroon-800/60 line-clamp-2">{item.description}</p>
-        <div className="mt-auto flex items-center justify-between pt-2">
-          <div>
-            <span className="font-bold text-maroon-700 text-[17px]">{inr(item.price)}</span>
-            <span className="block text-xs text-maroon-800/50">
-              ⏱ {item.prepTimeMins}m · ★ 4.{(item.name.length % 5) + 3}
-              {/* rating placeholder until reviews accumulate */}
+          {item.spicy && (
+            <span aria-label="Spicy" title="Spicy" className="text-xs">
+              🌶
             </span>
-          </div>
+          )}
+          <span className="ml-auto text-[11px] font-semibold text-maroon-800/45 money">
+            ⏱ {item.prepTimeMins}m · ★ 4.{(item.name.length % 5) + 3}
+            {/* rating placeholder until reviews accumulate */}
+          </span>
+        </div>
+
+        <h3 className="font-display font-semibold text-[15.5px] text-maroon-800 leading-snug mt-1.5">
+          {item.name}
+        </h3>
+        {item.nameHindi && (
+          <p className="text-[11px] text-maroon-800/45 leading-tight">{item.nameHindi}</p>
+        )}
+        <p className="text-xs text-maroon-800/60 line-clamp-2 mt-1 leading-relaxed">
+          {item.description}
+        </p>
+
+        <div className="mt-auto flex items-end justify-between gap-2 pt-2.5">
+          <span className="font-display text-[19px] font-semibold text-maroon-700 money leading-none">
+            {inr(item.price)}
+          </span>
           {item.available ? (
-            <button onClick={onOpen} className="btn-secondary !min-h-[38px] !px-4">
-              ADD
+            <button
+              onClick={onOpen}
+              className="btn-secondary !min-h-[36px] !px-5 !text-[13px] tracking-wide uppercase"
+              aria-label={`Add ${item.name}`}
+            >
+              Add
             </button>
           ) : (
-            <span className="text-xs font-semibold text-red-700">
+            <span className="text-[11px] font-semibold text-red-800 bg-red-50 border border-red-200 rounded-md px-2 py-1">
               {item.availabilityNote ?? "Unavailable"}
             </span>
           )}

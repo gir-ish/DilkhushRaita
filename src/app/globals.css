@@ -2,23 +2,770 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: light;
+/* ================================================================== tokens */
+/*
+ * Registering these with @property does two things plain custom properties
+ * cannot: the browser type-checks them, and it can interpolate them — which is
+ * what makes the brass sweep on .btn-primary and the rule shimmer animate at
+ * all. An unregistered `--angle: 90deg` would simply snap between keyframes.
+ */
+@property --sheen {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: -60%;
+}
+@property --foil-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 90deg;
 }
 
-body {
-  @apply bg-cream-100 text-maroon-800 font-body antialiased;
-  /* Warm ambient wash — keeps long pages from reading as flat beige. */
-  background-image:
-    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(223, 181, 62, 0.16), transparent 70%),
-    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(123, 30, 30, 0.06), transparent 70%);
-  background-attachment: fixed;
+:root {
+  color-scheme: light;
+
+  /* Surfaces */
+  --paper: #f8f3e8;
+  --paper-raised: #fdfbf6;
+  --paper-sunk: #efe6d3;
+
+  /* Ink & accents */
+  --ink: #3d1211;
+  --ink-deep: #2a0c0b;
+  --oxblood: #71201c;
+  --oxblood-lit: #8a2622;
+  --brass: #c9a94e;
+  --brass-deep: #a8862b;
+  --leaf: #2c6e36;
+
+  /* Derived hairlines. color-mix keeps every rule the same hue family as the
+     ink, so borders never read as cold grey against the parchment. */
+  --rule: color-mix(in oklab, var(--ink) 11%, transparent);
+  --rule-strong: color-mix(in oklab, var(--ink) 20%, transparent);
+  --rule-brass: color-mix(in oklab, var(--brass) 55%, transparent);
+
+  --ring: color-mix(in oklab, var(--oxblood-lit) 70%, transparent);
+
+  /* Motion */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --dur-fast: 140ms;
+  --dur: 220ms;
+
+  /* Layout */
+  --header-h: 4rem;
+  --tap: 44px;
+}
+
+/* ==================================================================== base */
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    /* Anchors and the menu's category jumps must clear the sticky header. */
+    scroll-padding-top: calc(var(--header-h) + 1rem);
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-cream-100 text-maroon-800 font-body antialiased;
+    /* Two soft washes: brass from the top edge, oxblood from the top-right.
+       Fixed attachment keeps the gradient still while long pages scroll, so it
+       reads as room light rather than a decorative band. */
+    background-image:
+      radial-gradient(ellipse 78% 46% at 50% -8%, color-mix(in oklab, var(--brass) 22%, transparent), transparent 68%),
+      radial-gradient(ellipse 55% 38% at 102% 0%, color-mix(in oklab, var(--oxblood) 9%, transparent), transparent 70%);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+  }
+
+  /* Paper grain. A single generated-noise tile multiplied over the page — it
+     costs no network request and stops large cream areas banding on cheap
+     phone screens. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    /* Behind every element the app renders, above the page wash. Anything
+       positive here would put a film over modals and the sticky header. */
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.5;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.18'/%3E%3C/svg%3E");
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--brass) 45%, transparent);
+    color: var(--ink-deep);
+  }
+
+  /* One focus treatment for the whole app, so a keyboard user never has to
+     guess which control the browser thinks is active. */
+  :focus-visible {
+    outline: 2px solid var(--oxblood-lit);
+    outline-offset: 2px;
+    border-radius: 0.35rem;
+  }
+
+  :where(h1, h2, h3, h4) {
+    text-wrap: balance;
+  }
+  :where(p) {
+    text-wrap: pretty;
+  }
+
+  input,
+  textarea,
+  select {
+    accent-color: var(--oxblood-lit);
+  }
+
+  /* Numerals in prices, totals and timers line up in columns. */
+  :where(th, td) {
+    font-variant-numeric: tabular-nums;
+  }
+
+  * {
+    scrollbar-color: color-mix(in oklab, var(--ink) 25%, transparent) transparent;
+    scrollbar-width: thin;
+  }
 }
 
 /* Display type reads tighter and more deliberate at large sizes. */
 .font-display {
   letter-spacing: -0.015em;
+  font-optical-sizing: auto;
 }
+
+/* ============================================================== components */
+
+@layer components {
+  /* -------------------------------------------------------------- surfaces */
+
+  .card {
+    @apply rounded-card shadow-card;
+    background: var(--paper-raised);
+    border: 1px solid var(--rule);
+    /* A one-pixel light line along the top edge is what separates a card that
+       looks printed on paper from a flat white rectangle. */
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.8),
+      0 1px 1px rgb(61 18 17 / 0.04),
+      0 2px 6px rgb(61 18 17 / 0.05),
+      0 8px 20px -8px rgb(61 18 17 / 0.1);
+  }
+
+  /* Opt-in interactivity for cards that are clickable (menu items, branches). */
+  .card-hover {
+    transition:
+      transform var(--dur) var(--ease-out-expo),
+      box-shadow var(--dur) var(--ease-out-expo),
+      border-color var(--dur) var(--ease-out-expo);
+  }
+  @media (hover: hover) {
+    .card-hover:hover {
+      transform: translateY(-2px);
+      border-color: var(--rule-brass);
+      box-shadow:
+        inset 0 1px 0 rgb(255 255 255 / 0.9),
+        0 1px 1px rgb(61 18 17 / 0.05),
+        0 8px 18px -6px rgb(61 18 17 / 0.12),
+        0 22px 44px -16px rgb(61 18 17 / 0.22);
+    }
+  }
+  /* Keyboard parity: a card lights up when anything inside it takes focus. */
+  .card-hover:has(:focus-visible) {
+    border-color: var(--rule-brass);
+  }
+
+  /* Elevated panel for summaries / totals. */
+  .card-elevated {
+    @apply rounded-card;
+    background: var(--paper-raised);
+    border: 1px solid var(--rule);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.85),
+      0 1px 2px rgb(61 18 17 / 0.05),
+      0 12px 32px -14px rgb(61 18 17 / 0.28);
+  }
+
+  /* A framed panel — double rule with brass corner marks, the way a printed
+     menu card is set. Used for the hero and other set-piece blocks. */
+  .frame {
+    position: relative;
+    border: 1px solid var(--rule-strong);
+    border-radius: 1.25rem;
+    background: color-mix(in oklab, var(--paper-raised) 72%, transparent);
+    backdrop-filter: blur(2px);
+  }
+  .frame::before {
+    content: "";
+    position: absolute;
+    inset: 6px;
+    border: 1px solid var(--rule-brass);
+    border-radius: 0.95rem;
+    pointer-events: none;
+  }
+
+  /* -------------------------------------------------------------- buttons */
+
+  /*
+   * Every variant is listed on the shared rules rather than `@apply btn`-ing a
+   * base class. Call sites use `btn-primary` alone (no `btn` alongside it), so
+   * a hand-written `.btn:disabled` would never match them — spelling the
+   * selectors out keeps the disabled and focus states honest.
+   */
+  .btn,
+  .btn-primary,
+  .btn-secondary,
+  .btn-outline,
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl font-semibold;
+    position: relative;
+    /* Deliberately not `overflow: hidden` — buttons carry badges that hang off
+       the corner (the cart count), and clipping would eat them. The hover
+       sweep below is a background layer instead of a child, so it needs no
+       clipping and follows the border radius for free. */
+    min-height: var(--tap);
+    padding-inline: 1.25rem;
+    font-size: 0.9375rem;
+    letter-spacing: 0.005em;
+    transition:
+      transform var(--dur-fast) var(--ease-out-expo),
+      box-shadow var(--dur-fast) var(--ease-out-expo),
+      background-color var(--dur-fast) linear,
+      border-color var(--dur-fast) linear,
+      color var(--dur-fast) linear;
+  }
+  .btn:disabled,
+  .btn-primary:disabled,
+  .btn-secondary:disabled,
+  .btn-outline:disabled,
+  .btn-ghost:disabled,
+  .btn[aria-disabled="true"],
+  .btn-primary[aria-disabled="true"],
+  .btn-secondary[aria-disabled="true"] {
+    @apply opacity-50 cursor-not-allowed;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+
+  /*
+   * The sweep: an oversized diagonal highlight parked off the right edge of the
+   * background box, slid across on hover. Two background layers — the sweep and
+   * the face — with only the sweep's position transitioning. Pointer devices
+   * only; it is noise under a thumb.
+   */
+  .btn-primary {
+    @apply text-cream-50;
+    background-image:
+      linear-gradient(105deg, transparent 40%, rgb(255 255 255 / 0.22) 47%, transparent 55%),
+      linear-gradient(180deg, var(--oxblood-lit), var(--oxblood) 62%, #5c1a17);
+    background-size:
+      260% 100%,
+      100% 100%;
+    background-position:
+      160% 0,
+      0 0;
+    background-repeat: no-repeat;
+    border: 1px solid color-mix(in oklab, var(--ink-deep) 45%, transparent);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.22),
+      0 1px 2px rgb(61 18 17 / 0.22),
+      0 6px 16px -8px rgb(61 18 17 / 0.5);
+  }
+  .btn-secondary {
+    @apply text-maroon-800;
+    background-image:
+      linear-gradient(105deg, transparent 40%, rgb(255 255 255 / 0.4) 47%, transparent 55%),
+      linear-gradient(180deg, #e6cd86, var(--brass) 55%, var(--brass-deep));
+    background-size:
+      260% 100%,
+      100% 100%;
+    background-position:
+      160% 0,
+      0 0;
+    background-repeat: no-repeat;
+    border: 1px solid color-mix(in oklab, var(--brass-deep) 75%, var(--ink));
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.5),
+      0 1px 2px rgb(61 18 17 / 0.14),
+      0 6px 14px -8px rgb(61 18 17 / 0.4);
+  }
+
+  @media (hover: hover) {
+    .btn-primary,
+    .btn-secondary {
+      transition:
+        transform var(--dur-fast) var(--ease-out-expo),
+        box-shadow var(--dur-fast) var(--ease-out-expo),
+        background-position 720ms var(--ease-out-expo);
+    }
+    .btn-primary:hover:not(:disabled),
+    .btn-secondary:hover:not(:disabled) {
+      background-position:
+        -60% 0,
+        0 0;
+    }
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.28),
+      0 2px 4px rgb(61 18 17 / 0.2),
+      0 12px 24px -10px rgb(61 18 17 / 0.55);
+  }
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: inset 0 2px 4px rgb(0 0 0 / 0.28);
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.6),
+      0 2px 4px rgb(61 18 17 / 0.14),
+      0 12px 22px -10px rgb(61 18 17 / 0.45);
+  }
+  .btn-secondary:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: inset 0 2px 4px rgb(61 18 17 / 0.25);
+  }
+
+  .btn-outline {
+    color: var(--oxblood);
+    background: color-mix(in oklab, var(--paper-raised) 70%, transparent);
+    border: 1px solid color-mix(in oklab, var(--oxblood) 45%, transparent);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.6);
+  }
+  .btn-outline:hover:not(:disabled) {
+    background: var(--oxblood);
+    border-color: var(--oxblood);
+    @apply text-cream-50;
+  }
+
+  .btn-ghost {
+    @apply text-maroon-700;
+    background: transparent;
+    border: 1px solid transparent;
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--oxblood) 8%, transparent);
+    border-color: var(--rule);
+  }
+
+  /* ---------------------------------------------------------------- forms */
+
+  .input {
+    @apply w-full rounded-xl;
+    min-height: var(--tap);
+    padding: 0.7rem 0.95rem;
+    font-size: 0.9375rem;
+    color: var(--ink);
+    background: var(--paper-raised);
+    border: 1px solid var(--rule-strong);
+    /* The inset line reads as a milled edge and, unlike a ring utility, the
+       focus state costs no layout shift. */
+    box-shadow: inset 0 1px 2px rgb(61 18 17 / 0.05);
+    transition:
+      border-color var(--dur-fast) linear,
+      box-shadow var(--dur-fast) linear,
+      background-color var(--dur-fast) linear;
+  }
+  .input::placeholder {
+    color: color-mix(in oklab, var(--ink) 42%, transparent);
+  }
+  .input:hover:not(:disabled) {
+    border-color: color-mix(in oklab, var(--ink) 30%, transparent);
+  }
+  .input:focus {
+    outline: none;
+    border-color: var(--oxblood-lit);
+    box-shadow:
+      inset 0 1px 2px rgb(61 18 17 / 0.04),
+      0 0 0 3px var(--ring);
+  }
+  .input:disabled {
+    background: var(--paper-sunk);
+    @apply opacity-70 cursor-not-allowed;
+  }
+  /* Invalid only once the field has been touched and left — not while typing. */
+  .input:user-invalid {
+    border-color: #a12727;
+  }
+
+  .label {
+    @apply block text-sm font-semibold mb-1.5;
+    color: var(--oxblood);
+    letter-spacing: 0.005em;
+  }
+
+  .form-error {
+    @apply text-sm mt-1;
+    color: #9b1c1c;
+  }
+
+  /* ---------------------------------------------------------------- chips */
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full whitespace-nowrap font-medium;
+    min-height: 36px;
+    padding: 0.35rem 0.85rem;
+    font-size: 0.8125rem;
+    color: var(--oxblood);
+    background: var(--paper-raised);
+    border: 1px solid var(--rule-strong);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.7);
+    transition:
+      background-color var(--dur-fast) linear,
+      border-color var(--dur-fast) linear,
+      color var(--dur-fast) linear,
+      transform var(--dur-fast) var(--ease-out-expo);
+  }
+  .chip:hover {
+    border-color: var(--rule-brass);
+    background: color-mix(in oklab, var(--brass) 12%, var(--paper-raised));
+  }
+  .chip:active {
+    transform: scale(0.97);
+  }
+  .chip-active {
+    color: #fdfbf6;
+    background: linear-gradient(180deg, var(--oxblood-lit), var(--oxblood));
+    border-color: color-mix(in oklab, var(--ink-deep) 40%, transparent);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.18),
+      0 2px 6px -2px rgb(61 18 17 / 0.35);
+  }
+  .chip-active:hover {
+    color: #fdfbf6;
+    background: linear-gradient(180deg, var(--oxblood), #5c1a17);
+    border-color: color-mix(in oklab, var(--ink-deep) 50%, transparent);
+  }
+
+  /* A <select> styled as a chip still needs its native arrow replaced. */
+  select.chip {
+    appearance: none;
+    padding-right: 2rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5 6 6.5l5-5' stroke='%2371201c' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.7rem center;
+  }
+
+  /* --------------------------------------------------------------- accents */
+
+  /* Small uppercase kicker above headings. */
+  .eyebrow {
+    @apply text-xs font-bold uppercase;
+    letter-spacing: 0.22em;
+    color: var(--brass-deep);
+  }
+
+  /* Ornamental centred divider — a brass rule with a diamond at each end. */
+  .divider-ornament {
+    @apply flex items-center justify-center gap-3;
+    color: var(--brass-deep);
+  }
+  .divider-ornament::before,
+  .divider-ornament::after {
+    content: "";
+    height: 1px;
+    width: 3.5rem;
+    background: linear-gradient(90deg, transparent, var(--brass));
+  }
+  .divider-ornament::after {
+    background: linear-gradient(270deg, transparent, var(--brass));
+  }
+
+  /* Standalone brass rule with a centred lozenge, for section breaks. */
+  .rule-ornament {
+    position: relative;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--rule-brass) 22%, var(--rule-brass) 78%, transparent);
+  }
+  .rule-ornament::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    height: 6px;
+    width: 6px;
+    translate: -50% -50%;
+    rotate: 45deg;
+    background: var(--brass);
+    box-shadow: 0 0 0 3px var(--paper);
+  }
+
+  /*
+   * Dotted leaders, the way a printed menu sets a dish against its price. The
+   * filler is its own element so the dots track the real gap between label and
+   * value at any width, instead of a fixed run of periods that wraps badly. It
+   * is an empty `dd` rather than a `span` because `dl > div` may only contain
+   * `dt`/`dd`; it carries aria-hidden so it is not announced as a value.
+   */
+  .spec {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    font-size: 0.8125rem;
+  }
+  .spec > dt {
+    color: color-mix(in oklab, var(--ink) 60%, transparent);
+    white-space: nowrap;
+  }
+  .spec > dd {
+    font-weight: 600;
+    color: var(--ink);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .spec > .spec-fill {
+    flex: 1 1 auto;
+    min-width: 0.75rem;
+    border-bottom: 1px dotted var(--rule-strong);
+    translate: 0 -0.25rem;
+  }
+
+  /* ------------------------------------------------------ editorial motion */
+
+  /*
+   * Signboard ticker. The track carries the list twice and slides exactly
+   * -50%, so copy two lands where copy one began — seamless at any width,
+   * with no measuring. It parks on hover and on keyboard focus so nobody has
+   * to chase a moving target.
+   */
+  .ticker {
+    position: relative;
+    overflow: hidden;
+  }
+  .ticker__track {
+    display: flex;
+    width: max-content;
+    animation: ticker-slide var(--ticker-dur, 46s) linear infinite;
+  }
+  .ticker:hover .ticker__track,
+  .ticker:focus-within .ticker__track {
+    animation-play-state: paused;
+  }
+  @keyframes ticker-slide {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  /*
+   * Editorial wipe. The headline is uncovered left-to-right behind an invisible
+   * mask rather than faded in — it reads as type being set, and it survives
+   * `background-clip: text`, which a per-letter split would not.
+   */
+  .wipe-in {
+    animation: wipe-in 1.15s var(--ease-out-expo) both;
+  }
+  @keyframes wipe-in {
+    from {
+      clip-path: inset(0 100% 0 0);
+    }
+    to {
+      clip-path: inset(0 -4% 0 0);
+    }
+  }
+
+  /*
+   * Words rising out of their own line box, staggered by index. The mask is the
+   * `.word` wrapper; the padding/negative-margin pair gives descenders (g, y, p)
+   * room so `overflow: hidden` does not shave them off.
+   */
+  .word {
+    display: inline-block;
+    overflow: hidden;
+    vertical-align: bottom;
+    /* The padding/negative-margin pairs widen the clip box without moving the
+       text. Descenders (g, y, p) need room below; Devanagari needs it above,
+       where the matras and chandrabindu sit well clear of the cap height —
+       without this the हिन्दी line would be shaved along its top. */
+    padding-bottom: 0.16em;
+    margin-bottom: -0.16em;
+    padding-top: 0.18em;
+    margin-top: -0.18em;
+  }
+  .word > i {
+    display: inline-block;
+    font-style: inherit;
+    animation: word-rise 0.85s var(--ease-out-expo) both;
+    animation-delay: calc(var(--i, 0) * 65ms + var(--delay, 0ms));
+  }
+  @keyframes word-rise {
+    from {
+      transform: translateY(115%);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  /*
+   * Draws a stroked SVG on. Every ornament path declares `pathLength="1"`, so a
+   * dash of 1 covers the whole path whatever its real geometry — one rule
+   * animates arches, rules and lotus buds alike.
+   */
+  .draw [pathLength] {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: draw-on 1.9s var(--ease-out-expo) 0.15s forwards;
+  }
+  @keyframes draw-on {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  /* Underline that grows from the left instead of blinking on. */
+  .link-classic {
+    background-image: linear-gradient(var(--brass-deep), var(--brass-deep));
+    background-size: 0% 1.5px;
+    background-position: 0 100%;
+    background-repeat: no-repeat;
+    padding-bottom: 1px;
+    transition: background-size 0.35s var(--ease-out-expo);
+  }
+  .link-classic:hover,
+  .link-classic:focus-visible {
+    background-size: 100% 1.5px;
+  }
+
+  /*
+   * Editorial drop cap. `::first-letter` keeps it as real text — selectable,
+   * searchable and read aloud in order, which a separately-rendered span
+   * would not be.
+   */
+  .dropcap::first-letter {
+    float: left;
+    font-family: var(--font-display), Georgia, serif;
+    font-size: 3.6em;
+    line-height: 0.78;
+    padding-right: 0.09em;
+    padding-top: 0.04em;
+    font-weight: 600;
+    color: var(--oxblood);
+  }
+
+  /* Loading placeholder with a travelling highlight. */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background: var(--paper-sunk);
+    border-radius: 0.6rem;
+  }
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.6), transparent);
+    animation: shimmer 1.4s infinite;
+  }
+}
+
+/* =============================================================== utilities */
+
+@layer utilities {
+  /* Prices, totals and counters: fixed-width digits stop columns jittering as
+     values change during polling. */
+  .money {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.01em;
+  }
+
+  /* Brass foil lettering, for the wordmark only — it is expensive attention. */
+  .text-foil {
+    background-image: linear-gradient(
+      var(--foil-angle),
+      var(--brass-deep) 0%,
+      #efd89a 28%,
+      var(--brass) 48%,
+      #f6ead0 62%,
+      var(--brass-deep) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Horizontal scroller that fades at both ends instead of hard-cutting, with
+     snap points so a swipe lands on a chip rather than between two. */
+  .rail {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 0.25rem;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 12px, #000 calc(100% - 20px), transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 12px, #000 calc(100% - 20px), transparent);
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .rail::-webkit-scrollbar {
+    display: none;
+  }
+  .rail > * {
+    scroll-snap-align: start;
+    flex: none;
+  }
+
+  /* Swipeable rows (branch tabs, admin nav) still scroll, but without the
+     chunky bar that a desktop browser draws across them. */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Subtle traditional jaali pattern for section backgrounds: a lattice of
+     rings on a dot grid, both keyed off the ink colour. */
+  .pattern-jaali {
+    background-image:
+      radial-gradient(
+        circle at 50% 50%,
+        transparent 6.2px,
+        color-mix(in oklab, var(--ink) 5%, transparent) 6.3px,
+        color-mix(in oklab, var(--ink) 5%, transparent) 7.2px,
+        transparent 7.3px
+      ),
+      radial-gradient(circle at 1px 1px, color-mix(in oklab, var(--ink) 6%, transparent) 1px, transparent 0);
+    background-size:
+      28px 28px,
+      28px 28px;
+    background-position:
+      0 0,
+      14px 14px;
+  }
+
+  /* Reveal-on-scroll. Where the browser supports scroll-driven animations this
+     runs entirely off the compositor with no observer and no JS; everywhere
+     else the element is simply visible from the start. */
+  .reveal {
+    animation: fade-up 0.6s var(--ease-out-expo) both;
+    /* Only used by the fallback below. Progress-based timelines ignore
+       animation-delay outright, so a scroll-timeline browser reveals each card
+       as it enters the viewport, which is the better behaviour anyway. */
+    animation-delay: calc(var(--i, 0) * 110ms);
+  }
+  @supports (animation-timeline: view()) {
+    .reveal {
+      animation-timeline: view();
+      animation-range: entry 5% cover 22%;
+      animation-duration: auto;
+    }
+  }
+}
+
+/* ================================================================= motion */
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -27,126 +774,67 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* Scroll-linked animations ignore `animation-duration`, so they have to be
+     switched off outright — every one of them is written so the *unanimated*
+     element is the finished state. */
+  .reveal,
+  .header-solidify {
+    animation: none !important;
+  }
+
+  /* An endlessly scrolling strip is exactly the kind of motion this query
+     exists to stop. Frozen at its start, the signboard is still readable. */
+  .ticker__track {
+    animation: none !important;
+  }
+
+  /* Ornaments show fully drawn rather than mid-stroke. */
+  .draw [pathLength] {
+    animation: none !important;
+    stroke-dashoffset: 0 !important;
   }
 }
 
-/* Subtle traditional jaali pattern for section backgrounds */
-.pattern-jaali {
-  background-image: radial-gradient(
-      circle at 1px 1px,
-      rgba(123, 30, 30, 0.06) 1px,
-      transparent 0
-    );
-  background-size: 22px 22px;
+/* ================================================================== header */
+
+/*
+ * The header starts airy over the hero and settles into an opaque bar with a
+ * brass hairline once the page moves. `scroll()` drives it from the document's
+ * own scroll position — no listener, no re-render, no layout thrash. The
+ * unanimated rule below is the settled state, which is what a browser without
+ * scroll timelines (and anyone on reduced motion) gets.
+ */
+.header-solidify {
+  background: color-mix(in oklab, var(--paper-raised) 88%, transparent);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border-bottom: 1px solid var(--rule);
+  box-shadow: 0 1px 3px rgb(61 18 17 / 0.06);
 }
 
-/* ---------------------------------------------------------------- surfaces */
-
-.card {
-  @apply bg-white rounded-card shadow-card border border-maroon-800/[0.06];
+@supports (animation-timeline: scroll()) {
+  @keyframes header-settle {
+    from {
+      background: color-mix(in oklab, var(--paper-raised) 40%, transparent);
+      border-bottom-color: transparent;
+      box-shadow: 0 1px 3px rgb(61 18 17 / 0);
+    }
+    to {
+      background: color-mix(in oklab, var(--paper-raised) 88%, transparent);
+      border-bottom-color: var(--rule);
+      box-shadow: 0 1px 3px rgb(61 18 17 / 0.06);
+    }
+  }
+  .header-solidify {
+    animation: header-settle linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0 96px;
+  }
 }
 
-/* Opt-in interactivity for cards that are clickable (menu items, branches). */
-.card-hover {
-  @apply transition duration-200 ease-out hover:shadow-lift hover:-translate-y-0.5
-    hover:border-mustard-300;
-}
-
-/* Elevated panel for summaries / totals. */
-.card-elevated {
-  @apply bg-white rounded-card shadow-lift border border-maroon-800/[0.06];
-}
-
-/* ---------------------------------------------------------------- buttons */
-
-.btn {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl font-semibold
-    transition duration-150 ease-out
-    focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-maroon-600
-    disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-y-0
-    min-h-[44px] px-5 text-[15px];
-}
-.btn-primary {
-  @apply btn text-cream-50 shadow-card shadow-inset
-    bg-gradient-to-b from-maroon-500 to-maroon-700
-    hover:from-maroon-600 hover:to-maroon-800 hover:shadow-lift hover:-translate-y-px
-    active:translate-y-0 active:shadow-card;
-}
-.btn-secondary {
-  @apply btn text-maroon-800 shadow-card shadow-inset
-    bg-gradient-to-b from-mustard-300 to-mustard-400
-    hover:from-mustard-400 hover:to-mustard-500 hover:shadow-lift hover:-translate-y-px
-    active:translate-y-0 active:shadow-card;
-}
-.btn-outline {
-  @apply btn border-2 border-maroon-600 text-maroon-700 bg-white/60
-    hover:bg-maroon-600 hover:text-cream-50 hover:border-maroon-600;
-}
-.btn-ghost {
-  @apply btn text-maroon-700 hover:bg-maroon-50;
-}
-
-/* ---------------------------------------------------------------- forms */
-
-.input {
-  @apply w-full rounded-xl border border-cream-300 bg-white px-4 py-3 text-[15px]
-    transition duration-150
-    hover:border-cream-400
-    focus:outline-none focus:ring-2 focus:ring-maroon-500/70 focus:border-maroon-500
-    placeholder:text-maroon-800/40 min-h-[44px];
-}
-
-.label {
-  @apply block text-sm font-semibold text-maroon-700 mb-1;
-}
-
-.form-error {
-  @apply text-sm text-red-700 mt-1;
-}
-
-/* ---------------------------------------------------------------- chips */
-
-.chip {
-  @apply inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium
-    border border-cream-300 bg-white text-maroon-700 whitespace-nowrap min-h-[36px]
-    transition duration-150 ease-out
-    hover:border-mustard-400 hover:bg-mustard-100
-    focus-visible:outline focus-visible:outline-2 focus-visible:outline-maroon-600;
-}
-.chip-active {
-  @apply bg-maroon-600 text-cream-50 border-maroon-600 shadow-card
-    hover:bg-maroon-700 hover:border-maroon-700 hover:text-cream-50;
-}
-
-/* ---------------------------------------------------------------- accents */
-
-/* Small uppercase kicker above headings. */
-.eyebrow {
-  @apply text-xs font-bold uppercase tracking-[0.18em] text-mustard-600;
-}
-
-/* Ornamental centred divider — a spice-coloured rule with a diamond. */
-.divider-ornament {
-  @apply flex items-center justify-center gap-3 text-mustard-400;
-}
-.divider-ornament::before,
-.divider-ornament::after {
-  content: "";
-  @apply h-px w-14 bg-gradient-to-r from-transparent to-mustard-400;
-}
-.divider-ornament::after {
-  @apply bg-gradient-to-l from-transparent to-mustard-400;
-}
-
-/* Swipeable rows (branch tabs, category chips, admin nav) still scroll, but
-   without the chunky bar that a desktop browser draws across them. */
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
+/* =================================================================== print */
 
 @media print {
   .no-print {
@@ -155,6 +843,9 @@ body {
   body {
     background: white;
     background-image: none;
+  }
+  body::before {
+    display: none !important;
   }
 
   /* A bill or kitchen ticket is open (see PrintSheet, which portals itself to

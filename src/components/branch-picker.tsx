@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { inr } from "@/lib/utils";
-import { Badge, ErrorBox, Spinner } from "./ui";
+import { Badge, ErrorBox } from "./ui";
 import { useCart } from "./cart-context";
 
 interface BranchInfo {
@@ -158,17 +158,21 @@ export function BranchPicker() {
 
   return (
     <section className="mx-auto max-w-5xl px-4 pb-8" aria-label="Choose a branch">
-      <div className="flex flex-col sm:flex-row gap-3 justify-center mb-4">
+      <div className="flex flex-col sm:flex-row gap-3 justify-center mb-5">
         <button onClick={findClosest} disabled={locating} className="btn-primary">
           {locating ? "Finding you…" : "📍 Find the Closest Branch"}
         </button>
-        <button onClick={() => setManualOpen((v) => !v)} className="btn-outline">
+        <button
+          onClick={() => setManualOpen((v) => !v)}
+          className="btn-outline"
+          aria-expanded={manualOpen}
+        >
           ✏️ Enter Address Manually
         </button>
       </div>
 
       {manualOpen && (
-        <div className="card p-4 max-w-md mx-auto mb-4">
+        <div className="card p-5 max-w-md mx-auto mb-4 animate-fade-up">
           <label className="label" htmlFor="pincode">
             Delivery PIN code
           </label>
@@ -203,68 +207,117 @@ export function BranchPicker() {
       </div>
 
       {!branches ? (
-        <Spinner label="Loading branches…" />
+        // The branch card layout is fixed and known, so placeholders in its
+        // exact shape beat a spinner — nothing shifts when the data lands.
+        <div
+          className="grid sm:grid-cols-2 gap-5 max-w-3xl mx-auto"
+          role="status"
+          aria-label="Loading branches…"
+        >
+          {[0, 1].map((i) => (
+            <div key={i} className="card p-5 flex flex-col gap-3.5" aria-hidden>
+              <div className="skeleton h-6 w-1/2" />
+              <div className="skeleton h-4 w-full" />
+              <div className="skeleton h-4 w-4/5" />
+              <div className="rule-ornament my-1" />
+              <div className="skeleton h-3.5 w-2/3" />
+              <div className="skeleton h-3.5 w-3/5" />
+              <div className="skeleton h-11 w-full mt-2 !rounded-xl" />
+            </div>
+          ))}
+        </div>
       ) : (
-        <div className="grid sm:grid-cols-2 gap-4 max-w-3xl mx-auto">
+        <div className="grid sm:grid-cols-2 gap-5 max-w-3xl mx-auto items-start">
           {branches.map((b) => (
             <article
               key={b.id}
-              className={`card card-hover p-5 flex flex-col gap-2 ${
-                recommended === b.id ? "!border-mustard-400 ring-2 ring-mustard-300/50" : ""
+              className={`card card-hover overflow-hidden flex flex-col ${
+                recommended === b.id
+                  ? "!border-mustard-400 shadow-lift ring-1 ring-mustard-400/40"
+                  : ""
               }`}
             >
-              <div className="flex items-start justify-between gap-2">
-                <h2 className="font-display text-xl font-bold text-maroon-700">{b.name}</h2>
-                <div className="flex gap-1 flex-wrap justify-end">
-                  {recommended === b.id && <Badge tone="mustard">⭐ Recommended</Badge>}
-                  <Badge tone={b.open ? "green" : "gray"}>
-                    {b.open ? "Open now" : (b.openReason ?? "Closed")}
-                  </Badge>
-                  {b.busyMode && <Badge tone="maroon">Busy</Badge>}
-                </div>
-              </div>
-              <p className="text-sm text-maroon-800/70">{b.address}</p>
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm mt-1">
-                {b.distanceKm !== undefined && (
-                  <>
-                    <div>
-                      <dt className="inline text-maroon-800/50">Distance: </dt>
-                      <dd className="inline font-semibold">≈{b.distanceKm} km</dd>
-                    </div>
-                    <div>
-                      <dt className="inline text-maroon-800/50">Delivery in: </dt>
-                      <dd className="inline font-semibold">~{b.etaMins} min</dd>
-                    </div>
-                  </>
-                )}
-                <div>
-                  <dt className="inline text-maroon-800/50">Delivery fee: </dt>
-                  <dd className="inline font-semibold">
-                    {inr(b.deliveryFee ?? b.baseDeliveryFee ?? 0)}
-                    {b.freeDeliveryAbove ? ` (free over ${inr(b.freeDeliveryAbove)})` : ""}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="inline text-maroon-800/50">Pickup: </dt>
-                  <dd className="inline font-semibold">{b.pickupEnabled ? "Available" : "No"}</dd>
-                </div>
-                {b.minOrderValue > 0 && (
-                  <div>
-                    <dt className="inline text-maroon-800/50">Min order: </dt>
-                    <dd className="inline font-semibold">{inr(b.minOrderValue)}</dd>
-                  </div>
-                )}
-              </dl>
-              {b.serviceable === false && (
-                <p className="text-xs text-red-700">{b.serviceReason ?? "Not serviceable for delivery"}</p>
+              {/* Brass cap on the recommended branch — the eye needs one place
+                  to land when both branches are serviceable. */}
+              {recommended === b.id && (
+                <p className="bg-gradient-to-r from-mustard-300 via-mustard-400 to-mustard-300 px-5 py-1.5 text-center text-[11px] font-bold uppercase tracking-kicker text-maroon-800">
+                  ⭐ Recommended
+                </p>
               )}
-              <button
-                onClick={() => choose(b)}
-                className="btn-primary mt-2"
-                aria-label={`Order from ${b.name}`}
-              >
-                Browse Menu →
-              </button>
+
+              <div className="p-5 flex flex-col gap-3 flex-1">
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="font-display text-fluid-xl font-semibold text-maroon-700 leading-snug">
+                    {b.name}
+                  </h3>
+                  <div className="flex gap-1 flex-wrap justify-end shrink-0">
+                    <Badge tone={b.open ? "green" : "gray"}>
+                      {b.open ? "Open now" : (b.openReason ?? "Closed")}
+                    </Badge>
+                    {b.busyMode && <Badge tone="maroon">Busy</Badge>}
+                  </div>
+                </div>
+
+                <p className="text-sm text-maroon-800/65 leading-relaxed">{b.address}</p>
+
+                <div className="rule-ornament my-1" />
+
+                <dl className="flex flex-col gap-1.5">
+                  {b.distanceKm !== undefined && (
+                    <>
+                      <div className="spec">
+                        <dt>Distance</dt>
+                        <dd className="spec-fill" aria-hidden />
+                        <dd>≈{b.distanceKm} km</dd>
+                      </div>
+                      <div className="spec">
+                        <dt>Delivery in</dt>
+                        <dd className="spec-fill" aria-hidden />
+                        <dd>~{b.etaMins} min</dd>
+                      </div>
+                    </>
+                  )}
+                  <div className="spec">
+                    <dt>Delivery fee</dt>
+                    <dd className="spec-fill" aria-hidden />
+                    <dd>
+                      {inr(b.deliveryFee ?? b.baseDeliveryFee ?? 0)}
+                      {b.freeDeliveryAbove ? (
+                        <span className="font-normal text-maroon-800/55">
+                          {" "}
+                          · free over {inr(b.freeDeliveryAbove)}
+                        </span>
+                      ) : null}
+                    </dd>
+                  </div>
+                  <div className="spec">
+                    <dt>Pickup</dt>
+                    <dd className="spec-fill" aria-hidden />
+                    <dd>{b.pickupEnabled ? "Available" : "No"}</dd>
+                  </div>
+                  {b.minOrderValue > 0 && (
+                    <div className="spec">
+                      <dt>Min order</dt>
+                      <dd className="spec-fill" aria-hidden />
+                      <dd>{inr(b.minOrderValue)}</dd>
+                    </div>
+                  )}
+                </dl>
+
+                {b.serviceable === false && (
+                  <p className="text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                    {b.serviceReason ?? "Not serviceable for delivery"}
+                  </p>
+                )}
+
+                <button
+                  onClick={() => choose(b)}
+                  className="btn-primary w-full mt-auto"
+                  aria-label={`Order from ${b.name}`}
+                >
+                  Browse Menu →
+                </button>
+              </div>
             </article>
           ))}
         </div>

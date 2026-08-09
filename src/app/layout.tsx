@@ -1,11 +1,22 @@
 import type { Metadata, Viewport } from "next";
-import { Baloo_2, Inter } from "next/font/google";
+import { Fraunces, Inter } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "@/components/cart-context";
 import { PwaRegister } from "@/components/pwa-register";
 
-const display = Baloo_2({ subsets: ["latin"], variable: "--font-display", weight: ["500", "600", "700"] });
-const body = Inter({ subsets: ["latin"], variable: "--font-body" });
+/**
+ * Fraunces is a variable "old-style" serif with an optical-size axis, so the
+ * wordmark at 68px and a card heading at 18px are drawn with the contrast each
+ * size actually wants — a rounded display face could not do that, and read
+ * closer to a children's menu than a dhaba that has been there thirty years.
+ */
+const display = Fraunces({
+  subsets: ["latin"],
+  variable: "--font-display",
+  display: "swap",
+  axes: ["SOFT", "WONK", "opsz"],
+});
+const body = Inter({ subsets: ["latin"], variable: "--font-body", display: "swap" });
 
 export const metadata: Metadata = {
   title: {
@@ -23,7 +34,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#7B1E1E",
+  themeColor: "#71201C",
   width: "device-width",
   initialScale: 1,
 };

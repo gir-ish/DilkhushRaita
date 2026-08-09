@@ -78,7 +78,9 @@ export default function CartPage() {
         <h1 className="font-display text-2xl font-bold text-maroon-700 mb-1">Your cart</h1>
         <p className="text-sm text-maroon-800/60 mb-4">
           Ordering from <strong>{cart.branchName}</strong> ·{" "}
-          <Link className="underline" href={`/menu/${cart.branchSlug}`}>add more items</Link>
+          <Link className="link-classic font-semibold text-maroon-700" href={`/menu/${cart.branchSlug}`}>
+            add more items
+          </Link>
         </p>
 
         <div className="card divide-y divide-cream-200">
@@ -139,9 +141,12 @@ export default function CartPage() {
               <Row label="Delivery fee (estimated)" value={inr(quote.totals.deliveryFee)} />
               <Row label="Packaging" value={inr(quote.totals.packagingFee)} />
               <Row label="Taxes" value={inr(quote.totals.tax)} />
-              <div className="border-t border-cream-200 pt-2 mt-2 flex justify-between font-bold text-base">
-                <dt>To pay</dt>
-                <dd>{inr(quote.totals.total)}</dd>
+              {/* Double rule above the total, as a printed bill sets it. */}
+              <div className="mt-3 pt-3 border-t-[3px] border-double border-maroon-800/25 flex justify-between items-baseline">
+                <dt className="font-display text-fluid-lg font-semibold text-maroon-700">To pay</dt>
+                <dd className="font-display text-fluid-lg font-semibold text-maroon-700 money">
+                  {inr(quote.totals.total)}
+                </dd>
               </div>
               <p className="text-xs text-maroon-800/50 pt-1">
                 Delivery fee is finalised at checkout from your address. Coupons and loyalty points
@@ -151,7 +156,10 @@ export default function CartPage() {
           ) : null}
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 bg-cream-50 border-t border-cream-200 p-4 no-print">
+        <div className="fixed bottom-0 left-0 right-0 z-40 no-print
+          bg-cream-50/92 backdrop-blur-md border-t border-maroon-800/10
+          shadow-[0_-2px_16px_-4px_rgba(61,18,17,0.12)]
+          p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <div className="mx-auto max-w-lg flex gap-3">
             <button onClick={() => { if (confirm("Clear the cart?")) cart.clear(); }} className="btn-outline">
               Clear
@@ -172,9 +180,9 @@ export default function CartPage() {
 
 function Row({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className={`flex justify-between ${accent ? "text-leaf-600 font-semibold" : ""}`}>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
+    <div className={`flex justify-between gap-4 ${accent ? "text-leaf-600 font-semibold" : ""}`}>
+      <dt className={accent ? "" : "text-maroon-800/70"}>{label}</dt>
+      <dd className="money font-medium tabular-nums">{value}</dd>
     </div>
   );
 }

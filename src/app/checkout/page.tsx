@@ -576,7 +576,10 @@ export default function CheckoutPage() {
           ))}
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 bg-cream-50 border-t border-cream-200 p-4">
+        <div className="fixed bottom-0 left-0 right-0 z-40
+          bg-cream-50/92 backdrop-blur-md border-t border-maroon-800/10
+          shadow-[0_-2px_16px_-4px_rgba(61,18,17,0.12)]
+          p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <div className="mx-auto max-w-lg">
             <button onClick={placeOrder} disabled={!canPlace || placing} className="btn-primary w-full !py-4">
               {placing
