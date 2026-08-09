@@ -699,7 +699,6 @@ function CheckoutModal({
   const [hits, setHits] = useState<CustomerHit[]>([]);
   const [picked, setPicked] = useState<CustomerHit | null>(null);
   const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "ONLINE">("CASH");
   const [paid, setPaid] = useState(true);
   const [instructions, setInstructions] = useState("");
@@ -721,6 +720,14 @@ function CheckoutModal({
     return () => clearTimeout(t);
   }, [search, runSearch]);
 
+  // A complete number that we already know is not ambiguous — pick that
+  // customer rather than making the cashier tap a list of one.
+  useEffect(() => {
+    if (picked || search.length !== 10) return;
+    const exact = hits.find((h) => (h.phone ?? "").replace(/\D/g, "").endsWith(search));
+    if (exact) setPicked(exact);
+  }, [hits, search, picked]);
+
   const place = async () => {
     setBusy(true);
     setError(null);
@@ -738,7 +745,7 @@ function CheckoutModal({
           })),
           ...(picked
             ? { userId: picked.id }
-            : { name: name.trim(), phone }),
+            : { name: name.trim() || null, phone: search }),
           orderType: mode,
           tableNo: mode === "DINE_IN" ? tableNo.trim() || null : null,
           paymentMethod,
@@ -760,24 +767,35 @@ function CheckoutModal({
     }
   };
 
-  const ready = picked !== null || (name.trim().length >= 2 && phone.length === 10);
+  // The number alone is enough to bill: a name is optional.
+  const ready = picked !== null || search.length === 10;
 
   return (
     <Modal open onClose={onClose} title="Customer & payment" wide>
       <div className="space-y-4">
+        {/* One box, not two. The cashier types the number; if we already know
+            it the customer appears to be tapped, and if we do not, that same
+            number is the new customer. Nothing else is required to bill. */}
         <div>
-          <label className="label" htmlFor="c-search">Returning customer? Search by phone or name</label>
-          <input
-            id="c-search"
-            className="input"
-            autoFocus
-            placeholder="Start typing a number or name…"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPicked(null);
-            }}
-          />
+          <label className="label" htmlFor="c-search">Customer mobile</label>
+          <div className="flex">
+            <span className="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-cream-300 bg-cream-100 text-sm font-semibold">
+              +91
+            </span>
+            <input
+              id="c-search"
+              className="input !rounded-l-none"
+              autoFocus
+              inputMode="numeric"
+              maxLength={10}
+              placeholder="98XXXXXXXX"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value.replace(/\D/g, "").slice(0, 10));
+                setPicked(null);
+              }}
+            />
+          </div>
           {hits.length > 0 && !picked && (
             <ul className="mt-2 border border-cream-300 rounded-xl divide-y divide-cream-200 overflow-hidden">
               {hits.map((h) => (
@@ -785,7 +803,7 @@ function CheckoutModal({
                   <button
                     onClick={() => {
                       setPicked(h);
-                      setSearch(`${h.name ?? ""} ${h.phone ?? ""}`.trim());
+                      setSearch((h.phone ?? "").replace(/^\+91/, ""));
                       setHits([]);
                     }}
                     className="w-full text-left px-3 py-2 hover:bg-mustard-100 text-sm"
@@ -816,33 +834,23 @@ function CheckoutModal({
           )}
         </div>
 
-        {!picked && (
-          <div className="grid sm:grid-cols-2 gap-3 border-t border-cream-200 pt-3">
-            <div className="sm:col-span-2 text-sm font-semibold text-maroon-700">
-              New customer
-            </div>
-            <div>
-              <label className="label" htmlFor="c-name">Name *</label>
-              <input id="c-name" className="input" maxLength={60} value={name} onChange={(e) => setName(e.target.value)} placeholder="Customer name" />
-            </div>
-            <div>
-              <label className="label" htmlFor="c-phone">Mobile *</label>
-              <div className="flex">
-                <span className="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-cream-300 bg-cream-100 text-sm font-semibold">+91</span>
-                <input
-                  id="c-phone"
-                  className="input !rounded-l-none"
-                  inputMode="numeric"
-                  maxLength={10}
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
-                  placeholder="98XXXXXXXX"
-                />
-              </div>
-            </div>
-            <p className="sm:col-span-2 text-xs text-maroon-800/50">
-              Saved so this customer can be picked from the list next time, and so their
-              loyalty points build up.
+        {/* Only once the number is complete and unrecognised: a name is optional
+            and never blocks the bill, but it is worth offering while they are
+            standing there. */}
+        {!picked && search.length === 10 && (
+          <div className="border-t border-cream-200 pt-3">
+            <label className="label" htmlFor="c-name">Name (optional)</label>
+            <input
+              id="c-name"
+              className="input"
+              maxLength={60}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="New customer — add a name if they give one"
+            />
+            <p className="text-xs text-maroon-800/50 mt-1">
+              New number. Billing works without a name; saving one means they can be
+              found next time, and their loyalty points build up either way.
             </p>
           </div>
         )}

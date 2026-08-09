@@ -67,8 +67,10 @@ export const POST = handler(async (req: Request) => {
   } else {
     const phone = normalizePhone(body.phone ?? "");
     if (!phone) throw new HttpError(400, "Enter a valid 10-digit mobile number");
-    const name = body.name?.trim();
-    if (!name || name.length < 2) throw new HttpError(400, "Enter the customer's name");
+    // The number is the identity; a name is a nicety. At a counter with a queue
+    // behind them, asking the cashier to type one before the bill can be raised
+    // just gets "." typed into the box. The bill falls back to "Walk-in".
+    const name = body.name?.trim() || null;
 
     const existing = await db.user.findUnique({ where: { phone } });
     if (existing) {
@@ -79,7 +81,7 @@ export const POST = handler(async (req: Request) => {
       userId = existing.id;
       // Fill in a name only if we never had one — don't overwrite what the
       // customer chose for themselves.
-      if (!existing.name) await db.user.update({ where: { id: existing.id }, data: { name } });
+      if (!existing.name && name) await db.user.update({ where: { id: existing.id }, data: { name } });
     } else {
       const created = await db.user.create({
         data: {
