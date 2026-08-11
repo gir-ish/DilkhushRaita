@@ -33,7 +33,8 @@ export default function AdminOrdersPage() {
   const load = useCallback(() => {
     const params = new URLSearchParams();
     if (q) params.set("q", q);
-    if (status !== "all") params.set("status", status);
+    if (status === "__unpaid") params.set("unpaid", "1");
+    else if (status !== "all") params.set("status", status);
     if (activeOnly && status === "all") params.set("active", "1");
     fetch(`/api/admin/orders?${params}`)
       .then(async (r) => {
@@ -107,6 +108,9 @@ export default function AdminOrdersPage() {
           aria-label="Status filter"
         >
           <option value="all">All statuses</option>
+          {/* Unpaid online orders are hidden from every other view — this is how
+              you go and look at them. */}
+          <option value="__unpaid">UNPAID ONLINE</option>
           {Object.keys(STATUS_TRANSITIONS).concat("DELIVERED").map((s) => (
             <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
           ))}

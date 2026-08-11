@@ -173,6 +173,36 @@ export default function CheckoutPage() {
       return;
     }
 
+    /**
+     * Tell the server the payment was walked away from.
+     *
+     * Never trusted as proof: /api/payments/abandon asks Razorpay whether the
+     * order was in fact paid, and leaves it alone unless it gets a confident
+     * "no". Calling this when the customer actually paid is harmless.
+     */
+    const body = JSON.stringify({ orderId: d.orderId });
+    let done = false;
+    const abandon = () => {
+      if (done) return;
+      done = true;
+      fetch("/api/payments/abandon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        keepalive: true,
+      }).catch(() => {});
+    };
+    const abandonOnLeave = () => {
+      if (done) return;
+      done = true;
+      // fetch() is not guaranteed during unload; sendBeacon is.
+      navigator.sendBeacon?.("/api/payments/abandon", new Blob([body], { type: "application/json" }));
+    };
+    const stopWatching = () => {
+      window.removeEventListener("pagehide", abandonOnLeave);
+      window.removeEventListener("beforeunload", abandonOnLeave);
+    };
+
     const rzp = new window.Razorpay({
       key: pay.keyId,
       order_id: pay.gatewayOrderId,
@@ -187,6 +217,9 @@ export default function CheckoutPage() {
         razorpay_payment_id: string;
         razorpay_signature: string;
       }) => {
+        // They paid. Nothing from here on may report this as abandoned.
+        done = true;
+        stopWatching();
         try {
           const vr = await fetch("/api/payments/verify", {
             method: "POST",
@@ -216,19 +249,19 @@ export default function CheckoutPage() {
       modal: {
         ondismiss: () => {
           setPlacing(false);
-          // Close the order out rather than leaving it in the kitchen queue as
-          // an unpaid PLACED order. The server re-checks with Razorpay first,
-          // so a payment that actually went through is never voided here.
-          fetch("/api/payments/abandon", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ orderId: d.orderId }),
-            keepalive: true, // must survive the customer navigating away
-          }).catch(() => {});
+          stopWatching();
+          abandon();
           setError("Payment cancelled — the order was not placed. Your cart is still here if you want to try again.");
         },
       },
     } as Record<string, unknown>);
+
+    // Refreshing or closing the tab never fires ondismiss, and that is the most
+    // common way a payment is abandoned — someone opens their UPI app, thinks
+    // better of it, and reloads. sendBeacon is the only request the browser
+    // promises to deliver once the page is going away.
+    window.addEventListener("pagehide", abandonOnLeave);
+    window.addEventListener("beforeunload", abandonOnLeave);
 
     rzp.on("payment.failed", () => {
       setPlacing(false);
