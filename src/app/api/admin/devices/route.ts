@@ -17,12 +17,15 @@ export const GET = handler(async () => {
   const token = await readDeviceToken();
   const currentHash = token ? hashDeviceToken(token) : null;
 
-  const devices = await db.staffDevice.findMany({
-    where: { userId: session.uid },
-    orderBy: { lastUsedAt: "desc" },
-  });
+  const [user, devices] = await Promise.all([
+    db.user.findUnique({ where: { id: session.uid }, select: { pinHash: true } }),
+    db.staffDevice.findMany({ where: { userId: session.uid }, orderBy: { lastUsedAt: "desc" } }),
+  ]);
 
   return NextResponse.json({
+    // Whether a PIN exists — never the PIN or its hash. Decides if the screen
+    // offers "set" or "change".
+    hasPin: !!user?.pinHash,
     devices: devices.map((d) => ({
       id: d.id,
       label: d.label || "Unknown device",

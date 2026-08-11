@@ -157,13 +157,14 @@ interface DeviceRow {
  */
 function PairedDevices() {
   const [devices, setDevices] = useState<DeviceRow[] | null>(null);
+  const [hasPin, setHasPin] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     fetch("/api/admin/devices")
       .then((r) => (r.ok ? r.json() : { devices: null }))
-      .then((d) => setDevices(d.devices))
+      .then((d) => { setDevices(d.devices); setHasPin(!!d.hasPin); })
       .catch(() => setDevices(null));
   }, []);
   useEffect(load, [load]);
@@ -201,6 +202,9 @@ function PairedDevices() {
         recognise — they will need the password again.
       </p>
       <ErrorBox message={error} />
+
+      <PinEditor hasPin={hasPin} onSaved={load} />
+
       {devices.length === 0 ? (
         <p className="text-sm text-maroon-800/50">No devices paired yet.</p>
       ) : (
@@ -241,6 +245,97 @@ function PairedDevices() {
         </button>
       )}
     </section>
+  );
+}
+
+/**
+ * Set a PIN, or change one you already have.
+ *
+ * Also the way back for anyone who tapped "Skip for now" at sign-in — without
+ * this the only route to a PIN was a screen you see once.
+ */
+function PinEditor({ hasPin, onSaved }: { hasPin: boolean; onSaved: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [currentPin, setCurrentPin] = useState("");
+  const [pin, setPin] = useState("");
+  const [pin2, setPin2] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  const reset = () => { setCurrentPin(""); setPin(""); setPin2(""); setError(null); };
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      if (pin !== pin2) throw new Error("The two PINs do not match");
+      const r = await fetch("/api/auth/staff/pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(hasPin ? { pin, currentPin } : { pin }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error ?? "Could not save the PIN");
+      reset();
+      setOpen(false);
+      setDone(true);
+      setTimeout(() => setDone(false), 2500);
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the PIN");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const digits = (id: string, label: string, value: string, set: (v: string) => void) => (
+    <div>
+      <label htmlFor={id} className="label">{label}</label>
+      <input
+        id={id}
+        className="input !min-h-[38px] text-center tracking-[0.35em] font-bold"
+        inputMode="numeric"
+        autoComplete="off"
+        maxLength={6}
+        value={value}
+        onChange={(e) => set(e.target.value.replace(/\D/g, "").slice(0, 6))}
+      />
+    </div>
+  );
+
+  if (!open)
+    return (
+      <div className="flex items-center gap-3 mb-3 pb-3 border-b border-cream-200">
+        <span className="text-sm text-maroon-800/70 flex-1">
+          {hasPin ? "A PIN is set for this account." : "No PIN yet — set one to skip the password on paired devices."}
+        </span>
+        {done && <span className="text-sm font-semibold text-leaf-600">Saved ✓</span>}
+        <button onClick={() => { reset(); setOpen(true); }} className="btn-outline !min-h-[36px] text-sm shrink-0">
+          {hasPin ? "Change PIN" : "Set a PIN"}
+        </button>
+      </div>
+    );
+
+  return (
+    <form onSubmit={save} className="mb-3 pb-3 border-b border-cream-200 space-y-3">
+      <div className="grid gap-3 sm:grid-cols-3">
+        {/* Required when replacing a PIN, so walking up to an unlocked
+            dashboard is not enough to change it. */}
+        {hasPin && digits("curPin", "Current PIN", currentPin, setCurrentPin)}
+        {digits("chgPin", hasPin ? "New PIN (4–6)" : "PIN (4–6 digits)", pin, setPin)}
+        {digits("chgPin2", "Confirm", pin2, setPin2)}
+      </div>
+      <ErrorBox message={error} />
+      <div className="flex gap-2">
+        <button type="submit" disabled={busy || pin.length < 4 || (hasPin && currentPin.length < 4)} className="btn-primary !min-h-[36px] text-sm">
+          {busy ? "Saving…" : hasPin ? "Save new PIN" : "Save PIN"}
+        </button>
+        <button type="button" onClick={() => { reset(); setOpen(false); }} className="btn-ghost !min-h-[36px] text-sm">
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 
