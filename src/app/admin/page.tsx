@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ErrorBox, Spinner } from "@/components/ui";
 import { inr } from "@/lib/utils";
 
@@ -136,9 +136,111 @@ export default function AdminOverview() {
               </p>
             </section>
           </div>
+
+          <PairedDevices />
         </>
       )}
     </div>
+  );
+}
+
+interface DeviceRow {
+  id: string; label: string; lastUsedAt: string; createdAt: string; current: boolean;
+}
+
+/**
+ * Browsers that can unlock the dashboard with the PIN.
+ *
+ * The PIN is only as private as the devices holding it, so losing a phone has
+ * to be undoable without changing the password. Renders nothing for staff who
+ * are not the owner — the endpoint refuses them anyway.
+ */
+function PairedDevices() {
+  const [devices, setDevices] = useState<DeviceRow[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    fetch("/api/admin/devices")
+      .then((r) => (r.ok ? r.json() : { devices: null }))
+      .then((d) => setDevices(d.devices))
+      .catch(() => setDevices(null));
+  }, []);
+  useEffect(load, [load]);
+
+  if (!devices) return null;
+
+  const act = async (label: string, url: string, confirmText: string) => {
+    if (!confirm(confirmText)) return;
+    setBusy(label);
+    setError(null);
+    try {
+      const r = await fetch(url, { method: "DELETE" });
+      if (!r.ok) throw new Error((await r.json()).error ?? "Could not remove");
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not remove");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const when = (iso: string) => {
+    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins} min ago`;
+    if (mins < 60 * 24) return `${Math.round(mins / 60)} h ago`;
+    return `${Math.round(mins / 1440)} d ago`;
+  };
+
+  return (
+    <section className="card p-4 mt-4" aria-label="Paired devices">
+      <h2 className="font-semibold mb-1">🔐 Devices that can use your PIN</h2>
+      <p className="text-sm text-maroon-800/60 mb-3">
+        Each of these has signed in with your password once. Remove any you do not
+        recognise — they will need the password again.
+      </p>
+      <ErrorBox message={error} />
+      {devices.length === 0 ? (
+        <p className="text-sm text-maroon-800/50">No devices paired yet.</p>
+      ) : (
+        <ul className="divide-y divide-cream-200">
+          {devices.map((d) => (
+            <li key={d.id} className="flex items-center gap-3 py-2 text-sm">
+              <span className="flex-1 min-w-0">
+                <span className="font-semibold">{d.label}</span>
+                {d.current && (
+                  <span className="ml-2 rounded-full bg-leaf-50 border border-leaf-500/30 px-2 py-0.5 text-[11px] font-bold text-leaf-600">
+                    this device
+                  </span>
+                )}
+                <span className="block text-xs text-maroon-800/50">Last used {when(d.lastUsedAt)}</span>
+              </span>
+              <button
+                onClick={() => act(d.id, `/api/admin/devices/${d.id}`,
+                  d.current
+                    ? "Remove this device? You will need your password to sign in here again."
+                    : `Remove ${d.label}? It will need your password to sign in again.`)}
+                disabled={busy === d.id}
+                className="underline text-red-700 shrink-0"
+              >
+                {busy === d.id ? "Removing…" : "Remove"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {devices.length > 0 && (
+        <button
+          onClick={() => act("all", "/api/admin/devices",
+            "Remove every paired device, including this one? Everyone will need the password again.")}
+          disabled={busy === "all"}
+          className="btn-outline !min-h-[36px] mt-3 text-sm"
+        >
+          {busy === "all" ? "Removing…" : "Remove all devices"}
+        </button>
+      )}
+    </section>
   );
 }
 

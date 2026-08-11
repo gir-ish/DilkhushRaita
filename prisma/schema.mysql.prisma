@@ -29,6 +29,7 @@ model User {
   name         String?
   role         String   @default("CUSTOMER")
   passwordHash String?
+  pinHash      String?
   blocked      Boolean  @default(false)
   codOnlyBlock Boolean  @default(false)
   createdAt    DateTime @default(now())
@@ -45,6 +46,7 @@ model User {
   tickets            SupportTicket[]
   notifications      Notification[]
   branchAssignments  StaffBranchAssignment[]
+  staffDevices       StaffDevice[]
   deliveryAgent      DeliveryAgent?
   carts              Cart[]
 }
@@ -551,6 +553,21 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@index([entity, entityId])
+}
+
+/// A browser the owner has already signed into with email + password. Holding
+/// one of these is what makes a 4-6 digit PIN safe: the PIN alone is useless
+/// without the device cookie that points at this row.
+model StaffDevice {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique
+  label      String   @default("") @db.VarChar(120)
+  lastUsedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
 }
 
 model OtpCode {

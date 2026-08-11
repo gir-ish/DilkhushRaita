@@ -6,6 +6,7 @@ import { handler, HttpError } from "@/lib/guard";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { createSessionCookie } from "@/lib/session";
 import { STAFF_ROLES, type Role } from "@/lib/constants";
+import { deviceLabelFrom, trustThisDevice } from "@/lib/staff-device";
 import { audit } from "@/lib/audit";
 
 const Body = z.object({
@@ -30,9 +31,16 @@ export const POST = handler(async (req: Request) => {
     role: user.role as Role,
     name: user.name ?? undefined,
   });
+  // A full sign-in is what earns a browser the right to use a PIN later. Only
+  // the owner gets one, so only the owner's browsers are paired.
+  if (user.role === "OWNER")
+    await trustThisDevice(user.id, deviceLabelFrom(req.headers.get("user-agent")));
   await audit({ uid: user.id, name: user.name ?? undefined }, "STAFF_LOGIN", "User", user.id);
   return NextResponse.json({
     ok: true,
     user: { id: user.id, name: user.name, role: user.role },
+    // Lets the login screen offer "set a PIN" the first time.
+    canSetPin: user.role === "OWNER",
+    hasPin: user.role === "OWNER" && !!user.pinHash,
   });
 });
