@@ -133,7 +133,20 @@ command you actually need.
 
 ## Test accounts
 
-> All seed credentials are placeholders — **change every password before production.**
+> ⚠️ **Seed passwords are not secrets.** They are the same in every copy of this
+> repository, so any install still using them can be signed into by anyone who
+> can read this file. They exist to get a *local* install running, nothing more.
+>
+> On a live deployment, change them before the site takes an order:
+>
+> ```bash
+> # Owner — also clears the PIN and unpairs every device
+> OWNER_EMAIL='you@example.com' OWNER_PASSWORD='...' OWNER_NAME='Your Name' node scripts/set-owner.mjs
+>
+> node scripts/staff-passwords.mjs --list        # see what exists
+> node scripts/staff-passwords.mjs --reset-all   # new random passwords, printed once
+> node scripts/staff-passwords.mjs --block marketing@dilkhush.test   # roles you do not use
+> ```
 
 ### Customers — sign in at `/login`
 
@@ -143,16 +156,40 @@ command you actually need.
 
 ### Staff — sign in at `/admin/login`
 
-| Role | Email | Password | Can access |
-|---|---|---|---|
-| **Owner** | `owner@dilkhush.test` | `Owner@123` | Everything, all branches |
-| Branch Manager (Rohini) | `manager.rohini@dilkhush.test` | `Manager@123` | Own branch: orders, menu, branch settings, customers, reports |
-| Branch Manager (NSP) | `manager.nsp@dilkhush.test` | `Manager@123` | Same, NSP only |
-| Kitchen (Rohini) | `kitchen.rohini@dilkhush.test` | `Kitchen@123` | Order queue + kitchen screen (Preparing/Ready only) |
-| Kitchen (NSP) | `kitchen.nsp@dilkhush.test` | `Kitchen@123` | Same, NSP only |
-| Cashier (Rohini) | `cashier.rohini@dilkhush.test` | `Cashier@123` | Orders, payments, refunds, reports |
-| Delivery Manager | `delivery@dilkhush.test` | `Delivery@123` | Orders, agent assignment |
-| Marketing | `marketing@dilkhush.test` | `Market@123` | Coupons, loyalty tiers, customers, reports |
+| Role | Email (local seed) | Can access |
+|---|---|---|
+| **Owner** | `owner@dilkhush.test` | Everything, all branches |
+| Branch Manager (Rohini) | `manager.rohini@dilkhush.test` | Own branch: orders, menu, branch settings, customers, reports |
+| Branch Manager (NSP) | `manager.nsp@dilkhush.test` | Same, NSP only |
+| Kitchen (Rohini) | `kitchen.rohini@dilkhush.test` | Order queue + kitchen screen (Preparing/Ready only) |
+| Kitchen (NSP) | `kitchen.nsp@dilkhush.test` | Same, NSP only |
+| Cashier (Rohini) | `cashier.rohini@dilkhush.test` | Orders, payments, refunds, reports |
+| Delivery Manager | `delivery@dilkhush.test` | Orders, agent assignment |
+| Marketing | `marketing@dilkhush.test` | Coupons, loyalty tiers, customers, reports |
+
+Passwords for these are set in `prisma/seed.ts` and printed by the seed run. They
+are for local development only — see the warning above.
+
+### Owner PIN
+
+Typing a long password on a phone every time you check the queue is how the
+password ends up on a sticky note by the till. The owner can set a 4-6 digit PIN
+instead.
+
+A short PIN is only ten thousand guesses, so it never stands alone. Signing in
+with email and password *pairs* that browser (a random token in an httpOnly
+cookie, stored only as a hash), and the PIN is accepted from a paired browser or
+not at all — shoulder-surfing the digits buys nothing on another machine. Five
+wrong tries lock that device for 15 minutes; the password still works meanwhile.
+Only the OWNER role can have one.
+
+- **Set it:** sign in with email + password; you are offered a PIN straight after.
+  Later, Dashboard → *Devices that can use your PIN* → **Set / Change PIN**.
+- **Forgot it:** *Forgot PIN?* on the lock screen emails a six-digit code to the
+  address on the account (never one supplied in the request). The code sets a new
+  PIN but does not sign you in. Needs `SMTP_URL` — see `.env.example`.
+- **Lost a device:** the same dashboard panel lists every paired browser with
+  when it was last used, and removes any of them, or all at once.
 
 Two seeded delivery agents (Raju, Sonu) are available for assignment on delivery orders.
 

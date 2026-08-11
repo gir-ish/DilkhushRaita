@@ -87,23 +87,36 @@ npm run build             # builds the production app
 
 `mysql:push` reads `prisma/schema.mysql.prisma` (the MySQL-flavoured version of the schema — sized correctly for MySQL's text-column limits) and both creates every table **and** generates the matching Prisma Client in one step. `npm run build` must run *after* this, so the build picks up the MySQL client rather than the SQLite one used locally.
 
-## 7. ⚠️ Before seeding — change the placeholder passwords
+## 7. Seed, then take the passwords back
 
-`prisma/seed.ts` creates staff accounts with placeholder passwords (`Owner@123` etc.) that are now public knowledge (they're in this project's README). **Edit that file locally and change every password** before seeding a real, live database:
-
-```ts
-["owner@dilkhush.test", "Owner@123", "Om Prakash (Owner)", "OWNER", []],
-```
-→ change `"Owner@123"` (and the rest) to strong unique passwords, and consider changing the placeholder emails too (`owner@dilkhush.test` → your real email). Re-upload/`git pull` the edited file to the server before the next step. Branch addresses/coordinates/phone numbers are also placeholders in there but those are safe to leave — you'll edit them live from **Branches** in the dashboard after launch, no code changes needed.
-
-## 8. Seed starter data
+Seed first, then change the credentials — the scripts operate on the accounts the seed creates.
 
 ```bash
 npm run db:seed
 ```
-This populates both branches, the full menu, your (now-changed) staff logins, and starter coupons/loyalty tiers into the live MySQL database.
 
-## 9. Start the app
+This populates both branches, the full menu, starter coupons and loyalty tiers, and the staff logins.
+
+> ⚠️ **Do this before the site takes a single order.** The seeded passwords are identical in every copy of this repository, so anyone who can read the code can sign into the dashboard — see all revenue, issue refunds, change prices.
+
+```bash
+# Owner: your real email and a strong password. Also clears any PIN and
+# unpairs every device, which is what you want when credentials change.
+OWNER_EMAIL='you@example.com' OWNER_PASSWORD='...' OWNER_NAME='Your Name' node scripts/set-owner.mjs
+
+# Everyone else: new random passwords, printed ONCE. Write them down.
+node scripts/staff-passwords.mjs --reset-all
+
+# Roles you are not using — blocking keeps their history, unlike deleting.
+node scripts/staff-passwords.mjs --block marketing@dilkhush.test
+
+# Check what exists at any time.
+node scripts/staff-passwords.mjs --list
+```
+
+Branch addresses, coordinates and phone numbers are placeholders too, but those are safe to leave for now — edit them from **Branches** in the dashboard after launch, no deploy needed. Do it before your first online order, though: the address prints on every customer invoice, and the coordinates drive delivery pricing and the serviceable radius.
+
+## 8. Start the app
 
 Back in cPanel's **Setup Node.js App** page, click **Restart** on your application. Visit **https://dilkhushraita.com** — you should see the DilKhush Dhaba homepage.
 
