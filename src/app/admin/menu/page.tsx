@@ -14,7 +14,13 @@ interface Item {
   ingredients: string; allergens: string;
   variants: { id?: string; name: string; priceDelta: number; isDefault: boolean }[];
   addOns: { id?: string; name: string; price: number; veg: boolean; required: boolean }[];
-  branchItems: { branchId: string; available: boolean; priceOverride: number | null; stockQty: number; branch?: { name: string } }[];
+  branchItems: {
+    branchId: string; available: boolean; priceOverride: number | null; stockQty: number;
+    // Carried through every save: the PATCH route nulls anything it is not
+    // given, so omitting these silently wipes an item's serving window.
+    availableFrom?: string | null; availableTo?: string | null;
+    branch?: { name: string };
+  }[];
 }
 
 export default function AdminMenuPage() {
@@ -42,14 +48,48 @@ export default function AdminMenuPage() {
     if (r.ok) { setNewCat(""); load(); } else setError((await r.json()).error);
   };
 
-  const toggleAvailability = async (item: Item, branchId: string, available: boolean) => {
-    await fetch(`/api/admin/menu/items/${item.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ branchOverrides: [{ branchId, available, stockQty: item.branchItems.find((b) => b.branchId === branchId)?.stockQty ?? -1 }] }),
-    });
-    load();
+
+  /**
+   * Writes one branch's row for one item.
+   *
+   * Everything not being changed is resent as-is: the PATCH route replaces the
+   * whole BranchMenuItem, so a partial payload would quietly reset stock counts
+   * and serving windows.
+   */
+  const saveOverride = async (
+    item: Item,
+    branchId: string,
+    patch: Partial<{ available: boolean; priceOverride: number | null; stockQty: number }>
+  ) => {
+    const bi = item.branchItems.find((b) => b.branchId === branchId);
+    setError(null);
+    try {
+      const r = await fetch(`/api/admin/menu/items/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branchOverrides: [
+            {
+              branchId,
+              available: bi?.available ?? true,
+              stockQty: bi?.stockQty ?? -1,
+              priceOverride: bi?.priceOverride ?? null,
+              availableFrom: bi?.availableFrom ?? null,
+              availableTo: bi?.availableTo ?? null,
+              ...patch,
+            },
+          ],
+        }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error ?? "Could not save");
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save");
+    }
   };
+
+  const toggleAvailability = (item: Item, branchId: string, available: boolean) =>
+    saveOverride(item, branchId, { available });
 
   return (
     <div>
@@ -106,6 +146,11 @@ export default function AdminMenuPage() {
         </div>
       </section>
 
+      <p className="text-sm text-maroon-800/60 mb-2">
+        Each branch has its own price. Open <strong>Edit</strong> on a dish to set what
+        Rohini and NSP each charge.
+      </p>
+
       {!items ? (
         <Spinner label="Loading items…" />
       ) : (
@@ -115,8 +160,14 @@ export default function AdminMenuPage() {
               <tr className="text-left text-maroon-800/50 border-b border-cream-200">
                 <th className="p-3">Item</th>
                 <th className="p-3">Category</th>
-                <th className="p-3">Price</th>
-                {branches.map((b) => <th key={b.id} className="p-3">{b.name}</th>)}
+                {branches.map((b) => (
+                  <th key={b.id} className="p-3">
+                    {b.name.replace(/^DilKhush Dhaba\s*[–-]\s*/, "")}
+                    <span className="block text-[11px] font-normal normal-case text-maroon-800/40">
+                      price · stock
+                    </span>
+                  </th>
+                ))}
                 <th className="p-3"></th>
               </tr>
             </thead>
@@ -141,20 +192,24 @@ export default function AdminMenuPage() {
                     </span>
                   </td>
                   <td className="p-3">{it.category.name}</td>
-                  <td className="p-3">{inr(it.basePrice)}</td>
                   {branches.map((b) => {
                     const bi = it.branchItems.find((x) => x.branchId === b.id);
                     const avail = bi?.available ?? true;
                     return (
-                      <td key={b.id} className="p-3">
+                      <td key={b.id} className="p-3 align-top">
+                        {/* The price this branch actually charges. Editing lives
+                            in Edit, so a stray click on a busy dashboard cannot
+                            reprice a dish. */}
+                        <span className="block font-semibold">
+                          {inr(bi?.priceOverride ?? it.basePrice)}
+                        </span>
                         <button
                           onClick={() => toggleAvailability(it, b.id, !avail)}
-                          className={`text-xs font-bold px-2 py-1 rounded-full ${avail ? "bg-green-100 text-leaf-600" : "bg-red-100 text-red-700"}`}
+                          className={`mt-1 text-xs font-bold px-2 py-1 rounded-full ${avail ? "bg-green-100 text-leaf-600" : "bg-red-100 text-red-700"}`}
                           aria-label={`Toggle ${it.name} at ${b.name}`}
                         >
                           {avail ? "In stock" : "Off"}
                         </button>
-                        {bi?.priceOverride != null && <span className="block text-xs text-maroon-800/50">{inr(bi.priceOverride)}</span>}
                         {bi != null && bi.stockQty >= 0 && <span className="block text-xs text-mustard-600">qty {bi.stockQty}</span>}
                       </td>
                     );
@@ -228,15 +283,28 @@ function ItemEditor({
     setBusy(true);
     setError(null);
     try {
+      const branchOverrides = overrides.map(({ branchName, ...o }) => ({
+        ...o,
+        priceOverride:
+          o.priceOverride === null || (o.priceOverride as unknown) === ""
+            ? null
+            : +o.priceOverride!,
+        stockQty: +o.stockQty,
+      }));
+
+      // basePrice is no longer edited by hand: it is the fallback a branch uses
+      // when it has no price of its own, so take the first branch that does.
+      // Without this a dish could reach the menu at ₹0.
+      const priced = branchOverrides.find((o) => o.priceOverride != null);
+      if (!priced) throw new Error("Set a price for at least one branch");
+
       const payload = {
         ...f,
-        basePrice: +f.basePrice,
+        basePrice: priced.priceOverride!,
         prepTimeMins: +f.prepTimeMins,
         variants: variants.filter((v) => v.name.trim()),
         addOns: addOns.filter((a) => a.name.trim()),
-        ...(item
-          ? { branchOverrides: overrides.map(({ branchName, ...o }) => ({ ...o, priceOverride: o.priceOverride === null || (o.priceOverride as unknown) === "" ? null : +o.priceOverride!, stockQty: +o.stockQty })) }
-          : {}),
+        ...(item ? { branchOverrides } : {}),
       };
       const r = await fetch(item ? `/api/admin/menu/items/${item.id}` : "/api/admin/menu/items", {
         method: item ? "PATCH" : "POST",
@@ -245,6 +313,17 @@ function ItemEditor({
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
+
+      // Creating an item only makes its branch rows; a second call gives them
+      // their prices, so a new dish is priced per branch from the start.
+      if (!item && d.item?.id) {
+        const r2 = await fetch(`/api/admin/menu/items/${d.item.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ branchOverrides }),
+        });
+        if (!r2.ok) throw new Error((await r2.json()).error ?? "Item created, but prices did not save");
+      }
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -265,10 +344,6 @@ function ItemEditor({
             <select id="i-cat" className="input" value={f.categoryId} onChange={(e) => setF({ ...f, categoryId: e.target.value })}>
               {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-          </div>
-          <div>
-            <label className="label" htmlFor="i-price">Base price (₹) *</label>
-            <input id="i-price" type="number" min={0} className="input" value={f.basePrice} onChange={(e) => setF({ ...f, basePrice: +e.target.value })} />
           </div>
           <div>
             <label className="label" htmlFor="i-emoji">Emoji (shown when there is no photo)</label>
@@ -330,22 +405,36 @@ function ItemEditor({
           <button onClick={() => setAddOns([...addOns, { name: "", price: 0, veg: true, required: false }])} className="text-sm underline">+ Add add-on</button>
         </fieldset>
 
-        {item && (
-          <fieldset>
-            <legend className="label">Branch settings</legend>
-            {overrides.map((o, i) => (
-              <div key={o.branchId} className="grid grid-cols-4 gap-2 items-center mb-2 text-sm">
-                <span className="font-semibold">{o.branchName}</span>
-                <label className="flex items-center gap-1">
-                  <input type="checkbox" className="h-4 w-4 accent-maroon-600" checked={o.available} onChange={(e) => setOverrides(overrides.map((x, j) => (j === i ? { ...x, available: e.target.checked } : x)))} />
-                  available
-                </label>
-                <input className="input !min-h-[36px]" type="number" placeholder="Price override" value={o.priceOverride ?? ""} onChange={(e) => setOverrides(overrides.map((x, j) => (j === i ? { ...x, priceOverride: e.target.value === "" ? null : +e.target.value } : x)))} aria-label={`Price override at ${o.branchName}`} />
-                <input className="input !min-h-[36px]" type="number" min={-1} placeholder="Stock (-1 = ∞)" value={o.stockQty} onChange={(e) => setOverrides(overrides.map((x, j) => (j === i ? { ...x, stockQty: +e.target.value } : x)))} aria-label={`Stock at ${o.branchName}`} />
-              </div>
-            ))}
-          </fieldset>
-        )}
+        {/* Price lives here, once per branch. Rohini and NSP charge what they
+            charge; there is no single "base price" for the owner to reconcile
+            against. Shown when creating too, so a new dish is priced up front. */}
+        <fieldset>
+          <legend className="label">Price at each branch *</legend>
+          {overrides.map((o, i) => (
+            <div key={o.branchId} className="grid grid-cols-[1fr_auto_7rem_7rem] gap-2 items-center mb-2 text-sm">
+              <span className="font-semibold">
+                {o.branchName.replace(/^DilKhush Dhaba\s*[–-]\s*/, "")}
+              </span>
+              <label className="flex items-center gap-1">
+                <input type="checkbox" className="h-4 w-4 accent-maroon-600" checked={o.available} onChange={(e) => setOverrides(overrides.map((x, j) => (j === i ? { ...x, available: e.target.checked } : x)))} />
+                available
+              </label>
+              <input
+                className="input !min-h-[36px]"
+                type="number"
+                min={0}
+                placeholder="₹ price"
+                value={o.priceOverride ?? ""}
+                onChange={(e) => setOverrides(overrides.map((x, j) => (j === i ? { ...x, priceOverride: e.target.value === "" ? null : +e.target.value } : x)))}
+                aria-label={`Price at ${o.branchName}`}
+              />
+              <input className="input !min-h-[36px]" type="number" min={-1} placeholder="Stock (-1 = ∞)" value={o.stockQty} onChange={(e) => setOverrides(overrides.map((x, j) => (j === i ? { ...x, stockQty: +e.target.value } : x)))} aria-label={`Stock at ${o.branchName}`} />
+            </div>
+          ))}
+          <p className="text-xs text-maroon-800/50">
+            Leave a branch blank to charge the same as the first branch that has a price.
+          </p>
+        </fieldset>
 
         <ErrorBox message={error} />
         <div className="flex gap-2">
