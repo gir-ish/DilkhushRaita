@@ -15,6 +15,8 @@ const NAV = [
   ["/admin/coupons", "🎟️ Marketing", ["OWNER", "MARKETING"]],
   ["/admin/customers", "👥 Customers", ["OWNER", "BRANCH_MANAGER", "MARKETING"]],
   ["/admin/reports", "📈 Reports", ["OWNER", "BRANCH_MANAGER", "CASHIER", "MARKETING"]],
+  // Owner only: these accounts are the keys to everything above.
+  ["/admin/staff", "🧑‍🍳 Staff", ["OWNER"]],
 ] as const;
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
