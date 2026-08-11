@@ -183,7 +183,16 @@ function CounterInner() {
     const ql = q.trim().toLowerCase();
     return menu.categories
       .filter((c) => cat === "all" || c.id === cat)
-      .map((c) => ({ ...c, items: c.items.filter((i) => !ql || i.name.toLowerCase().includes(ql)) }))
+      .map((c) => ({
+        ...c,
+        // Only what this branch can actually serve. A dish switched off here,
+        // sold out, or outside its serving window is not on the counter's menu
+        // at all — showing it greyed out just gives the cashier something to
+        // hunt past while a customer waits. The customer-facing menu still
+        // lists them, because "we have it, not right now" is worth knowing
+        // there; at the till it is only noise.
+        items: c.items.filter((i) => i.available && (!ql || i.name.toLowerCase().includes(ql))),
+      }))
       .filter((c) => c.items.length > 0);
   }, [menu, q, cat]);
 
