@@ -176,24 +176,25 @@ Typing a long password on a phone every time you check the queue is how the
 password ends up on a sticky note by the till. The owner can set a 4-6 digit PIN
 instead.
 
+**One PIN per device, not per account.** The till by the counter and a personal
+phone each carry their own, so unpairing one never disturbs the other and a PIN
+read over someone's shoulder is useless anywhere else.
+
 A short PIN is only ten thousand guesses, so it never stands alone. Signing in
 with email and password *pairs* that browser (a random token in an httpOnly
 cookie, stored only as a hash), and the PIN is accepted from a paired browser or
-not at all — shoulder-surfing the digits buys nothing on another machine. Five
-wrong tries lock that device for 15 minutes; the password still works meanwhile.
-Only the OWNER role can have one.
+not at all. Five wrong tries lock that device for 15 minutes; the password still
+works meanwhile. Only the OWNER role can have one.
 
-- **Set it:** sign in with email + password; you are offered a PIN straight after.
-  Later, Dashboard → *Devices that can use your PIN* → **Set / Change PIN**.
-- **Forgot it:** *Forgot PIN?* on the lock screen emails a six-digit code to the
-  address on the account (never one supplied in the request). The code sets a new
-  PIN but does not sign you in. Needs `SMTP_URL` — see `.env.example`.
-- **Lost a device:** the same dashboard panel lists every paired browser with
-  when it was last used, and removes any of them, or all at once.
+- **Set it:** sign in with email + password; you are offered a PIN straight
+  after. Later, Dashboard → *Devices that can use your PIN* → **Set / Change PIN**,
+  which acts on the browser you are using.
+- **Forgot it:** sign in with your password on that device and set a new one.
+  There is no email reset — the password already is the recovery path, and a
+  second one is a second way in.
+- **Lost a device:** the same dashboard panel lists every paired browser, whether
+  it has a PIN, and when it was last used. Remove any of them, or all at once.
 
-Two seeded delivery agents (Raju, Sonu) are available for assignment on delivery orders.
-
----
 
 ## Guided walkthrough
 

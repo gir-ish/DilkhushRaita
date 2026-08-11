@@ -145,7 +145,8 @@ export default function AdminOverview() {
 }
 
 interface DeviceRow {
-  id: string; label: string; lastUsedAt: string; createdAt: string; current: boolean;
+  id: string; label: string; lastUsedAt: string; createdAt: string;
+  current: boolean; hasPin: boolean;
 }
 
 /**
@@ -158,13 +159,14 @@ interface DeviceRow {
 function PairedDevices() {
   const [devices, setDevices] = useState<DeviceRow[] | null>(null);
   const [hasPin, setHasPin] = useState(false);
+  const [paired, setPaired] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     fetch("/api/admin/devices")
       .then((r) => (r.ok ? r.json() : { devices: null }))
-      .then((d) => { setDevices(d.devices); setHasPin(!!d.hasPin); })
+      .then((d) => { setDevices(d.devices); setHasPin(!!d.hasPin); setPaired(!!d.onThisDevice); })
       .catch(() => setDevices(null));
   }, []);
   useEffect(load, [load]);
@@ -198,12 +200,12 @@ function PairedDevices() {
     <section className="card p-4 mt-4" aria-label="Paired devices">
       <h2 className="font-semibold mb-1">🔐 Devices that can use your PIN</h2>
       <p className="text-sm text-maroon-800/60 mb-3">
-        Each of these has signed in with your password once. Remove any you do not
-        recognise — they will need the password again.
+        Each of these has signed in with your password once, and each carries its
+        own PIN. Remove any you do not recognise — they will need the password again.
       </p>
       <ErrorBox message={error} />
 
-      <PinEditor hasPin={hasPin} onSaved={load} />
+      <PinEditor hasPin={hasPin} paired={paired} onSaved={load} />
 
       {devices.length === 0 ? (
         <p className="text-sm text-maroon-800/50">No devices paired yet.</p>
@@ -218,7 +220,9 @@ function PairedDevices() {
                     this device
                   </span>
                 )}
-                <span className="block text-xs text-maroon-800/50">Last used {when(d.lastUsedAt)}</span>
+                <span className="block text-xs text-maroon-800/50">
+                  Last used {when(d.lastUsedAt)} · {d.hasPin ? "PIN set" : "no PIN"}
+                </span>
               </span>
               <button
                 onClick={() => act(d.id, `/api/admin/devices/${d.id}`,
@@ -254,7 +258,7 @@ function PairedDevices() {
  * Also the way back for anyone who tapped "Skip for now" at sign-in — without
  * this the only route to a PIN was a screen you see once.
  */
-function PinEditor({ hasPin, onSaved }: { hasPin: boolean; onSaved: () => void }) {
+function PinEditor({ hasPin, paired, onSaved }: { hasPin: boolean; paired: boolean; onSaved: () => void }) {
   const [open, setOpen] = useState(false);
   const [currentPin, setCurrentPin] = useState("");
   const [pin, setPin] = useState("");
@@ -308,7 +312,11 @@ function PinEditor({ hasPin, onSaved }: { hasPin: boolean; onSaved: () => void }
     return (
       <div className="flex items-center gap-3 mb-3 pb-3 border-b border-cream-200">
         <span className="text-sm text-maroon-800/70 flex-1">
-          {hasPin ? "A PIN is set for this account." : "No PIN yet — set one to skip the password on paired devices."}
+          {hasPin
+            ? "This device has a PIN. It unlocks here only — other devices have their own."
+            : paired
+              ? "No PIN on this device yet — set one to skip the password here."
+              : "This browser is not paired. Sign in with your password on it to set a PIN."}
         </span>
         {done && <span className="text-sm font-semibold text-leaf-600">Saved ✓</span>}
         <button onClick={() => { reset(); setOpen(true); }} className="btn-outline !min-h-[36px] text-sm shrink-0">
@@ -322,7 +330,7 @@ function PinEditor({ hasPin, onSaved }: { hasPin: boolean; onSaved: () => void }
       <div className="grid gap-3 sm:grid-cols-3">
         {/* Required when replacing a PIN, so walking up to an unlocked
             dashboard is not enough to change it. */}
-        {hasPin && digits("curPin", "Current PIN", currentPin, setCurrentPin)}
+        {hasPin && digits("curPin", "Current PIN (this device)", currentPin, setCurrentPin)}
         {digits("chgPin", hasPin ? "New PIN (4–6)" : "PIN (4–6 digits)", pin, setPin)}
         {digits("chgPin2", "Confirm", pin2, setPin2)}
       </div>

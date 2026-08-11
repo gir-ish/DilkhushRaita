@@ -17,21 +17,23 @@ export const GET = handler(async () => {
   const token = await readDeviceToken();
   const currentHash = token ? hashDeviceToken(token) : null;
 
-  const [user, devices] = await Promise.all([
-    db.user.findUnique({ where: { id: session.uid }, select: { pinHash: true } }),
-    db.staffDevice.findMany({ where: { userId: session.uid }, orderBy: { lastUsedAt: "desc" } }),
-  ]);
+  const devices = await db.staffDevice.findMany({
+    where: { userId: session.uid },
+    orderBy: { lastUsedAt: "desc" },
+  });
 
   return NextResponse.json({
-    // Whether a PIN exists — never the PIN or its hash. Decides if the screen
-    // offers "set" or "change".
-    hasPin: !!user?.pinHash,
+    // Whether THIS browser has a PIN — never the PIN or its hash. Decides
+    // whether the screen offers "set" or "change".
+    hasPin: devices.some((d) => currentHash != null && d.tokenHash === currentHash && !!d.pinHash),
+    onThisDevice: currentHash != null && devices.some((d) => d.tokenHash === currentHash),
     devices: devices.map((d) => ({
       id: d.id,
       label: d.label || "Unknown device",
       lastUsedAt: d.lastUsedAt,
       createdAt: d.createdAt,
       current: currentHash != null && d.tokenHash === currentHash,
+      hasPin: !!d.pinHash,
     })),
   });
 });

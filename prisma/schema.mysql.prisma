@@ -29,7 +29,6 @@ model User {
   name         String?
   role         String   @default("CUSTOMER")
   passwordHash String?
-  pinHash      String?
   blocked      Boolean  @default(false)
   codOnlyBlock Boolean  @default(false)
   createdAt    DateTime @default(now())
@@ -563,6 +562,10 @@ model StaffDevice {
   userId     String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   tokenHash  String   @unique
+  /// This device's own unlock PIN. Per device on purpose: the till and a
+  /// personal phone should not share a secret, and unpairing one must not
+  /// disturb the other.
+  pinHash    String?
   label      String   @default("") @db.VarChar(120)
   lastUsedAt DateTime @default(now())
   createdAt  DateTime @default(now())

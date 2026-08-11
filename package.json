@@ -28,7 +28,6 @@
     "bcryptjs": "^2.4.3",
     "jose": "^5.9.6",
     "next": "^15.3.0",
-    "nodemailer": "^9.0.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "zod": "^3.24.1"
@@ -36,7 +35,6 @@
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.10.0",
-    "@types/nodemailer": "^8.0.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.20",

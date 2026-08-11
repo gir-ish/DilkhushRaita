@@ -27,7 +27,6 @@ model User {
   name         String?
   role         String   @default("CUSTOMER") // CUSTOMER OWNER BRANCH_MANAGER KITCHEN CASHIER DELIVERY_MANAGER DELIVERY_AGENT MARKETING
   passwordHash String? // staff only; customers use OTP
-  pinHash      String? // owner quick-unlock PIN, only usable from a trusted device
   blocked      Boolean  @default(false)
   codOnlyBlock Boolean  @default(false) // COD-abuse flag: prepaid only
   createdAt    DateTime @default(now())
@@ -568,6 +567,10 @@ model StaffDevice {
   userId     String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   tokenHash  String   @unique
+  /// This device's own unlock PIN. Per device on purpose: the till and a
+  /// personal phone should not share a secret, and unpairing one must not
+  /// disturb the other.
+  pinHash    String?
   label      String   @default("")
   lastUsedAt DateTime @default(now())
   createdAt  DateTime @default(now())

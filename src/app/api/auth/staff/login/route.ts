@@ -33,14 +33,17 @@ export const POST = handler(async (req: Request) => {
   });
   // A full sign-in is what earns a browser the right to use a PIN later. Only
   // the owner gets one, so only the owner's browsers are paired.
-  if (user.role === "OWNER")
-    await trustThisDevice(user.id, deviceLabelFrom(req.headers.get("user-agent")));
+  let devicePin = false;
+  if (user.role === "OWNER") {
+    const device = await trustThisDevice(user.id, deviceLabelFrom(req.headers.get("user-agent")));
+    devicePin = !!device.pinHash;
+  }
   await audit({ uid: user.id, name: user.name ?? undefined }, "STAFF_LOGIN", "User", user.id);
   return NextResponse.json({
     ok: true,
     user: { id: user.id, name: user.name, role: user.role },
-    // Lets the login screen offer "set a PIN" the first time.
+    // Lets the login screen offer "set a PIN" the first time on this browser.
     canSetPin: user.role === "OWNER",
-    hasPin: user.role === "OWNER" && !!user.pinHash,
+    hasPin: devicePin,
   });
 });

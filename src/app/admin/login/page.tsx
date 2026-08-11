@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ErrorBox } from "@/components/ui";
 
-type Mode = "loading" | "pin" | "password" | "setPin" | "forgot";
+type Mode = "loading" | "pin" | "password" | "setPin";
 
 function AdminLoginInner() {
   const router = useRouter();
@@ -16,8 +16,6 @@ function AdminLoginInner() {
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
   const [pin2, setPin2] = useState("");
-  const [code, setCode] = useState("");
-  const [sentTo, setSentTo] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -79,21 +77,6 @@ function AdminLoginInner() {
     go();
   });
 
-  const sendCode = run(async () => {
-    const d = await post("/api/auth/staff/pin/forgot", {});
-    setSentTo(d.sentTo ?? null);
-    setMode("forgot");
-    setNote(`Code sent to ${d.sentTo}. It expires in ${d.expiresInMinutes} minutes.`);
-  });
-
-  const resetPin = run(async () => {
-    if (pin !== pin2) throw new Error("The two PINs do not match");
-    await post("/api/auth/staff/pin/reset", { code, pin });
-    setNote("PIN updated. Enter it to sign in.");
-    setPin(""); setPin2(""); setCode("");
-    setMode("pin");
-  });
-
   const pinInput = (id: string, label: string, value: string, set: (v: string) => void, autoFocus = false) => (
     <div>
       <label htmlFor={id} className="label">{label}</label>
@@ -135,14 +118,11 @@ function AdminLoginInner() {
         <button type="submit" disabled={busy || pin.length < 4} className="btn-primary w-full">
           {busy ? "Checking…" : "Unlock"}
         </button>
-        <div className="flex justify-between text-sm">
-          <button type="button" className="underline text-maroon-600" onClick={() => { setError(null); setNote(null); setMode("password"); }}>
-            Use password
-          </button>
-          <button type="button" className="underline text-maroon-600" onClick={sendCode} disabled={busy}>
-            Forgot PIN?
-          </button>
-        </div>
+        {/* Forgetting the PIN is not a special case: sign in with the password
+            and set a new one for this device. */}
+        <button type="button" className="underline text-sm text-maroon-600 w-full" onClick={() => { setError(null); setNote(null); setMode("password"); }}>
+          Forgot PIN? Use your password
+        </button>
       </form>
     );
 
@@ -150,7 +130,8 @@ function AdminLoginInner() {
     return shell(
       <form onSubmit={savePin} className="space-y-4">
         <p className="text-sm text-maroon-800/70">
-          Signed in. Set a PIN and this device will only ask for those digits from now on.
+          Signed in. Set a PIN for <strong>this device</strong> — it will only ask for
+          those digits from now on. Other devices keep their own.
         </p>
         {pinInput("newPin", "New PIN (4–6 digits)", pin, setPin, true)}
         {pinInput("newPin2", "Confirm PIN", pin2, setPin2)}
@@ -160,37 +141,6 @@ function AdminLoginInner() {
         </button>
         <button type="button" className="underline text-sm text-maroon-600 w-full" onClick={go}>
           Skip for now
-        </button>
-      </form>
-    );
-
-  if (mode === "forgot")
-    return shell(
-      <form onSubmit={resetPin} className="space-y-4">
-        <p className="text-sm text-maroon-800/70">
-          We emailed a 6-digit code{sentTo ? ` to ${sentTo}` : ""}. Enter it and choose a new PIN.
-        </p>
-        <div>
-          <label htmlFor="code" className="label">Code from email</label>
-          <input
-            id="code"
-            className="input text-center text-xl tracking-[0.4em] font-bold"
-            inputMode="numeric"
-            maxLength={6}
-            autoFocus
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-          />
-        </div>
-        {pinInput("resetPin", "New PIN (4–6 digits)", pin, setPin)}
-        {pinInput("resetPin2", "Confirm PIN", pin2, setPin2)}
-        {note && <p className="text-sm text-leaf-600">{note}</p>}
-        <ErrorBox message={error} />
-        <button type="submit" disabled={busy || code.length !== 6 || pin.length < 4} className="btn-primary w-full">
-          {busy ? "Saving…" : "Set new PIN"}
-        </button>
-        <button type="button" className="underline text-sm text-maroon-600 w-full" onClick={() => { setError(null); setNote(null); setMode("password"); }}>
-          Use password instead
         </button>
       </form>
     );

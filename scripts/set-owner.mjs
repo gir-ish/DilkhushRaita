@@ -7,9 +7,9 @@
  * are never printed. Run it on whichever machine holds the database you mean
  * to change — the live one is the server, not your laptop.
  *
- * Existing owner? Its email and password are updated in place, so orders,
- * audit history and paired devices stay attached to the same account. Any PIN
- * is cleared and every paired device dropped: changing the password is exactly
+ * Existing owner? Its email and password are updated in place, so orders and
+ * audit history stay attached to the same account. Every paired device is
+ * dropped, which takes their PINs with them: changing the password is exactly
  * when you want old tills to stop unlocking.
  */
 import { createRequire } from "node:module";
@@ -45,7 +45,7 @@ try {
   if (existing) {
     await db.user.update({
       where: { id: existing.id },
-      data: { email, name, passwordHash: hash, pinHash: null },
+      data: { email, name, passwordHash: hash },
     });
     await db.staffDevice.deleteMany({ where: { userId: existing.id } });
     console.log(`Updated owner ${existing.id} → ${email}`);

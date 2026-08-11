@@ -13,13 +13,12 @@ const PIN_ROLE = "OWNER";
  * What this browser can offer on the sign-in screen.
  *
  * Deliberately unauthenticated: the login page has to ask before anyone has
- * signed in. It reveals only whether *this* device is paired and the first
- * name to greet — never the email, and nothing at all to a browser that has
- * not been paired.
+ * signed in. It reveals only whether *this* device has a PIN and the first name
+ * to greet — never the email, and nothing at all to an unpaired browser.
  */
 export const GET = handler(async () => {
   const device = await deviceOwner();
-  if (!device || device.user.role !== PIN_ROLE || !device.user.pinHash)
+  if (!device || device.user.role !== PIN_ROLE || !device.pinHash)
     return NextResponse.json({ pinReady: false });
   return NextResponse.json({
     pinReady: true,
@@ -28,13 +27,20 @@ export const GET = handler(async () => {
 });
 
 const Body = z.object({
-  // 4-6 digits. Longer is better, but this has to be typeable one-handed
-  // while someone is waiting to pay.
+  // 4-6 digits. Longer is better, but this has to be typeable one-handed while
+  // someone is waiting to pay.
   pin: z.string().regex(/^\d{4,6}$/, "PIN must be 4 to 6 digits"),
   currentPin: z.string().optional(),
 });
 
-/** Set or change the PIN. Requires a live staff session, i.e. a full sign-in. */
+/**
+ * Set or change the PIN **for the browser making the request**.
+ *
+ * Each device carries its own: the till by the counter and a personal phone
+ * should not share a secret, and forgetting the one on a phone must not force
+ * the shop to re-learn theirs. Requires a live staff session, so a full
+ * email + password sign-in is always what stands behind a new PIN.
+ */
 export const POST = handler(async (req: Request) => {
   const session = await requireStaff();
   if (session.role !== PIN_ROLE)
@@ -44,22 +50,34 @@ export const POST = handler(async (req: Request) => {
   if (/^(\d)\1+$/.test(body.pin))
     throw new HttpError(400, "That PIN is too easy to guess — avoid all-same digits");
 
-  const user = await db.user.findUnique({ where: { id: session.uid } });
-  if (!user) throw new HttpError(401, "Please sign in again");
+  // Pair first if this browser is new, so setting a PIN and trusting the device
+  // are one step from the owner's point of view.
+  const device =
+    (await deviceOwner()) ??
+    (await trustThisDevice(session.uid, deviceLabelFrom(req.headers.get("user-agent"))));
 
-  // Changing an existing PIN needs the old one, so a walk-up to an unlocked
-  // dashboard cannot quietly replace it.
-  if (user.pinHash) {
-    const ok = body.currentPin && (await bcrypt.compare(body.currentPin, user.pinHash));
-    if (!ok) throw new HttpError(403, "Enter your current PIN to change it");
+  if (device.userId !== session.uid)
+    throw new HttpError(403, "This device belongs to another account");
+
+  // Replacing this device's PIN needs the old one, so walking up to an unlocked
+  // dashboard is not enough to change it.
+  const existing = "pinHash" in device ? device.pinHash : null;
+  if (existing) {
+    const ok = body.currentPin && (await bcrypt.compare(body.currentPin, existing));
+    if (!ok) throw new HttpError(403, "Enter this device's current PIN to change it");
   }
 
-  await db.user.update({
-    where: { id: user.id },
-    data: { pinHash: await bcrypt.hash(body.pin, 10) },
+  await db.staffDevice.update({
+    where: { id: device.id },
+    data: {
+      pinHash: await bcrypt.hash(body.pin, 10),
+      label: deviceLabelFrom(req.headers.get("user-agent")),
+      lastUsedAt: new Date(),
+    },
   });
-  await trustThisDevice(user.id, deviceLabelFrom(req.headers.get("user-agent")));
-  await audit({ uid: user.id, name: user.name ?? undefined }, "STAFF_PIN_SET", "User", user.id);
+  await audit({ uid: session.uid, name: session.name }, "STAFF_PIN_SET", "StaffDevice", device.id, {
+    device: device.label,
+  });
 
   return NextResponse.json({ ok: true });
 });
