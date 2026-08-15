@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ErrorBox, Modal, Spinner, VegMark } from "@/components/ui";
 import { inr } from "@/lib/utils";
+import { playTone } from "@/lib/sound";
 
 interface Variant { id: string; name: string; priceDelta: number; isDefault: boolean }
 interface AddOn { id: string; name: string; price: number; veg: boolean }
@@ -227,6 +228,7 @@ function CounterInner() {
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
+      playTone("success");
       setLines([]);
       setAddingTo(null);
       setCartOpen(false);
@@ -234,6 +236,7 @@ function CounterInner() {
     } catch (e) {
       // Close the sheet: the error banner sits at the top of the page and would
       // otherwise be hidden behind it, so the failure would look like a no-op.
+      playTone("error");
       setCartOpen(false);
       setError(e instanceof Error ? e.message : "Could not add to the tab");
     }
@@ -764,6 +767,9 @@ function CheckoutModal({
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
+      // Before the alert(), not after: alert() blocks the thread until it is
+      // dismissed, so a tone queued behind it would arrive far too late.
+      playTone("success");
       alert(
         mode === "DINE_IN"
           ? `Tab opened · ${d.orderNumber} · ${inr(d.total)} so far`
@@ -771,6 +777,7 @@ function CheckoutModal({
       );
       onDone(d.orderId);
     } catch (e) {
+      playTone("error");
       setError(e instanceof Error ? e.message : "Could not place the order");
       setBusy(false);
     }
@@ -1004,8 +1011,10 @@ function SettleModal({
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
+      playTone("success");
       onDone();
     } catch (e) {
+      playTone("error");
       setError(e instanceof Error ? e.message : "Could not settle the tab");
       setBusy(false);
     }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { SoundToggle } from "@/components/sound-toggle";
 
 const NAV = [
   ["/admin", "📊 Overview", ["OWNER", "BRANCH_MANAGER", "CASHIER", "DELIVERY_MANAGER", "MARKETING"]],
@@ -52,6 +53,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             </span>
           </Link>
           <div className="flex items-center gap-2 shrink-0">
+            {/* Sits beside Sign out on every dashboard screen: whoever is
+                standing at the counter must be able to silence — or rescue —
+                the new-order chime without hunting for a settings page. */}
+            <SoundToggle className="bg-maroon-600/60 hover:bg-maroon-600" />
             <Link
               href="/"
               className="rounded-xl px-3 sm:px-4 py-2.5 text-sm font-semibold bg-maroon-600/60 hover:bg-maroon-600 transition"

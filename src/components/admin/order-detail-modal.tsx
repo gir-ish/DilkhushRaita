@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ErrorBox, Modal } from "@/components/ui";
 import { inr, istDateTime, parseJson } from "@/lib/utils";
 import { REJECTION_REASONS, nextStatusesFor } from "@/lib/constants";
+import { playTone } from "@/lib/sound";
 import { PrintSheet } from "./print-sheet";
 
 export interface AdminOrder {
@@ -22,21 +23,6 @@ export interface AdminOrder {
   // PATCH response echoes the order without its branch relation.
   branch: { name: string; slug: string; address?: string; pincode?: string; phone?: string; taxPercent?: number };
   deliveryAgent: { user: { name: string | null } } | null;
-}
-
-export function beep() {
-  try {
-    const ctx = new AudioContext();
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.connect(g);
-    g.connect(ctx.destination);
-    o.frequency.value = 880;
-    g.gain.setValueAtTime(0.4, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-    o.start();
-    o.stop(ctx.currentTime + 0.6);
-  } catch {}
 }
 
 export function OrderDetailModal({
@@ -73,8 +59,12 @@ export function OrderDetailModal({
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
+      // Audible confirmation matters on a tablet held at arm's length, where
+      // the row you just changed may already have scrolled out of sight.
+      playTone((body as { status?: string }).status === "READY" ? "ready" : "success");
       onChanged({ ...order, ...d.order });
     } catch (e) {
+      playTone("error");
       setError(e instanceof Error ? e.message : "Action failed");
     } finally {
       setBusy(false);

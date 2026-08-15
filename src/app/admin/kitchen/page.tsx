@@ -3,11 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ErrorBox, Spinner } from "@/components/ui";
 import { parseJson } from "@/lib/utils";
-import {
-  AdminOrder,
-  OrderDetailModal,
-  beep,
-} from "@/components/admin/order-detail-modal";
+import { AdminOrder, OrderDetailModal } from "@/components/admin/order-detail-modal";
+import { notify, playTone } from "@/lib/sound";
 
 /** Kitchen Display System — large text, simple controls, oldest first. */
 export default function KitchenPage() {
@@ -26,7 +23,17 @@ export default function KitchenPage() {
           .filter((o: AdminOrder) => ["PLACED", "ACCEPTED", "PREPARING", "READY"].includes(o.status))
           .sort((a: AdminOrder, b: AdminOrder) => +new Date(a.placedAt) - +new Date(b.placedAt));
         const ids = new Set<string>(list.map((o) => o.id));
-        if (prevIds.current && [...ids].some((id) => !prevIds.current!.has(id))) beep();
+        if (prevIds.current) {
+          const fresh = list.filter((o) => !prevIds.current!.has(o.id));
+          if (fresh.length > 0) {
+            playTone("newOrder");
+            notify(
+              "👨‍🍳 New ticket",
+              fresh.map((o) => `${o.orderNumber} · ${o.items.length} item${o.items.length === 1 ? "" : "s"}`).join("\n"),
+              "dk-kitchen-ticket"
+            );
+          }
+        }
         prevIds.current = ids;
         setOrders(list);
         setError(null);
@@ -42,11 +49,14 @@ export default function KitchenPage() {
   }, [load]);
 
   const quickAct = async (o: AdminOrder, status: string) => {
-    await fetch(`/api/admin/orders/${o.id}`, {
+    const r = await fetch(`/api/admin/orders/${o.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "status", status }),
     });
+    // "Food is up" gets its own tone: it is the one transition someone outside
+    // the kitchen is waiting on.
+    playTone(!r.ok ? "error" : status === "READY" ? "ready" : "success");
     load();
   };
 

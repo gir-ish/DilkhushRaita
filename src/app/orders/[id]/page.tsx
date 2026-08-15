@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
 import { ErrorBox, Modal, Spinner } from "@/components/ui";
@@ -8,11 +8,32 @@ import { PrintSheet } from "@/components/admin/print-sheet";
 import { inr, istDateTime, parseJson, timeAgo } from "@/lib/utils";
 import { useCart } from "@/components/cart-context";
 import { useRouter } from "next/navigation";
+import {
+  askNotifyPermission,
+  audioReady,
+  notify,
+  playTone,
+  primeAudio,
+  primeOnFirstGesture,
+} from "@/lib/sound";
 
 const FLOW = ["PLACED", "ACCEPTED", "PREPARING", "READY", "OUT_FOR_DELIVERY", "DELIVERED"];
 // Pickup and dine-in never leave the restaurant, so no delivery leg.
 const PICKUP_FLOW = ["PLACED", "ACCEPTED", "PREPARING", "READY", "DELIVERED"];
 const DEAD = ["REJECTED", "CANCELLED", "REFUND_INITIATED", "REFUNDED"];
+
+/**
+ * What the customer hears when the kitchen moves their order along.
+ *
+ * Only the steps worth interrupting someone for get the bright tone: the food
+ * being ready, or a rider being on the way.
+ */
+function toneFor(status: string) {
+  if (DEAD.includes(status)) return "error" as const;
+  if (status === "READY" || status === "OUT_FOR_DELIVERY" || status === "DELIVERED")
+    return "ready" as const;
+  return "status" as const;
+}
 
 interface OrderDto {
   id: string; orderNumber: string; status: string; statusLabel: string; type: string;
@@ -43,13 +64,22 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
   const [error, setError] = useState<string | null>(null);
   const [showReview, setShowReview] = useState(false);
   const [showBill, setShowBill] = useState(false);
+  const prevStatus = useRef<string | null>(null);
 
   const load = useCallback(() => {
     fetch(`/api/orders/${id}`)
       .then(async (r) => {
         const d = await r.json();
         if (!r.ok) throw new Error(d.error);
-        setOrder(d.order);
+        const next: OrderDto = d.order;
+        // Only announce a *change*. The first poll is the status as it already
+        // was when the page opened, which is not news.
+        if (prevStatus.current && prevStatus.current !== next.status) {
+          playTone(toneFor(next.status));
+          notify(`Order ${next.orderNumber}`, next.statusLabel, `dk-order-${next.id}`);
+        }
+        prevStatus.current = next.status;
+        setOrder(next);
       })
       .catch((e) => setError(e.message));
   }, [id]);
@@ -59,6 +89,10 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
     const t = setInterval(load, 8000); // live status via polling
     return () => clearInterval(t);
   }, [load]);
+
+  // Sound is blocked until the page has been touched; picking that up from any
+  // tap means a customer who scrolls the page gets the update chime for free.
+  useEffect(() => primeOnFirstGesture(), []);
 
   if (error) return (<><SiteHeader /><main className="max-w-lg mx-auto p-6"><ErrorBox message={error} /></main></>);
   if (!order) return (<><SiteHeader /><Spinner label="Loading order…" /></>);
@@ -137,6 +171,9 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
               })}
             </ol>
           )}
+
+          {/* Only while there is still something to wait for. */}
+          {!dead && !completed && <AlertOptIn />}
 
           {completed && (
             <div className="mt-4 flex items-center gap-3 rounded-xl border border-leaf-500/30 bg-leaf-50 px-4 py-3">
@@ -270,6 +307,54 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
         )}
       </main>
     </>
+  );
+}
+
+/**
+ * Offer to alert the customer when their order moves.
+ *
+ * The permission prompt hangs off a real button on purpose: browsers ignore an
+ * unprompted request (Firefox outright), and a prompt nobody asked for is the
+ * fastest way to have notifications blocked for the whole site.
+ */
+function AlertOptIn() {
+  const [state, setState] = useState<"ask" | "on" | "blocked">("ask");
+
+  useEffect(() => {
+    if (typeof Notification === "undefined") return setState(audioReady() ? "on" : "ask");
+    if (Notification.permission === "granted") setState("on");
+    else if (Notification.permission === "denied") setState("blocked");
+  }, []);
+
+  const enable = async () => {
+    primeAudio();
+    const ok = await askNotifyPermission();
+    // Sound alone is still worth having: the tab is usually left open on the
+    // tracking page anyway.
+    setState(ok || typeof Notification === "undefined" ? "on" : "blocked");
+    playTone("status");
+  };
+
+  if (state === "on")
+    return (
+      <p className="mt-4 text-sm text-maroon-800/60">
+        🔔 We&rsquo;ll chime here as your order moves along.
+      </p>
+    );
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-cream-200 pt-3">
+      <span className="text-sm text-maroon-800/70 flex-1 min-w-[12rem]">
+        {state === "blocked"
+          ? "Notifications are blocked in this browser — keep this page open and we'll chime instead."
+          : "Want a nudge when the kitchen accepts it?"}
+      </span>
+      {state === "ask" && (
+        <button onClick={enable} className="btn-outline !min-h-[36px] text-sm">
+          🔔 Alert me
+        </button>
+      )}
+    </div>
   );
 }
 

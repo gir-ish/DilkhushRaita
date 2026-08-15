@@ -4,12 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ErrorBox, Spinner } from "@/components/ui";
 import { inr, istDateTime, timeAgo } from "@/lib/utils";
 import { STATUS_TRANSITIONS } from "@/lib/constants";
-import {
-  AdminOrder,
-  OrderDetailModal,
-  beep,
-} from "@/components/admin/order-detail-modal";
+import { AdminOrder, OrderDetailModal } from "@/components/admin/order-detail-modal";
 import { BranchTabs, type BranchTab } from "@/components/admin/branch-tabs";
+import { notify, playTone } from "@/lib/sound";
 
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<AdminOrder[] | null>(null);
@@ -45,9 +42,12 @@ export default function AdminOrdersPage() {
         if (prevPlacedIds.current) {
           const fresh = [...placedNow].filter((id) => !prevPlacedIds.current!.has(id));
           if (fresh.length > 0) {
-            beep();
-            if (typeof Notification !== "undefined" && Notification.permission === "granted")
-              new Notification("🆕 New order!", { body: `${fresh.length} new order(s) waiting for acceptance` });
+            playTone("newOrder");
+            notify(
+              "🆕 New order!",
+              `${fresh.length} new order${fresh.length === 1 ? "" : "s"} waiting for acceptance`,
+              "dk-new-order"
+            );
           }
         }
         prevPlacedIds.current = placedNow;
