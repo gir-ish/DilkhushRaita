@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { SoundToggle } from "@/components/sound-toggle";
+import { NewOrderWatcher } from "@/components/admin/new-order-alert";
 
 const NAV = [
   ["/admin", "📊 Overview", ["OWNER", "BRANCH_MANAGER", "CASHIER", "DELIVERY_MANAGER", "MARKETING"]],
@@ -97,6 +98,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         </nav>
       </header>
       <main className="p-4 sm:p-6 max-w-7xl mx-auto">{children}</main>
+      {/* Outside <main> on purpose: it covers the screen whatever is under it. */}
+      <NewOrderWatcher />
     </div>
   );
 }

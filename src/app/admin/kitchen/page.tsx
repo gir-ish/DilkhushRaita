@@ -24,7 +24,13 @@ export default function KitchenPage() {
           .sort((a: AdminOrder, b: AdminOrder) => +new Date(a.placedAt) - +new Date(b.placedAt));
         const ids = new Set<string>(list.map((o) => o.id));
         if (prevIds.current) {
-          const fresh = list.filter((o) => !prevIds.current!.has(o.id));
+          // PLACED belongs to the shell's alarm, which covers every screen.
+          // What is left is the counter's own work: a walk-in or dine-in order
+          // is written straight to ACCEPTED, so it would otherwise reach the
+          // kitchen without a sound.
+          const fresh = list.filter(
+            (o) => !prevIds.current!.has(o.id) && o.status !== "PLACED"
+          );
           if (fresh.length > 0) {
             playTone("newOrder");
             notify(

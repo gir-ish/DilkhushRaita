@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ErrorBox, Spinner } from "@/components/ui";
 import { inr, istDateTime, timeAgo } from "@/lib/utils";
 import { STATUS_TRANSITIONS } from "@/lib/constants";
 import { AdminOrder, OrderDetailModal } from "@/components/admin/order-detail-modal";
 import { BranchTabs, type BranchTab } from "@/components/admin/branch-tabs";
-import { notify, playTone } from "@/lib/sound";
 
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<AdminOrder[] | null>(null);
@@ -17,7 +16,6 @@ export default function AdminOrdersPage() {
   const [status, setStatus] = useState("all");
   const [activeOnly, setActiveOnly] = useState(true);
   const [selected, setSelected] = useState<AdminOrder | null>(null);
-  const prevPlacedIds = useRef<Set<string> | null>(null);
 
   useEffect(() => {
     // Scoped endpoint — a branch manager only ever sees their own branches.
@@ -38,19 +36,8 @@ export default function AdminOrdersPage() {
         const d = await r.json();
         if (!r.ok) throw new Error(d.error);
         const list: AdminOrder[] = d.orders;
-        const placedNow = new Set(list.filter((o) => o.status === "PLACED").map((o) => o.id));
-        if (prevPlacedIds.current) {
-          const fresh = [...placedNow].filter((id) => !prevPlacedIds.current!.has(id));
-          if (fresh.length > 0) {
-            playTone("newOrder");
-            notify(
-              "🆕 New order!",
-              `${fresh.length} new order${fresh.length === 1 ? "" : "s"} waiting for acceptance`,
-              "dk-new-order"
-            );
-          }
-        }
-        prevPlacedIds.current = placedNow;
+        // The new-order alarm lives in the dashboard shell, so it fires on
+        // every screen and only ever chimes once.
         setOrders(list);
         setError(null);
       })
@@ -62,11 +49,6 @@ export default function AdminOrdersPage() {
     const t = setInterval(load, 10000); // live queue via polling
     return () => clearInterval(t);
   }, [load]);
-
-  useEffect(() => {
-    if ("Notification" in window && Notification.permission === "default")
-      Notification.requestPermission();
-  }, []);
 
   // Matched on slug, not display name — names are editable in the dashboard
   // and two branches could be renamed to collide.
