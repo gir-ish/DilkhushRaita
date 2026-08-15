@@ -6,7 +6,10 @@ import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
 import { useCart } from "@/components/cart-context";
 import { ErrorBox, Modal, Spinner } from "@/components/ui";
+import { SwipeToOrder } from "@/components/swipe-to-order";
+import { OrderCinematic, type CinematicPhase } from "@/components/order-cinematic";
 import { inr } from "@/lib/utils";
+import { playTone } from "@/lib/sound";
 
 interface AddressDto {
   id: string; label: string; line1: string; line2: string | null;
@@ -69,6 +72,21 @@ declare global {
 }
 
 /** Loads Razorpay Checkout on demand — no cost to customers paying by COD. */
+/** Resolves after `ms`, and immediately for anything at or below zero. */
+const wait = (ms: number) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
+
+/**
+ * How long the order-placed scene runs before the tracker opens. The drive is
+ * a real wait the customer is being shown, not a fake one: the request is in
+ * flight underneath it, and a slow server simply pushes the arrival later.
+ */
+/** Must match `--drive` on `.cinema` in globals.css. */
+const DRIVE_MS = 2200;
+const ARRIVED_HOLD_MS = 1500;
+/** Reduced motion collapses the scene to a still, so the hold shortens with it. */
+const REDUCED_DRIVE_MS = 500;
+const REDUCED_HOLD_MS = 700;
+
 function loadRazorpayScript(): Promise<boolean> {
   return new Promise((resolve) => {
     if (window.Razorpay) return resolve(true);
@@ -102,6 +120,15 @@ export default function CheckoutPage() {
   const [editingAddress, setEditingAddress] = useState<AddressDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
+  const [cinematic, setCinematic] = useState<CinematicPhase | null>(null);
+  /** Bumped whenever an attempt fails, to spring the swipe knob back. */
+  const [swipeReset, setSwipeReset] = useState(0);
+
+  /** Puts the swipe back within reach after an attempt that went nowhere. */
+  const abortPlacing = useCallback(() => {
+    setPlacing(false);
+    setSwipeReset((n) => n + 1);
+  }, []);
 
   const loadAddresses = useCallback(() => {
     fetch("/api/me/addresses")
@@ -169,7 +196,7 @@ export default function CheckoutPage() {
       setError(
         "Could not open the payment window. Check your connection and retry from My Orders — your order is saved as unpaid."
       );
-      setPlacing(false);
+      abortPlacing();
       return;
     }
 
@@ -233,9 +260,11 @@ export default function CheckoutPage() {
           });
           const vd = await vr.json();
           if (!vr.ok) throw new Error(vd.error);
+          playTone("success");
           cart.clear();
           router.push(`/orders/${d.orderId}`);
         } catch (e) {
+          playTone("error");
           // Money may well have left the customer's account here, so never say
           // "payment failed" — the webhook will still settle it server-side.
           setError(
@@ -243,12 +272,12 @@ export default function CheckoutPage() {
               ? `${e.message} Check My Orders in a minute before paying again.`
               : "We could not confirm the payment. Check My Orders in a minute before paying again."
           );
-          setPlacing(false);
+          abortPlacing();
         }
       },
       modal: {
         ondismiss: () => {
-          setPlacing(false);
+          abortPlacing();
           stopWatching();
           abandon();
           setError("Payment cancelled — the order was not placed. Your cart is still here if you want to try again.");
@@ -264,7 +293,8 @@ export default function CheckoutPage() {
     window.addEventListener("beforeunload", abandonOnLeave);
 
     rzp.on("payment.failed", () => {
-      setPlacing(false);
+      abortPlacing();
+      playTone("error");
       setError("Payment failed. Nothing was charged — please try again or choose Cash on Delivery.");
     });
     rzp.open();
@@ -273,6 +303,17 @@ export default function CheckoutPage() {
   const placeOrder = async () => {
     setPlacing(true);
     setError(null);
+
+    // The scene is a promise, not decoration: the tracker does not open until
+    // the car has actually reached the dhaba. The request runs underneath it,
+    // so a slow server pushes the arrival later rather than cutting it short.
+    const reduced =
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    const drive = reduced ? REDUCED_DRIVE_MS : DRIVE_MS;
+    const hold = reduced ? REDUCED_HOLD_MS : ARRIVED_HOLD_MS;
+    const startedAt = Date.now();
+    setCinematic("driving");
+
     try {
       const res = await fetch("/api/orders", {
         method: "POST",
@@ -298,18 +339,32 @@ export default function CheckoutPage() {
       if (!res.ok) throw new Error(d.error);
 
       if (d.payment) {
+        // Razorpay takes the whole screen and can sit open for minutes; no
+        // animation survives that honestly, so the scene stands aside.
+        setCinematic(null);
         await payWithRazorpay(d);
         return; // cart is cleared only once payment verifies
       }
+
+      await wait(drive - (Date.now() - startedAt));
+      setCinematic("arrived");
+      playTone("success");
+      await wait(hold);
+      // Cleared last: emptying it any earlier swaps this page for the "nothing
+      // to checkout" state while the scene is still running.
       cart.clear();
       router.push(`/orders/${d.orderId}`);
     } catch (e) {
+      setCinematic(null);
+      playTone("error");
       setError(e instanceof Error ? e.message : "Could not place order");
-      setPlacing(false);
+      abortPlacing();
     }
   };
 
-  if (cart.lines.length === 0)
+  // `!cinematic` matters: the cart is emptied a beat before the router moves,
+  // and without it the scene would be torn down mid-arrival.
+  if (cart.lines.length === 0 && !cinematic)
     return (
       <>
         <SiteHeader />
@@ -325,6 +380,16 @@ export default function CheckoutPage() {
     quote.warnings.length === 0 &&
     quote.meetsMinOrder &&
     (orderType === "PICKUP" || (addressId && quote.serviceable));
+
+  const blockedReason = !quote
+    ? "Working out your bill…"
+    : orderType === "DELIVERY" && !addressId
+      ? "Choose a delivery address to continue."
+      : orderType === "DELIVERY" && !quote.serviceable
+        ? "That address is outside the delivery area."
+        : !quote.meetsMinOrder
+          ? `Minimum order for this branch is ${inr(quote.minOrderValue)}.`
+          : "Clear the warnings above to continue.";
 
   return (
     <>
@@ -609,18 +674,26 @@ export default function CheckoutPage() {
           ))}
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 z-40
+        <div className="fixed bottom-0 left-0 right-0 z-40 no-print
           bg-cream-50/92 backdrop-blur-md border-t border-maroon-800/10
           shadow-[0_-2px_16px_-4px_rgba(61,18,17,0.12)]
           p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <div className="mx-auto max-w-lg">
-            <button onClick={placeOrder} disabled={!canPlace || placing} className="btn-primary w-full !py-4">
-              {placing
-                ? paymentMethod === "ONLINE"
-                  ? "Opening payment…"
-                  : "Placing order…"
-                : `${paymentMethod === "ONLINE" ? "Pay" : "Place order ·"} ${quote ? inr(quote.totals.total) : ""}`}
-            </button>
+            {/* A tap is too cheap for the one action here that spends money. */}
+            <SwipeToOrder
+              label={`${paymentMethod === "ONLINE" ? "Swipe to pay" : "Swipe to order"}${
+                quote ? ` · ${inr(quote.totals.total)}` : ""
+              }`}
+              busyLabel={paymentMethod === "ONLINE" ? "Opening payment…" : "Placing your order…"}
+              disabled={!canPlace}
+              busy={placing}
+              resetSignal={swipeReset}
+              onConfirm={placeOrder}
+            />
+            {/* A disabled swipe has no tooltip to fall back on, so it says why. */}
+            {!canPlace && (
+              <p className="mt-2 text-center text-xs text-maroon-800/55">{blockedReason}</p>
+            )}
           </div>
         </div>
 
@@ -668,6 +741,10 @@ export default function CheckoutPage() {
             setAddressId(id);
           }}
         />
+
+        {cinematic && (
+          <OrderCinematic phase={cinematic} branchName={cart.branchName ?? "The kitchen"} />
+        )}
       </main>
     </>
   );

@@ -834,6 +834,1060 @@
   }
 }
 
+/* ========================================================== swipe to order */
+
+/*
+ * A brass runner set into an oxblood track. Both the fill and the knob are
+ * driven from one `--x` in pixels, measured once per drag, so they can never
+ * disagree about where the end of the track is.
+ */
+.swipe {
+  --x: 0px;
+  --p: 0;
+  --swipe-ease: 420ms;
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 62px;
+  padding: 5px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--oxblood-lit), var(--oxblood) 58%, #4e1412);
+  box-shadow:
+    inset 0 2px 5px rgb(23 6 6 / 0.5),
+    inset 0 -1px 0 rgb(255 255 255 / 0.1),
+    0 1px 0 rgb(255 255 255 / 0.55);
+  /* Vertical scrolling still works everywhere on the bar; the knob itself
+     opts out below, because that is the one place a drag means something. */
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.swipe[data-state="disabled"] {
+  filter: saturate(0.35);
+  opacity: 0.45;
+}
+
+.swipe__fill {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 5px;
+  /* 52px is the knob, so the fill's rounded end always finishes under it. */
+  width: calc(52px + var(--x));
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--brass-deep), var(--brass) 70%, #efd89a);
+  opacity: calc(0.32 + var(--p) * 0.68);
+  transition: width var(--swipe-ease) var(--ease-out-expo);
+  pointer-events: none;
+}
+
+.swipe__label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Cleared of the resting knob, so the invitation is never half-covered. */
+  padding-left: 3.25rem;
+  padding-right: 1rem;
+  gap: 0.4rem;
+  /* The label carries the total, so it has to hold "Swipe to place order ·
+     ₹1,240" on a 320px phone without wrapping into the knob. */
+  font-size: clamp(0.8125rem, 3.2vw, 0.9375rem);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  pointer-events: none;
+  /* Fades out ahead of the knob, so the track is clean by the time it lands. */
+  opacity: clamp(0, calc(1.15 - var(--p) * 2.1), 1);
+  transition: opacity var(--swipe-ease) linear;
+  background-image: linear-gradient(90deg, #f4e6c6 22%, #fffaf0 46%, #f4e6c6 62%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: swipe-hint 2.8s linear infinite;
+}
+
+.swipe[data-state="committed"] .swipe__label {
+  opacity: 1;
+  animation: none;
+  color: var(--ink-deep);
+  background-image: none;
+}
+
+@keyframes swipe-hint {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
+.swipe__chevrons {
+  display: inline-flex;
+  gap: 0.05rem;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.swipe__chevrons > span {
+  animation: chevron-beckon 1.5s ease-in-out infinite;
+}
+.swipe__chevrons > span:nth-child(2) {
+  animation-delay: 0.13s;
+}
+.swipe__chevrons > span:nth-child(3) {
+  animation-delay: 0.26s;
+}
+@keyframes chevron-beckon {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: translateX(-1px);
+  }
+  45% {
+    opacity: 1;
+    transform: translateX(2px);
+  }
+}
+
+.swipe__knob {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 52px;
+  width: 52px;
+  border-radius: 999px;
+  color: var(--ink-deep);
+  background: linear-gradient(180deg, #f7edd3, var(--brass) 55%, var(--brass-deep));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.85),
+    inset 0 -2px 3px rgb(23 6 6 / 0.25),
+    0 2px 6px rgb(23 6 6 / 0.35);
+  transform: translateX(var(--x));
+  transition: transform var(--swipe-ease) var(--ease-out-expo);
+  /* Without this a drag on a touchscreen scrolls the page instead. */
+  touch-action: none;
+  cursor: grab;
+}
+.swipe[data-state="dragging"] .swipe__knob {
+  cursor: grabbing;
+}
+.swipe[data-state="disabled"] .swipe__knob {
+  cursor: not-allowed;
+}
+.swipe[data-state="committed"] .swipe__knob {
+  cursor: default;
+  background: linear-gradient(180deg, #d9ecd6, var(--leaf) 60%, #1c4a23);
+  color: #fdfbf6;
+}
+
+/* ================================================================= cinema */
+
+/*
+ * Full-screen interstitial while the order is in flight. Dark, so the lit
+ * scene inside it reads as a stage rather than a widget on a page.
+ */
+.cinema {
+  /*
+   * One clock for the whole journey — kept in step with DRIVE_MS on the
+   * checkout page. Every layer in the scene is a finite animation on this
+   * duration sharing the same deceleration curve, so the world glides to a
+   * stop together instead of each piece stopping on its own schedule. A slow
+   * server simply leaves the scene parked at the door until the kitchen
+   * answers, which is exactly what that should look like.
+   */
+  --drive: 2.2s;
+  --road-ease: cubic-bezier(0.08, 0.62, 0.2, 1);
+
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  /* A short landscape viewport must be able to reach the caption. */
+  overflow-y: auto;
+  background: radial-gradient(ellipse 90% 70% at 50% 38%, #3d1211, #170606 76%);
+  animation: fade-in 0.32s ease-out both;
+}
+
+.cinema__grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.25'/%3E%3C/svg%3E");
+}
+
+.cinema__panel {
+  position: relative;
+  width: 100%;
+  max-width: 26rem;
+  text-align: center;
+}
+
+.cinema__scene {
+  position: relative;
+  height: 214px;
+  overflow: hidden;
+  border-radius: 1.25rem;
+  border: 1px solid var(--rule-brass);
+  box-shadow:
+    inset 0 0 40px rgb(23 6 6 / 0.75),
+    0 24px 60px -24px rgb(0 0 0 / 0.9);
+}
+
+/*
+ * The camera. Everything rides on it, so the brake shudder and the push-in at
+ * the door move the whole world rather than every layer having to agree about
+ * it separately.
+ */
+.cinema__world {
+  position: absolute;
+  inset: 0;
+  transform-origin: 74% 78%;
+  animation: camera-ride var(--drive) linear both;
+}
+@keyframes camera-ride {
+  0%,
+  70% {
+    transform: translate(0, 0) scale(1);
+  }
+  /* The drift. Two frames of shake is the difference between a car stopping
+     and a car being stopped. */
+  76% {
+    transform: translate(-2px, 1px) scale(1.014);
+  }
+  82% {
+    transform: translate(2px, -1px) scale(1.014);
+  }
+  88% {
+    transform: translate(-1.5px, 0.5px) scale(1.008);
+  }
+  94% {
+    transform: translate(1px, 0) scale(1.004);
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+/* ------------------------------------------------------------------- sky */
+
+.cinema__sky {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #150707 0%, #33100f 34%, #6c2a18 74%, #a8862b 100%);
+}
+
+.cinema__stars {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 60%;
+  opacity: 0.6;
+  background-repeat: repeat;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='80'%3E%3Cg fill='%23F7EDD3'%3E%3Ccircle cx='14' cy='12' r='1.1'/%3E%3Ccircle cx='46' cy='30' r='0.9'/%3E%3Ccircle cx='78' cy='8' r='1.3'/%3E%3Ccircle cx='104' cy='26' r='0.8'/%3E%3Ccircle cx='132' cy='14' r='1.1'/%3E%3Ccircle cx='150' cy='38' r='0.9'/%3E%3Ccircle cx='30' cy='52' r='0.8'/%3E%3Ccircle cx='92' cy='48' r='1'/%3E%3Ccircle cx='120' cy='60' r='0.85'/%3E%3Ccircle cx='62' cy='66' r='0.9'/%3E%3C/g%3E%3C/svg%3E");
+  animation: twinkle 3.6s ease-in-out infinite;
+}
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.cinema__moon {
+  position: absolute;
+  top: 16px;
+  right: 26%;
+  height: 32px;
+  width: 32px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 36% 32%, #fdf6e3, #dfc57c 58%, #a8862b);
+  box-shadow:
+    0 0 0 7px rgb(223 197 124 / 0.07),
+    0 0 28px 10px rgb(223 197 124 / 0.2);
+  animation: moon-breathe 5.5s ease-in-out infinite;
+}
+@keyframes moon-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 7px rgb(223 197 124 / 0.07),
+      0 0 28px 10px rgb(223 197 124 / 0.18);
+  }
+  50% {
+    box-shadow:
+      0 0 0 10px rgb(223 197 124 / 0.1),
+      0 0 38px 14px rgb(223 197 124 / 0.28);
+  }
+}
+
+.cinema__cloud {
+  position: absolute;
+  left: 0;
+  height: 15px;
+  border-radius: 999px;
+  filter: blur(6px);
+  background: linear-gradient(90deg, transparent, rgb(201 169 78 / 0.3), transparent);
+}
+.cinema__cloud--a {
+  top: 32px;
+  width: 130px;
+  animation: cloud-drift 24s linear infinite;
+}
+.cinema__cloud--b {
+  top: 62px;
+  width: 90px;
+  opacity: 0.55;
+  animation: cloud-drift 36s linear infinite 6s;
+}
+@keyframes cloud-drift {
+  from {
+    transform: translateX(360%);
+  }
+  to {
+    transform: translateX(-130%);
+  }
+}
+
+/* ------------------------------------------------- parallax, far to near */
+
+/*
+ * Depth is the whole trick: each plane covers a different distance over the
+ * same clock. Ratios roughly 1 : 2.25 : 6.3 : 11 — far enough apart to read
+ * as depth, close enough that nothing looks detached from the road.
+ */
+
+.cinema__far {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 58px;
+  height: 62px;
+  opacity: 0.5;
+  filter: blur(0.4px);
+  background-repeat: repeat-x;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='62'%3E%3Cg fill='%234A1A16'%3E%3Cpath d='M0 62V46h44v16z'/%3E%3Cpath d='M56 62V40a16 16 0 0 1 32 0v22z'/%3E%3Crect x='70' y='22' width='4' height='20'/%3E%3Cpath d='M104 62V32h52v30z'/%3E%3Cpath d='M168 62V44a12 12 0 0 1 24 0v18z'/%3E%3Crect x='178.5' y='30' width='3' height='16'/%3E%3Crect x='208' y='28' width='11' height='34'/%3E%3Cpath d='M234 62V38a20 20 0 0 1 40 0v24z'/%3E%3Crect x='252' y='16' width='4' height='24'/%3E%3Crect x='288' y='42' width='32' height='20'/%3E%3C/g%3E%3C/svg%3E");
+  animation: layer-far var(--drive) var(--road-ease) both;
+}
+/* Every distance is a whole number of tiles, so the resting frame tiles
+   exactly as the opening one did — no seam where the world stops. */
+@keyframes layer-far {
+  to {
+    background-position-x: -320px;
+  }
+}
+
+.cinema__skyline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 56px;
+  height: 80px;
+  background-repeat: repeat-x;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='80'%3E%3Cg fill='%23200A09'%3E%3Crect x='0' y='36' width='34' height='44'/%3E%3Crect x='40' y='20' width='26' height='60'/%3E%3Cpath d='M78 80 V46 a14 14 0 0 1 28 0 V80z'/%3E%3Crect x='112' y='30' width='40' height='50'/%3E%3Crect x='158' y='48' width='22' height='32'/%3E%3Cpath d='M188 80 V42 a10 10 0 0 1 20 0 V80z'/%3E%3Crect x='214' y='26' width='26' height='54'/%3E%3C/g%3E%3Cg fill='%23C9A94E' opacity='0.45'%3E%3Crect x='46' y='28' width='5' height='6'/%3E%3Crect x='56' y='28' width='5' height='6'/%3E%3Crect x='46' y='42' width='5' height='6'/%3E%3Crect x='56' y='42' width='5' height='6'/%3E%3Crect x='118' y='38' width='6' height='7'/%3E%3Crect x='132' y='38' width='6' height='7'/%3E%3Crect x='118' y='54' width='6' height='7'/%3E%3Crect x='140' y='54' width='6' height='7'/%3E%3Crect x='220' y='34' width='6' height='7'/%3E%3Crect x='228' y='48' width='6' height='7'/%3E%3C/g%3E%3C/svg%3E");
+  animation: layer-skyline var(--drive) var(--road-ease) both;
+}
+@keyframes layer-skyline {
+  to {
+    background-position-x: -720px;
+  }
+}
+
+/* A low band of warm dust in the air over the road. */
+.cinema__haze {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 124px;
+  background: radial-gradient(ellipse 70% 100% at 62% 100%, rgb(201 169 78 / 0.4), transparent 72%);
+}
+
+/* Roadside: lamp posts with light pools, trees, a milestone stone. */
+.cinema__props {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 52px;
+  height: 94px;
+  background-repeat: repeat-x;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='94'%3E%3Cellipse cx='34' cy='90' rx='30' ry='6' fill='%23C9A94E' opacity='0.18'/%3E%3Cpath d='M30 90V30h4v60z' fill='%23180807'/%3E%3Cpath d='M32 30h13a7 7 0 0 1 7 7' fill='none' stroke='%23180807' stroke-width='3.5'/%3E%3Ccircle cx='52' cy='39' r='9' fill='%23F7EDD3' opacity='0.2'/%3E%3Ccircle cx='52' cy='39' r='4' fill='%23FBF3DC'/%3E%3Crect x='126' y='62' width='5' height='28' fill='%23180807'/%3E%3Ccircle cx='128.5' cy='56' r='16' fill='%231E0D0B'/%3E%3Ccircle cx='114' cy='64' r='10' fill='%231E0D0B'/%3E%3Ccircle cx='143' cy='63' r='11' fill='%231E0D0B'/%3E%3Crect x='178' y='76' width='9' height='14' rx='2' fill='%23241110'/%3E%3C/svg%3E");
+  animation: layer-props var(--drive) var(--road-ease) both;
+}
+@keyframes layer-props {
+  to {
+    background-position-x: -2000px;
+  }
+}
+
+.cinema__road {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 58px;
+  background: linear-gradient(180deg, #2a1413 0%, #1a0d0c 42%, #100706 100%);
+  border-top: 1px solid color-mix(in oklab, var(--brass) 35%, transparent);
+}
+
+.cinema__lane {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 24px;
+  height: 3px;
+  background-image: repeating-linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--brass) 80%, transparent) 0 26px,
+    transparent 26px 58px
+  );
+  animation: layer-lane var(--drive) var(--road-ease) both;
+}
+@keyframes layer-lane {
+  to {
+    background-position-x: -2030px;
+  }
+}
+
+/* Nearest plane of all, blurred because it is past the focal distance —
+   this is what actually sells the speed. */
+.cinema__fg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 30px;
+  filter: blur(2.5px);
+  background-repeat: repeat-x;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='30'%3E%3Cg fill='%23150807'%3E%3Ccircle cx='16' cy='26' r='15'/%3E%3Ccircle cx='36' cy='28' r='11'/%3E%3Ccircle cx='72' cy='27' r='13'/%3E%3Ccircle cx='92' cy='29' r='10'/%3E%3Crect x='0' y='26' width='120' height='4'/%3E%3C/g%3E%3C/svg%3E");
+  animation: layer-fg var(--drive) var(--road-ease) both;
+}
+@keyframes layer-fg {
+  to {
+    background-position-x: -3600px;
+  }
+}
+
+/* Horizontal light streaks over the whole frame while it is moving fast. */
+.cinema__streaks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  filter: blur(2px);
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0 46px,
+    rgb(247 237 211 / 0.5) 46px 48px
+  );
+  animation: streaks var(--drive) var(--road-ease) both;
+}
+@keyframes streaks {
+  0% {
+    opacity: 0.2;
+    background-position-x: 0;
+  }
+  70% {
+    opacity: 0.08;
+  }
+  100% {
+    opacity: 0;
+    background-position-x: -2400px;
+  }
+}
+
+.cinema__vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 84% 72% at 50% 46%, transparent 42%, rgb(10 4 4 / 0.6));
+}
+
+/* ---------------------------------------------------------- the dhaba */
+
+/*
+ * Sized as a share of the scene, like the car — fixed pixel widths put a
+ * 122px car on a 280px road and parked it through the shop front.
+ */
+.cinema__dhaba {
+  position: absolute;
+  right: 3%;
+  bottom: 36px;
+  width: 24%;
+  max-width: 96px;
+  /* Comes into frame with the world, so the arrival is a place being reached
+     rather than a building that was always sitting there. */
+  animation: dhaba-arrive var(--drive) var(--road-ease) both;
+}
+@keyframes dhaba-arrive {
+  0%,
+  46% {
+    transform: translateX(320%);
+  }
+  88% {
+    transform: translateX(-3%);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+.cinema__dhaba-svg {
+  width: 100%;
+  display: block;
+  filter: drop-shadow(0 6px 12px rgb(0 0 0 / 0.55));
+}
+
+/* --------------------------------------------------------------- the car */
+
+/*
+ * The wrapper spans the scene, so every percentage below is a percentage of
+ * the road — the drive reads the same on a 280px phone panel and the 416px cap.
+ */
+.cinema__car {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  animation: car-drive var(--drive) cubic-bezier(0.32, 0, 0.16, 1) both;
+}
+@keyframes car-drive {
+  0% {
+    transform: translateX(-40%);
+  }
+  70% {
+    transform: translateX(40%);
+  }
+  /* Comes in hot and overshoots the door by a clear margin, so the slide back
+     reads as a drift rather than a stutter. */
+  84% {
+    transform: translateX(62%);
+  }
+  94% {
+    transform: translateX(48%);
+  }
+  100% {
+    transform: translateX(51%);
+  }
+}
+
+/* Suspension. A pixel and a half of bounce is the whole difference between a
+   car and a sticker sliding across a picture. */
+.cinema__bob {
+  position: relative;
+  display: block;
+  width: 30%;
+  max-width: 122px;
+  animation: car-bob 0.26s ease-in-out 8 both;
+}
+@keyframes car-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-1.6px);
+  }
+  65% {
+    transform: translateY(0.9px);
+  }
+}
+
+.cinema__rig {
+  position: relative;
+  display: block;
+  width: 100%;
+  transform-origin: 50% 88%;
+  animation: car-drift var(--drive) ease-in-out both;
+}
+.cinema__car-svg {
+  width: 100%;
+  display: block;
+}
+
+/* Timed against car-drive: the weight pitches forward as it brakes into the
+   overshoot, then swings back as it slides into the spot. */
+@keyframes car-drift {
+  0%,
+  62% {
+    transform: rotate(0deg) skewX(0deg);
+  }
+  78% {
+    transform: rotate(-4deg) skewX(-5deg);
+  }
+  90% {
+    transform: rotate(3.2deg) skewX(3deg);
+  }
+  97% {
+    transform: rotate(-1deg) skewX(-0.8deg);
+  }
+  100% {
+    transform: rotate(0deg) skewX(0deg);
+  }
+}
+
+/* Seven turns on the same decelerating curve as the road, so the wheels and
+   the tarmac agree about how fast the car is going. */
+.cinema__wheel {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: wheel-roll var(--drive) var(--road-ease) both;
+}
+@keyframes wheel-roll {
+  to {
+    transform: rotate(2520deg);
+  }
+}
+
+.cinema__tiffin {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: tiffin-wobble 0.44s ease-in-out 5 both;
+}
+@keyframes tiffin-wobble {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  35% {
+    transform: rotate(-1.6deg);
+  }
+  70% {
+    transform: rotate(1.4deg);
+  }
+}
+
+/* Kicked-up dust, staggered so the trail never pulses in lockstep. */
+.cinema__dust {
+  position: absolute;
+  left: 4px;
+  bottom: 2px;
+  height: 14px;
+  width: 14px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgb(223 197 124 / 0.75), transparent 70%);
+  animation: dust-puff 0.72s linear 3 both;
+  animation-delay: calc(var(--d, 0) * 240ms);
+}
+@keyframes dust-puff {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.35);
+  }
+  22% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-38px, -16px) scale(2.1);
+  }
+}
+
+.cinema__whoosh {
+  position: absolute;
+  left: -18px;
+  /* Percentages of the rig, so the trail keeps its height relative to the car
+     rather than climbing over the roof on a narrow scene. */
+  bottom: calc(28% + var(--w, 0) * 15%);
+  height: 2px;
+  width: 26px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--brass) 85%, transparent));
+  animation: whoosh 0.46s linear 4 both;
+  animation-delay: calc(var(--w, 0) * 120ms);
+}
+@keyframes whoosh {
+  0% {
+    opacity: 0;
+    transform: translateX(14px) scaleX(0.4);
+  }
+  35% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-26px) scaleX(1.3);
+  }
+}
+
+.cinema__beam {
+  position: absolute;
+  right: -28%;
+  bottom: 20%;
+  height: 42%;
+  width: 38%;
+  clip-path: polygon(0 38%, 0 62%, 100% 0, 100% 100%);
+  background: linear-gradient(90deg, rgb(247 237 211 / 0.55), transparent 85%);
+  filter: blur(1.5px);
+}
+
+/* Where the headlights actually land. */
+.cinema__pool {
+  position: absolute;
+  right: -46%;
+  bottom: -4%;
+  height: 26%;
+  width: 74%;
+  border-radius: 999px;
+  background: radial-gradient(ellipse at 34% 50%, rgb(247 237 211 / 0.32), transparent 72%);
+  filter: blur(2.5px);
+}
+
+.cinema__brake {
+  position: absolute;
+  left: 1%;
+  bottom: 26%;
+  height: 12%;
+  width: 16%;
+  border-radius: 999px;
+  background: radial-gradient(circle, #ff7466, rgb(255 60 48 / 0) 72%);
+  opacity: 0;
+  animation: brake-flash var(--drive) linear both;
+}
+@keyframes brake-flash {
+  0%,
+  70% {
+    opacity: 0;
+  }
+  75% {
+    opacity: 1;
+  }
+  84% {
+    opacity: 0.5;
+  }
+  90% {
+    opacity: 1;
+  }
+  /* Stays lit: it is parked with the brake on. */
+  100% {
+    opacity: 0.85;
+  }
+}
+
+/* ------------------------------------------------------------ the arrival */
+
+/* By the time this phase lands the world has already stopped — everything
+   below is the flourish on top of a scene at rest. */
+.cinema[data-phase="arrived"] .cinema__whoosh,
+.cinema[data-phase="arrived"] .cinema__streaks {
+  opacity: 0;
+  animation: none;
+  transition: opacity 0.3s linear;
+}
+/* One last cloud catches up with the car and settles, instead of the trail
+   simply vanishing the frame it stops. */
+.cinema[data-phase="arrived"] .cinema__dust {
+  animation: dust-settle 0.9s ease-out both;
+}
+@keyframes dust-settle {
+  from {
+    opacity: 0.5;
+    transform: translate(-10px, -4px) scale(1.2);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-30px, -20px) scale(2.6);
+  }
+}
+.cinema[data-phase="arrived"] .cinema__dhaba {
+  animation: dhaba-lit 0.85s var(--ease-spring) both;
+}
+@keyframes dhaba-lit {
+  0% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  45% {
+    transform: scale(1.07);
+    filter: brightness(1.35) drop-shadow(0 0 14px rgb(201 169 78 / 0.7));
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1.1);
+  }
+}
+/* The camera leans in on the door once the car is parked. */
+.cinema[data-phase="arrived"] .cinema__world {
+  animation: camera-push 1s var(--ease-out-expo) both;
+}
+@keyframes camera-push {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.07);
+  }
+}
+
+/* Marigold, the way a shop gets garlanded. */
+.cinema__petals {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.cinema__petal {
+  position: absolute;
+  top: 0;
+  left: calc(7% + var(--i, 0) * 11.5%);
+  height: 7px;
+  width: 9px;
+  opacity: 0;
+  border-radius: 60% 40% 55% 45%;
+  background: linear-gradient(140deg, #f2cb63, #c9772a);
+}
+.cinema[data-phase="arrived"] .cinema__petal {
+  animation: petal-fall 1.35s cubic-bezier(0.3, 0, 0.55, 1) both;
+  animation-delay: calc(var(--i, 0) * 80ms);
+}
+@keyframes petal-fall {
+  0% {
+    opacity: 0;
+    transform: translate(0, -18px) rotate(0deg);
+  }
+  14% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--dx, 0) * 1px), 230px) rotate(430deg);
+  }
+}
+
+/* ------------------------------------------------------- route + caption */
+
+.cinema__route {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.1rem;
+  padding: 0 0.25rem;
+}
+.cinema__pin {
+  height: 9px;
+  width: 9px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--brass);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--brass) 22%, transparent);
+}
+.cinema__pin--end {
+  background: transparent;
+  border: 2px solid var(--brass);
+}
+.cinema[data-phase="arrived"] .cinema__pin--end {
+  background: var(--brass);
+}
+.cinema__track {
+  position: relative;
+  flex: 1;
+  height: 2px;
+  background-image: repeating-linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--brass) 38%, transparent) 0 4px,
+    transparent 4px 10px
+  );
+}
+.cinema__trace {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  background: linear-gradient(90deg, var(--brass-deep), var(--brass));
+  animation: trace-fill var(--drive) var(--road-ease) both;
+}
+@keyframes trace-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.cinema__legend {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--brass) 78%, transparent);
+}
+
+.cinema__caption {
+  margin-top: 1.5rem;
+  color: #f8f3e8;
+}
+.cinema__caption .eyebrow {
+  color: color-mix(in oklab, var(--brass) 85%, transparent);
+}
+.cinema__headline {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.15rem;
+  margin-top: 0.35rem;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: clamp(1.5rem, 1.3rem + 1vw, 2rem);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.cinema__headline--done {
+  color: #f7edd3;
+  animation: fade-up 0.5s var(--ease-out-expo) 0.18s both;
+}
+.cinema__sub {
+  margin-top: 0.4rem;
+  font-size: 0.875rem;
+  color: rgb(248 243 232 / 0.62);
+}
+.cinema[data-phase="arrived"] .cinema__sub {
+  animation: fade-up 0.5s var(--ease-out-expo) 0.3s both;
+}
+
+.cinema__dots {
+  display: inline-flex;
+  gap: 0.14rem;
+}
+.cinema__dots > span {
+  height: 4px;
+  width: 4px;
+  align-self: flex-end;
+  margin-bottom: 0.35rem;
+  border-radius: 999px;
+  background: currentColor;
+  animation: dot-blink 1.2s ease-in-out infinite;
+}
+.cinema__dots > span:nth-child(2) {
+  animation-delay: 0.16s;
+}
+.cinema__dots > span:nth-child(3) {
+  animation-delay: 0.32s;
+}
+@keyframes dot-blink {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+/* The brass seal that lands on the order, the way a bill gets stamped. */
+.cinema__seal {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 66px;
+  width: 66px;
+  margin: 0 auto;
+  border-radius: 999px;
+  color: var(--ink-deep);
+  background: radial-gradient(circle at 34% 26%, #f7edd3, var(--brass) 52%, var(--brass-deep));
+  box-shadow:
+    inset 0 2px 0 rgb(255 255 255 / 0.6),
+    inset 0 -3px 6px rgb(23 6 6 / 0.3),
+    0 8px 22px -8px rgb(201 169 78 / 0.8);
+  animation: seal-stamp 0.6s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+@keyframes seal-stamp {
+  0% {
+    opacity: 0;
+    transform: scale(2.2) rotate(-16deg);
+    filter: blur(4px);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(0.93) rotate(3deg);
+    filter: blur(0);
+  }
+  78% {
+    transform: scale(1.04) rotate(-1.5deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+.cinema__seal-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 999px;
+  border: 2px solid var(--brass);
+  animation: seal-ring 0.9s var(--ease-out-expo) 0.3s both;
+}
+@keyframes seal-ring {
+  from {
+    opacity: 0.75;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2);
+  }
+}
+.cinema__seal-tick {
+  height: 36px;
+  width: 36px;
+}
+/* Faster than the ornaments on the landing page — this tick is a receipt,
+   not a flourish, and the page navigates away shortly after it. */
+.cinema__seal-tick [pathLength] {
+  animation-duration: 0.5s;
+  animation-delay: 0.3s;
+}
+
+/* A landscape phone has no room for a 208px stage and a caption. */
+@media (max-height: 620px) {
+  .cinema__scene {
+    height: 150px;
+  }
+  .cinema__caption {
+    margin-top: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+   * Every animation above ends on the finished frame, and the global reduce
+   * rule collapses them to it — car parked, trace full, seal stamped. Only the
+   * loops that have no meaningful end state are switched off outright.
+   */
+  .cinema__stars,
+  .cinema__moon,
+  .cinema__cloud,
+  .cinema__whoosh,
+  .cinema__streaks,
+  .cinema__dust,
+  .cinema__petal,
+  .cinema__dots > span,
+  .swipe__label,
+  .swipe__chevrons > span {
+    animation: none !important;
+  }
+  .cinema__whoosh,
+  .cinema__streaks,
+  .cinema__dust,
+  .cinema__petal {
+    opacity: 0;
+  }
+  .swipe__label {
+    color: #f4e6c6;
+    background-image: none;
+  }
+}
+
 /* =================================================================== print */
 
 @media print {
