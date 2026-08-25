@@ -3,7 +3,13 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { handler, HttpError } from "@/lib/guard";
 import { hashOtp } from "@/lib/otp";
-import { clientIp, rateLimit } from "@/lib/rate-limit";
+import {
+  clearIdentityFailures,
+  clientIp,
+  identityAllowed,
+  rateLimit,
+  recordIdentityFailure,
+} from "@/lib/rate-limit";
 import { normalizePhone } from "@/lib/utils";
 import { createSessionCookie } from "@/lib/session";
 import { OTP_MAX_ATTEMPTS } from "@/lib/constants";
@@ -30,6 +36,20 @@ export const POST = handler(async (req: Request) => {
   if (!rateLimit(`otpv:${clientIp(req)}`, 30, 60 * 60 * 1000))
     throw new HttpError(429, "Too many attempts. Try again later.");
 
+  /*
+   * Counted against the number being claimed.
+   *
+   * The per-row attempt counter below caps guesses at one issued code, but
+   * nothing stopped someone requesting a fresh code and starting over, and the
+   * address in the limit above can be changed at will. Taking over an account
+   * means guessing codes sent to that number, so that number is what is
+   * counted — across every code it is ever issued.
+   */
+  const OTP_FAILS = 10;
+  const OTP_WINDOW = 60 * 60 * 1000;
+  if (!identityAllowed("otp-verify", phone, OTP_FAILS, OTP_WINDOW))
+    throw new HttpError(429, "Too many incorrect codes for this number. Try again in an hour.");
+
   if (!OTP_BYPASS) {
     if (!body.code || !/^\d{6}$/.test(body.code))
       throw new HttpError(400, "Enter the 6-digit OTP");
@@ -45,11 +65,13 @@ export const POST = handler(async (req: Request) => {
 
     if (otp.codeHash !== hashOtp(phone, body.code)) {
       await db.otpCode.update({ where: { id: otp.id }, data: { attempts: { increment: 1 } } });
+      recordIdentityFailure("otp-verify", phone, OTP_WINDOW);
       const left = OTP_MAX_ATTEMPTS - otp.attempts - 1;
       throw new HttpError(400, left > 0 ? `Incorrect OTP. ${left} attempts left.` : "Too many wrong attempts. Request a new OTP.");
     }
 
     await db.otpCode.update({ where: { id: otp.id }, data: { consumedAt: new Date() } });
+    clearIdentityFailures("otp-verify", phone);
   }
 
   let user = await db.user.findUnique({ where: { phone } });

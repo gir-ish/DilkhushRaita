@@ -75,6 +75,26 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 cPanel → **SSL/TLS Status** → run **AutoSSL** for `dilkhushraita.com` (free, usually completes in a few minutes). This is required — `COOKIE_SECURE="true"` means sign-in cookies only work over HTTPS; without SSL, login will silently fail exactly like the plain-HTTP issue we hit testing locally.
 
+### Force HTTPS (do this too — a certificate alone does not)
+
+A certificate makes `https://` *available*; it does not stop `http://` from serving the whole site in the clear, staff sign-in form included. Confirm with:
+
+```bash
+curl -sI http://dilkhushraita.com/ | head -1     # want 301, not 200
+```
+
+If that says `200`, add this to the **top** of `~/public_html/.htaccess`, above whatever Passenger has already put there:
+
+```apache
+RewriteEngine On
+RewriteCond %{HTTPS} !=on
+RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+```
+
+It belongs here rather than in the app: Apache terminates the TLS, so only Apache knows which protocol the customer actually used. Inside the app every request looks like plain HTTP — Apache reaches Passenger over an ordinary local connection — so a redirect written there would bounce every request forever and take the site down. That was measured, not assumed.
+
+The app sends `Strict-Transport-Security` on every response, so once a browser has visited over HTTPS it will refuse plain HTTP by itself for six months afterwards. That protects returning visitors; the rewrite above is what protects a first one.
+
 ## 6. Install, build, and create the database tables
 
 In SSH, after running the `source .../activate` command from step 3:

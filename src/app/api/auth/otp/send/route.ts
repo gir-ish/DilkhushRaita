@@ -27,6 +27,25 @@ export const POST = handler(async (req: Request) => {
   if (!rateLimit(`otp:ip:${ip}`, 15, 60 * 60 * 1000))
     throw new HttpError(429, "Too many requests. Try again later.");
 
+  /*
+   * Circuit breaker on the SMS bill.
+   *
+   * Every send costs money. The per-number cap below is held in the database
+   * and cannot be dodged, but nothing stopped one script walking through a
+   * list of numbers and paying for a message on each — the address-keyed limit
+   * above reads a header the caller writes, so rotating it buys a fresh
+   * allowance every time.
+   *
+   * A whole-system ceiling is the backstop: a real dhaba does not send
+   * hundreds of login codes an hour, so if that is happening it is not
+   * customers. Raise OTP_MAX_PER_HOUR_GLOBAL if the shop genuinely outgrows it.
+   */
+  const globalCap = Number(process.env.OTP_MAX_PER_HOUR_GLOBAL) || 200;
+  if (!rateLimit("otp:global", globalCap, 60 * 60 * 1000)) {
+    console.error("[otp] global hourly send cap reached — possible SMS abuse");
+    throw new HttpError(429, "We cannot send codes right now. Please try again later.");
+  }
+
   if (OTP_BYPASS) {
     // No SMS sent, no code generated — the verify step will skip checking too.
     return NextResponse.json({ ok: true, bypass: true });
