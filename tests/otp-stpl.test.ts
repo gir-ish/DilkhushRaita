@@ -125,6 +125,49 @@ describe("stpl provider", () => {
     expect(sent().get("message")).toBe("Your DilKhush code is 111222. Do not share.");
   });
 
+  it("sends DilKhush's real approved template with the code in place", async () => {
+    // The wording registered as template 1777178772255400845. Note "is{otp}"
+    // with no space — that is how it was approved, so that is how it must go
+    // out.
+    process.env.STPL_MESSAGE =
+      "Dear Customer, your OTP for registration on Dilkhush Raita is{otp}. " +
+      "This OTP is valid for 10 minutes. Please do not share it with anyone. " +
+      "Visit https://dilkhushraita.com/";
+    reply({ status: "Success", code: "011" });
+    const r = await otpProvider().send("+919876543210", "482913");
+
+    expect(r.ok).toBe(true);
+    expect(sent().get("message")).toBe(
+      "Dear Customer, your OTP for registration on Dilkhush Raita is482913. " +
+        "This OTP is valid for 10 minutes. Please do not share it with anyone. " +
+        "Visit https://dilkhushraita.com/"
+    );
+  });
+
+  it("fills a lone DLT {#var#} slot with the code", async () => {
+    process.env.STPL_MESSAGE = "Your code is {#var#}. Do not share.";
+    reply({ status: true, code: "011" });
+    await otpProvider().send("+919876543210", "778899");
+    expect(sent().get("message")).toBe("Your code is 778899. Do not share.");
+  });
+
+  it("refuses rather than mail an unfilled placeholder", async () => {
+    /*
+     * The DLT template carries two {#var#} slots — a greeting and the code —
+     * and only its author knows which is which. Sending it raw would put a
+     * literal "{#var#}" in front of a customer, and the operator would drop it
+     * for not matching the template regardless: a wasted credit and a confused
+     * reader.
+     */
+    process.env.STPL_MESSAGE =
+      "Dear {#var#}, your OTP for registration on Dilkhush Raita is{#var#}.";
+    reply({ status: true, code: "011" });
+    const r = await otpProvider().send("+919876543210", "123456");
+
+    expect(r.ok).toBe(false);
+    expect(calls).toHaveLength(0); // no credit spent
+  });
+
   it("sends templateid only when one is set", async () => {
     reply({ status: true, code: "011" });
     await otpProvider().send("+919876543210", "123456");

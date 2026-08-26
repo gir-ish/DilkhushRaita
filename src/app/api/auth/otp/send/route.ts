@@ -13,9 +13,9 @@ import {
 
 const Body = z.object({ phone: z.string().min(10).max(15) });
 
-// TEMPORARY: real SMS delivery isn't wired up yet (MSG91/DLT pending).
-// Set OTP_BYPASS="false" the moment a real OTP_PROVIDER is configured —
-// while true, ANYONE can sign in as ANY phone number with no verification.
+// Launch switch. While true, ANYONE can sign in as ANY phone number with no
+// verification at all — no code is sent and none is checked. Now that STPL is
+// wired up there is no reason to turn it back on.
 const OTP_BYPASS = process.env.OTP_BYPASS === "true";
 
 export const POST = handler(async (req: Request) => {

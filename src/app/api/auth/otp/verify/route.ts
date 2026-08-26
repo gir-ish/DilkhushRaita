@@ -25,7 +25,7 @@ const Body = z.object({
 });
 
 // TEMPORARY — mirrors the flag in otp/send/route.ts. Must both be flipped
-// back together once real SMS delivery (MSG91/DLT) is live.
+// back together once a test SMS has reached a real handset.
 const OTP_BYPASS = process.env.OTP_BYPASS === "true";
 
 export const POST = handler(async (req: Request) => {

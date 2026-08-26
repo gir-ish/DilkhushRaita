@@ -7,6 +7,11 @@ next-env.d.ts
 # local env & db — never commit secrets
 .env
 .env.local
+# Copies made before editing config. These hold real keys, and a name nobody
+# planned is exactly how one gets committed by accident.
+.env.bak*
+.env.backup*
+.env.*.bak
 prisma/*.db
 prisma/*.db-journal
 

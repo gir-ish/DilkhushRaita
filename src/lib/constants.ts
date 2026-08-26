@@ -146,7 +146,10 @@ export const POINTS_PER_10_RUPEES = 1;
 export const POINT_VALUE_RUPEES = 0.5;
 export const MIN_POINTS_TO_REDEEM = 100;
 
-export const OTP_EXPIRY_MINS = 5;
+// Ten, because the DLT-approved SMS tells the customer ten. The template is the
+// harder of the two to change, and a code that dies while the message still
+// says it is good reads as a broken site.
+export const OTP_EXPIRY_MINS = 10;
 export const OTP_MAX_ATTEMPTS = 5;
 export const OTP_RESEND_COOLDOWN_SECS = 30;
 export const OTP_MAX_PER_HOUR = 5;

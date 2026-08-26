@@ -6,21 +6,17 @@ import { createHash, randomInt } from "crypto";
  *   console  — DEV ONLY. Prints the OTP to the server console and (outside
  *              production) returns it in the API response for the login screen.
  *
- *   fast2sms — Fast2SMS "OTP route" (fast2sms.com). Easiest real-SMS start in
- *              India: no DLT template approval needed because the message text
- *              is their fixed "Your OTP: XXXXXX" template.
- *              Env: FAST2SMS_API_KEY
- *
- *   msg91    — MSG91 OTP API (msg91.com). Production-grade, needs a DLT-
- *              approved OTP template containing the ##otp## variable.
- *              Env: MSG91_AUTH_KEY, MSG91_TEMPLATE_ID
- *
- *   stpl     — STPL / smsfortius.org. A general-purpose SMS API rather than a
- *              dedicated OTP route, so unlike the two above WE write the
- *              message text — and it has to match a DLT-approved template
- *              word for word or the operator drops it.
+ *   stpl     — STPL / smsfortius.org. The shop's gateway, and the only one
+ *              that sends a real message. A general-purpose SMS API rather
+ *              than a dedicated OTP route, so WE write the message text — and
+ *              it has to match a DLT-approved template word for word or the
+ *              operator drops it.
  *              Env: STPL_API_KEY, STPL_SENDER_ID, STPL_TEMPLATE_ID,
  *                   STPL_MESSAGE
+ *
+ * Fast2SMS and MSG91 were carried here from before the shop had an account of
+ * its own. Two unused gateways is two more ways for OTP_PROVIDER to name
+ * something that quietly does not send, so they are gone.
  *
  * The OTP itself is always generated, stored (hashed) and verified by OUR
  * server (expiry, attempt limits, rate limits in the API routes) — providers
@@ -47,74 +43,29 @@ function timeout() {
   return AbortSignal.timeout(SEND_TIMEOUT_MS);
 }
 
+/**
+ * Not a gateway — a test double, so a developer can sign in without spending a
+ * real SMS on every attempt.
+ *
+ * It refuses outright in production. Reporting a code as sent while printing
+ * it to the server log would tell customers to watch a phone that will never
+ * ring and leave the thing guarding their account sitting in a log file.
+ */
 const consoleProvider: OtpProvider = {
   name: "console",
   async send(phone, code) {
+    if (process.env.NODE_ENV === "production") {
+      console.error(
+        '[OTP] OTP_PROVIDER is "console" in production — that prints codes to the log ' +
+          'instead of sending them. Refusing. Set OTP_PROVIDER="stpl".'
+      );
+      return { ok: false };
+    }
     console.log(`\n[OTP][DEV] ${phone} → code: ${code}\n`);
     return { ok: true, devCode: code };
   },
 };
 
-const fast2smsProvider: OtpProvider = {
-  name: "fast2sms",
-  async send(phone, code) {
-    // phone arrives normalised as +91XXXXXXXXXX; Fast2SMS wants the 10 digits.
-    const numbers = phone.replace(/^\+91/, "");
-    try {
-      const res = await fetch("https://www.fast2sms.com/dev/bulkV2", {
-        method: "POST",
-        headers: {
-          authorization: process.env.FAST2SMS_API_KEY ?? "",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          route: "otp",
-          variables_values: code,
-          numbers,
-        }),
-        signal: timeout(),
-      });
-      const data = (await res.json().catch(() => ({}))) as { return?: boolean; message?: unknown };
-      if (!res.ok || data.return !== true) {
-        console.error("[OTP][fast2sms] send failed:", res.status, data);
-        return { ok: false };
-      }
-      return { ok: true };
-    } catch (e) {
-      console.error("[OTP][fast2sms] network error:", e);
-      return { ok: false };
-    }
-  },
-};
-
-const msg91Provider: OtpProvider = {
-  name: "msg91",
-  async send(phone, code) {
-    // MSG91 v5 OTP API; template must contain the ##otp## variable.
-    const mobile = phone.replace("+", ""); // 91XXXXXXXXXX
-    try {
-      const url = new URL("https://control.msg91.com/api/v5/otp");
-      url.searchParams.set("template_id", process.env.MSG91_TEMPLATE_ID ?? "");
-      url.searchParams.set("mobile", mobile);
-      url.searchParams.set("otp", code);
-      url.searchParams.set("otp_expiry", "5");
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { authkey: process.env.MSG91_AUTH_KEY ?? "" },
-        signal: timeout(),
-      });
-      const data = (await res.json().catch(() => ({}))) as { type?: string; message?: unknown };
-      if (!res.ok || data.type !== "success") {
-        console.error("[OTP][msg91] send failed:", res.status, data);
-        return { ok: false };
-      }
-      return { ok: true };
-    } catch (e) {
-      console.error("[OTP][msg91] network error:", e);
-      return { ok: false };
-    }
-  },
-};
 
 /**
  * What each documented failure code means, so a dead gateway says why in the
@@ -154,10 +105,31 @@ const stplProvider: OtpProvider = {
      * The text is ours to write, which makes it ours to get wrong. Indian
      * operators match every message against the DLT template registered for
      * this sender and silently bin anything that differs, so STPL_MESSAGE must
-     * be the approved wording with {otp} where the variable sits.
+     * be the approved wording with {otp} where the code belongs.
+     *
+     * DLT writes its variable slots as {#var#}. A template carrying exactly one
+     * is unambiguous, so it is filled with the code; anything more has to say
+     * which slot is which, because only the author knows whether the first one
+     * is a name, an order number or the code itself.
      */
     const template = process.env.STPL_MESSAGE?.trim() || STPL_DEFAULT_MESSAGE;
-    const message = template.replace(/\{otp\}/gi, code);
+    let message = template.replace(/\{otp\}/gi, code);
+    if ((message.match(/\{#var#\}/g) ?? []).length === 1)
+      message = message.replace("{#var#}", code);
+
+    /*
+     * Never send a half-built message. A leftover slot means the customer gets
+     * literal "{#var#}" where their code should be — and the operator drops it
+     * for not matching the template anyway, so the only thing achieved would be
+     * spending a credit to confuse someone.
+     */
+    if (message.includes("{#var#}") || /\{otp\}/i.test(message)) {
+      console.error(
+        "[OTP][stpl] STPL_MESSAGE still has an unfilled placeholder — refusing to send. " +
+          "Put {otp} where the code goes and a literal value in every other {#var#} slot."
+      );
+      return { ok: false };
+    }
 
     // Documented as accepted with or without the country code; ours is
     // normalised to +91XXXXXXXXXX, and the leading + is not part of either form.
@@ -230,8 +202,6 @@ const stplProvider: OtpProvider = {
 
 const providers: Record<string, OtpProvider> = {
   console: consoleProvider,
-  fast2sms: fast2smsProvider,
-  msg91: msg91Provider,
   stpl: stplProvider,
   // The vendor writes itself STPL; this transposition is easy to make and is
   // not worth a site-wide outage.

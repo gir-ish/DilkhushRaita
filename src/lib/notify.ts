@@ -26,7 +26,7 @@ export async function notifyUser(
 
 async function sendExternal(userId: string, type: string, title: string, body: string) {
   if (process.env.NOTIFY_SMS_ENABLED === "true") {
-    // TODO(production): send via SMS gateway (MSG91 / Twilio)
+    // TODO(production): send via the STPL gateway — see src/lib/otp.ts
   }
   if (process.env.NOTIFY_WHATSAPP_ENABLED === "true") {
     // TODO(production): send via WhatsApp Business API

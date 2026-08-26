@@ -43,7 +43,7 @@ This is not a UI mock-up: it is a working website + database + APIs + authentica
 | PWA | Web manifest, service worker, offline fallback, installable on phones |
 | Tests | **Vitest** — 32 unit tests on the money-handling logic |
 
-Modular providers (swap via env, no rewrites): OTP (console/STPL/MSG91/Fast2SMS), payments (COD live, Razorpay slot), maps (built-in road estimate / Google slot), notifications (in-app live; SMS/WhatsApp/Email stubs).
+Modular providers (swap via env, no rewrites): OTP (STPL, plus a console stub for local dev), payments (COD live, Razorpay slot), maps (built-in road estimate / Google slot), notifications (in-app live; SMS/WhatsApp/Email stubs).
 
 ---
 
@@ -414,7 +414,7 @@ All documented with comments in **`.env.example`** — copy it to `.env` and fil
 |---|---|
 | `DATABASE_URL` | SQLite file (dev) or Postgres URL (prod) |
 | `SESSION_SECRET` | 32+ random chars signing the auth cookie — **must** change for prod |
-| `OTP_PROVIDER` | `console` (dev: OTP shown on screen/terminal), or `stpl` + `STPL_*`, `msg91` + `MSG91_*`, `fast2sms` + `FAST2SMS_API_KEY` |
+| `OTP_PROVIDER` | `stpl` + `STPL_*` (real SMS), or `console` for local dev — which refuses to run in production |
 | `PAYMENT_PROVIDER` | `cod` (v1) or `razorpay` + `RAZORPAY_*` keys |
 | `MAPS_PROVIDER` | `haversine` (built-in estimate) or `google` + restricted keys |
 | `NOTIFY_SMS_ENABLED` etc. | Feature-flags for SMS / WhatsApp / Email channels |
@@ -437,7 +437,7 @@ Covers: pricing breakdowns, delivery-fee tiers & free-delivery rules, discount/c
 
 1. PostgreSQL (above) + automated database backups
 2. Strong `SESSION_SECRET`; change **all** seeded staff passwords; delete the test customer
-3. Real SMS provider (`OTP_PROVIDER=msg91`) and a CAPTCHA (hCaptcha/Turnstile) on `/api/auth/otp/send`
+3. A CAPTCHA (hCaptcha/Turnstile) on `/api/auth/otp/send`
 4. HTTPS (cookies are `Secure` in production builds)
 5. Replace placeholder branch data (dashboard), food photos (`MenuItem.imageUrl` + object storage), and PNG app icons
 6. Redis-backed rate limiter if running multiple instances (`src/lib/rate-limit.ts` is per-process)
