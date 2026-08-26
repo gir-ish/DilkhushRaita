@@ -153,21 +153,35 @@ const stplProvider: OtpProvider = {
     // normalised to +91XXXXXXXXXX, and the leading + is not part of either form.
     const number = phone.replace(/^\+/, "");
 
-    const url = new URL("https://smsfortius.org/V2/apikey.php");
-    // URLSearchParams percent-encodes as it builds, which is what the API asks
-    // for — the message carries spaces and punctuation.
-    url.searchParams.set("senderid", senderId);
-    url.searchParams.set("number", number);
-    url.searchParams.set("message", message);
-    url.searchParams.set("format", "JSON");
-    // Documented as conditional: some accounts are keyed, others authenticate
-    // by route, so it is sent only when configured.
+    /*
+     * The query string is built by hand, and that is the whole point.
+     *
+     * URLSearchParams writes a space as "+", which is correct for a form body
+     * and is what this code used to send. The gateway does not turn it back
+     * into a space: the operator then compares "Dear+Customer,+your+OTP..."
+     * against the registered DLT template, finds it different, and drops the
+     * message — while the API still answers "submitted successfully". The same
+     * text pasted into a browser arrived every time, because a browser sends
+     * %20. That difference is the entire bug.
+     *
+     * encodeURIComponent never emits "+", and %20 is what the vendor's own
+     * documented example uses: message=Hello%20There.
+     */
     const apiKey = process.env.STPL_API_KEY?.trim();
-    if (apiKey) url.searchParams.set("apikey", apiKey);
-    // Optional per the docs, but without it the gateway guesses which template
-    // this message matches. Set it and the match is exact.
     const templateId = process.env.STPL_TEMPLATE_ID?.trim();
-    if (templateId) url.searchParams.set("templateid", templateId);
+    const query = [
+      // Conditional per the docs: some accounts are keyed, others authenticate
+      // by route, so it is sent only when configured.
+      ...(apiKey ? [`apikey=${encodeURIComponent(apiKey)}`] : []),
+      `senderid=${encodeURIComponent(senderId)}`,
+      // Optional per the docs, but without it the gateway guesses which
+      // template this message matches. Set it and the match is exact.
+      ...(templateId ? [`templateid=${encodeURIComponent(templateId)}`] : []),
+      `number=${encodeURIComponent(number)}`,
+      `message=${encodeURIComponent(message)}`,
+      `format=JSON`,
+    ].join("&");
+    const url = `https://smsfortius.org/V2/apikey.php?${query}`;
 
     try {
       const res = await fetch(url, { method: "GET", signal: timeout() });

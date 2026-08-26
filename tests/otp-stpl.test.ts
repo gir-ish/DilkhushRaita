@@ -119,6 +119,28 @@ describe("stpl provider", () => {
     expect(calls[0]).not.toContain(" ");
   });
 
+  it("encodes spaces as %20, never as +", async () => {
+    /*
+     * The bug that made every message from the site vanish while the same text
+     * pasted into a browser arrived. URLSearchParams writes a space as "+";
+     * the gateway does not decode it, so the operator saw
+     * "Dear+Customer,+your+OTP..." , found it different from the registered DLT
+     * template, and dropped it — behind a "submitted successfully" reply.
+     *
+     * %20 is also what the vendor's own example uses: message=Hello%20There.
+     */
+    process.env.STPL_MESSAGE = "Dear Customer, your code is {otp}.";
+    reply({ status: "Success", code: "011" });
+    await otpProvider().send("+919876543210", "654321");
+
+    const raw = calls[0];
+    const messageParam = raw.slice(raw.indexOf("&message=") + "&message=".length).split("&")[0];
+    expect(messageParam).toContain("%20");
+    expect(messageParam).not.toContain("+");
+    // And it still decodes back to the exact approved wording.
+    expect(decodeURIComponent(messageParam)).toBe("Dear Customer, your code is 654321.");
+  });
+
   it("uses the operator-approved wording when one is configured", async () => {
     // Indian operators match every message against the registered DLT template
     // and bin anything that differs, so this override is the normal case.
