@@ -51,6 +51,15 @@ for (const file of [".env.local", ".env"]) {
   }
 }
 
+/*
+ * --dry composes everything and prints it, then stops before the request.
+ *
+ * Costs nothing, and answers the only question that matters when a message is
+ * accepted but never arrives: is the text about to go out character-for-
+ * character the text DLT approved? Run it on whichever machine's .env you
+ * suspect.
+ */
+const DRY = process.argv.includes("--dry");
 const raw = (process.argv[2] ?? "").replace(/\D/g, "");
 const digits = raw.startsWith("91") && raw.length === 12 ? raw.slice(2) : raw;
 if (digits.length !== 10) {
@@ -91,6 +100,40 @@ if (message.includes("{#var#}") || /\{otp\}/i.test(message)) {
 }
 console.log(`message      : ${message}`);
 console.log(`to           : +91${digits}\n`);
+
+if (DRY) {
+  console.log("--- DRY RUN: nothing sent, no credit spent ---");
+  console.log(
+    "length         :",
+    message.length,
+    message.length > 160 ? "(over 160 → 2 credits per send)" : "(1 credit per send)"
+  );
+  const approved =
+    `Dear Customer, your OTP for registration on Dilkhush Raita is${code}. ` +
+    `This OTP is valid for 10 minutes. Please do not share it with anyone. ` +
+    `Visit https://dilkhushraita.com/`;
+  if (message === approved) {
+    console.log("template match : YES — identical to the approved wording");
+  } else {
+    console.log("template match : NO — the operator will drop this");
+    for (let i = 0; i < Math.max(message.length, approved.length); i++) {
+      if (message[i] !== approved[i]) {
+        console.log(`  first difference at character ${i}`);
+        console.log(`    this server : ${JSON.stringify(message.slice(Math.max(0, i - 25), i + 25))}`);
+        console.log(`    approved    : ${JSON.stringify(approved.slice(Math.max(0, i - 25), i + 25))}`);
+        break;
+      }
+    }
+  }
+  const q =
+    `senderid=${encodeURIComponent(senderId)}` +
+    `&number=${encodeURIComponent("91" + digits)}` +
+    `&message=${encodeURIComponent(message)}&format=JSON`;
+  console.log("query (key omitted):");
+  console.log("  " + q);
+  console.log('uses "+" for spaces (bad):', q.includes("+"));
+  process.exit(0);
+}
 
 const url = new URL("https://smsfortius.org/V2/apikey.php");
 url.searchParams.set("senderid", senderId);
