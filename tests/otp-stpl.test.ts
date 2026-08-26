@@ -39,7 +39,10 @@ beforeEach(() => {
   process.env.STPL_API_KEY = "test-key-not-real";
   process.env.STPL_SENDER_ID = "DKDHBA";
   delete process.env.STPL_TEMPLATE_ID;
-  delete process.env.STPL_MESSAGE;
+  // Some wording has to be configured or the provider refuses to send at all —
+  // there is no invented fallback, because an unapproved message costs credit
+  // and is dropped. Tests that care about the text set their own.
+  process.env.STPL_MESSAGE = "Your code is {otp}. Do not share.";
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -149,6 +152,21 @@ describe("stpl provider", () => {
     reply({ status: true, code: "011" });
     await otpProvider().send("+919876543210", "778899");
     expect(sent().get("message")).toBe("Your code is 778899. Do not share.");
+  });
+
+  it("refuses to send when no approved wording is configured", async () => {
+    /*
+     * There is no fallback text on purpose. Anything invented here cannot be
+     * what DLT approved, so the operator drops it — while the gateway still
+     * charges. An unset STPL_MESSAGE would drain a paid balance one login at a
+     * time and deliver nothing.
+     */
+    delete process.env.STPL_MESSAGE;
+    reply({ status: "Success", code: "011" });
+    const r = await otpProvider().send("+919876543210", "123456");
+
+    expect(r.ok).toBe(false);
+    expect(calls).toHaveLength(0); // no credit spent
   });
 
   it("refuses rather than mail an unfilled placeholder", async () => {

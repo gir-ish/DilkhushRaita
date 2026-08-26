@@ -88,8 +88,15 @@ const STPL_ERRORS: Record<string, string> = {
   "010": "message campaign failed at the vendor",
 };
 
-/** Default message. Override with STPL_MESSAGE to match your approved template. */
-const STPL_DEFAULT_MESSAGE = "{otp} is your OTP for DilKhush Dhaba. Valid for 5 minutes. Do not share it with anyone.";
+/*
+ * There is deliberately no fallback message.
+ *
+ * Any wording we could invent here is, by definition, not the wording DLT
+ * approved — so the operator would drop every message while the gateway still
+ * charged for it. Credits are bought, and this template costs two of them per
+ * send, so an unset STPL_MESSAGE would quietly drain the account one login
+ * attempt at a time and deliver nothing. Better to send none at all and say so.
+ */
 
 const stplProvider: OtpProvider = {
   name: "stpl",
@@ -115,7 +122,15 @@ const stplProvider: OtpProvider = {
      * which slot is which, because only the author knows whether the first one
      * is a name, an order number or the code itself.
      */
-    const template = process.env.STPL_MESSAGE?.trim() || STPL_DEFAULT_MESSAGE;
+    const template = process.env.STPL_MESSAGE?.trim();
+    if (!template) {
+      console.error(
+        "[OTP][stpl] STPL_MESSAGE is not set — refusing to send. Any other wording " +
+          "is dropped by the operator for not matching the approved template, and " +
+          "still costs credit."
+      );
+      return { ok: false };
+    }
     let message = template.replace(/\{otp\}/gi, code);
     if ((message.match(/\{#var#\}/g) ?? []).length === 1)
       message = message.replace("{#var#}", code);
