@@ -69,14 +69,14 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 `OTP_BYPASS`/`NEXT_PUBLIC_OTP_BYPASS` are kept `"true"` per your current setup (sign-in without SMS). **While they are `"true"`, anyone can sign in as any customer by typing their number** — no code is sent and none is checked. Turning them off is the single biggest security improvement available to this deployment; see below.
 
-### Switching on real SMS (SPTL / smsfortius.org)
+### Switching on real SMS (STPL / smsfortius.org)
 
 ```ini
-OTP_PROVIDER="sptl"
-SPTL_API_KEY="…"            # from the SMS account (optional on route-authenticated accounts)
-SPTL_SENDER_ID="DKDHBA"     # exactly 6 characters, registered to the account
-SPTL_TEMPLATE_ID="…"        # the DLT template ID for the message below
-SPTL_MESSAGE="{otp} is your OTP for DilKhush Dhaba. Valid for 5 minutes. Do not share it with anyone."
+OTP_PROVIDER="stpl"
+STPL_API_KEY="…"            # from the SMS account (optional on route-authenticated accounts)
+STPL_SENDER_ID="DKDHBA"     # exactly 6 characters, registered to the account
+STPL_TEMPLATE_ID="1777178772255400845"   # "SMS One", approved 26-08-2026
+STPL_MESSAGE="{otp} is your OTP for DilKhush Dhaba. Valid for 5 minutes. Do not share it with anyone."
 OTP_BYPASS="false"
 NEXT_PUBLIC_OTP_BYPASS="false"
 ```
@@ -89,7 +89,7 @@ npm run sms:test 9876543210      # your own handset
 
 It sends one real message and prints exactly what the gateway said. Only once it arrives should you set both `*_OTP_BYPASS` values to `"false"` and rebuild — `NEXT_PUBLIC_OTP_BYPASS` is baked in at build time, so a restart alone will not pick it up.
 
-> **`SPTL_MESSAGE` must match your DLT-approved template word for word.** Indian operators compare every message against the template registered for your sender ID and silently drop anything that differs — and the gateway still answers *submitted successfully*. A mismatch therefore looks exactly like a working integration in which no SMS ever arrives, which is why the test above ends at the handset rather than at the API response.
+> **`STPL_MESSAGE` must match your DLT-approved template word for word.** Indian operators compare every message against the template registered for your sender ID and silently drop anything that differs — and the gateway still answers *submitted successfully*. A mismatch therefore looks exactly like a working integration in which no SMS ever arrives, which is why the test above ends at the handset rather than at the API response.
 
 > **NEXT_PUBLIC_ variables are baked in at build time.** Set them *before* running `npm run build` in step 6, not after.
 

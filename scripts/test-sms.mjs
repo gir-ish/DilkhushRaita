@@ -39,20 +39,20 @@ if (digits.length !== 10) {
 }
 
 const provider = process.env.OTP_PROVIDER ?? "console";
-const senderId = (process.env.SPTL_SENDER_ID ?? "").trim();
-const apiKey = (process.env.SPTL_API_KEY ?? "").trim();
-const templateId = (process.env.SPTL_TEMPLATE_ID ?? "").trim();
+const senderId = (process.env.STPL_SENDER_ID ?? "").trim();
+const apiKey = (process.env.STPL_API_KEY ?? "").trim();
+const templateId = (process.env.STPL_TEMPLATE_ID ?? "").trim();
 const template =
-  (process.env.SPTL_MESSAGE ?? "").trim() ||
+  (process.env.STPL_MESSAGE ?? "").trim() ||
   "{otp} is your OTP for DilKhush Dhaba. Valid for 5 minutes. Do not share it with anyone.";
 
-console.log(`provider     : ${provider}${provider === "sptl" ? "" : "   ⚠️  not 'sptl' — the app will NOT use this gateway"}`);
+console.log(`provider     : ${provider}${provider === "stpl" ? "" : "   ⚠️  not 'stpl' — the app will NOT use this gateway"}`);
 console.log(`sender id    : ${senderId || "(missing)"}${senderId && senderId.length !== 6 ? `   ⚠️  ${senderId.length} chars, gateway expects 6` : ""}`);
 console.log(`api key      : ${apiKey ? `set (${apiKey.length} chars)` : "(not set — sending without one)"}`);
 console.log(`template id  : ${templateId || "(not set — gateway will guess the template)"}`);
 
 if (!senderId) {
-  console.error("\nSPTL_SENDER_ID is not set. Nothing to send with.");
+  console.error("\nSTPL_SENDER_ID is not set. Nothing to send with.");
   process.exit(1);
 }
 
@@ -72,7 +72,7 @@ if (apiKey) url.searchParams.set("apikey", apiKey);
 if (templateId) url.searchParams.set("templateid", templateId);
 
 const ERRORS = {
-  "001": "no API key sent — set SPTL_API_KEY",
+  "001": "no API key sent — set STPL_API_KEY",
   "002": "invalid route id",
   "004": "no message text reached the gateway",
   "005": "schedule time is in the past",
@@ -104,7 +104,7 @@ try {
   console.log(`\n✅ Accepted by the gateway. Credits used: ${data.data?.totalcredit ?? "?"}`);
   console.log("Now check the handset. If nothing arrives within a minute or two, the");
   console.log("gateway took it but the operator dropped it — which almost always means");
-  console.log("SPTL_MESSAGE does not match the DLT template registered for this sender.");
+  console.log("STPL_MESSAGE does not match the DLT template registered for this sender.");
 } catch (e) {
   console.error(e?.name === "TimeoutError" ? "Timed out talking to the gateway." : `Network error: ${e?.message ?? e}`);
   process.exit(1);

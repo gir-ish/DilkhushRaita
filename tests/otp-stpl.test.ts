@@ -2,14 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { otpProvider } from "@/lib/otp";
 
 /**
- * The SPTL gateway is a general SMS API, not an OTP route: we compose the
+ * The STPL gateway is a general SMS API, not an OTP route: we compose the
  * message and hand over the code ourselves, so the request has to be exactly
  * right or the operator drops it silently. These pin the request shape and,
  * just as importantly, that a refusal is reported as one.
  */
 
 const ENV = [
-  "OTP_PROVIDER", "SPTL_API_KEY", "SPTL_SENDER_ID", "SPTL_TEMPLATE_ID", "SPTL_MESSAGE",
+  "OTP_PROVIDER", "STPL_API_KEY", "STPL_SENDER_ID", "STPL_TEMPLATE_ID", "STPL_MESSAGE",
 ] as const;
 const saved: Record<string, string | undefined> = {};
 
@@ -35,11 +35,11 @@ function sent() {
 beforeEach(() => {
   calls = [];
   for (const k of ENV) saved[k] = process.env[k];
-  process.env.OTP_PROVIDER = "sptl";
-  process.env.SPTL_API_KEY = "test-key-not-real";
-  process.env.SPTL_SENDER_ID = "DKDHBA";
-  delete process.env.SPTL_TEMPLATE_ID;
-  delete process.env.SPTL_MESSAGE;
+  process.env.OTP_PROVIDER = "stpl";
+  process.env.STPL_API_KEY = "test-key-not-real";
+  process.env.STPL_SENDER_ID = "DKDHBA";
+  delete process.env.STPL_TEMPLATE_ID;
+  delete process.env.STPL_MESSAGE;
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -52,9 +52,37 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("sptl provider", () => {
+describe("stpl provider", () => {
   it("is selected by OTP_PROVIDER", () => {
-    expect(otpProvider().name).toBe("sptl");
+    expect(otpProvider().name).toBe("stpl");
+  });
+
+  it("survives the obvious misspelling of the vendor's name", () => {
+    // STPL transposes readily, and a name that does not resolve used to fall
+    // back to the console provider.
+    process.env.OTP_PROVIDER = "sptl";
+    expect(otpProvider().name).toBe("stpl");
+  });
+
+  it("refuses to send in production when the gateway name is unknown", async () => {
+    const node = process.env.NODE_ENV;
+    process.env.OTP_PROVIDER = "nonsense";
+    try {
+      // @ts-expect-error NODE_ENV is readonly in the types, writable at runtime
+      process.env.NODE_ENV = "production";
+      const p = otpProvider();
+      const r = await p.send("+919876543210", "123456");
+      /*
+       * The old fallback reported success and printed the code to the log,
+       * so a single typo told every customer to check a phone that would
+       * never ring — and put the secret in a log file besides.
+       */
+      expect(r.ok).toBe(false);
+      expect(r.devCode).toBeUndefined();
+    } finally {
+      // @ts-expect-error as above
+      process.env.NODE_ENV = node;
+    }
   });
 
   it("sends the documented parameters", async () => {
@@ -91,7 +119,7 @@ describe("sptl provider", () => {
   it("uses the operator-approved wording when one is configured", async () => {
     // Indian operators match every message against the registered DLT template
     // and bin anything that differs, so this override is the normal case.
-    process.env.SPTL_MESSAGE = "Your DilKhush code is {otp}. Do not share.";
+    process.env.STPL_MESSAGE = "Your DilKhush code is {otp}. Do not share.";
     reply({ status: true, code: "011" });
     await otpProvider().send("+919876543210", "111222");
     expect(sent().get("message")).toBe("Your DilKhush code is 111222. Do not share.");
@@ -103,7 +131,7 @@ describe("sptl provider", () => {
     expect(sent().has("templateid")).toBe(false);
 
     calls = [];
-    process.env.SPTL_TEMPLATE_ID = "1207161234567890";
+    process.env.STPL_TEMPLATE_ID = "1207161234567890";
     reply({ status: true, code: "011" });
     await otpProvider().send("+919876543210", "123456");
     expect(sent().get("templateid")).toBe("1207161234567890");
@@ -111,7 +139,7 @@ describe("sptl provider", () => {
 
   it("omits apikey entirely when the account does not use one", async () => {
     // The docs call it conditional: some accounts authenticate by route.
-    delete process.env.SPTL_API_KEY;
+    delete process.env.STPL_API_KEY;
     reply({ status: true, code: "011" });
     await otpProvider().send("+919876543210", "123456");
     expect(sent().has("apikey")).toBe(false);
@@ -150,7 +178,7 @@ describe("sptl provider", () => {
   });
 
   it("refuses to send at all without a sender id", async () => {
-    delete process.env.SPTL_SENDER_ID;
+    delete process.env.STPL_SENDER_ID;
     reply({ status: true, code: "011" });
     const r = await otpProvider().send("+919876543210", "123456");
     expect(r.ok).toBe(false);
