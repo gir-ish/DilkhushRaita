@@ -103,6 +103,9 @@ if (templateId) url.searchParams.set("templateid", templateId);
 const ERRORS = {
   "001": "the gateway rejected the API key — check STPL_API_KEY",
   "002": "invalid route id",
+  // Undocumented, seen live: the sender ID is not one registered to this
+  // account. The gateway checks this before it accepts a message.
+  "003": "the gateway does not recognise this sender ID — check STPL_SENDER_ID",
   "004": "no message text reached the gateway",
   "005": "schedule time is in the past",
   "006": "invalid date/time format",
