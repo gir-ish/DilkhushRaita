@@ -67,7 +67,29 @@ Generate a real `SESSION_SECRET` (never reuse the dev placeholder):
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-`OTP_BYPASS`/`NEXT_PUBLIC_OTP_BYPASS` are kept `"true"` per your current setup (sign-in without SMS). Flip both to `"false"` and set real `MSG91_*`/`FAST2SMS_*` values once DLT approval is done — see `docs/API.md` and the OTP section of `.env.example`.
+`OTP_BYPASS`/`NEXT_PUBLIC_OTP_BYPASS` are kept `"true"` per your current setup (sign-in without SMS). **While they are `"true"`, anyone can sign in as any customer by typing their number** — no code is sent and none is checked. Turning them off is the single biggest security improvement available to this deployment; see below.
+
+### Switching on real SMS (SPTL / smsfortius.org)
+
+```ini
+OTP_PROVIDER="sptl"
+SPTL_API_KEY="…"            # from the SMS account (optional on route-authenticated accounts)
+SPTL_SENDER_ID="DKDHBA"     # exactly 6 characters, registered to the account
+SPTL_TEMPLATE_ID="…"        # the DLT template ID for the message below
+SPTL_MESSAGE="{otp} is your OTP for DilKhush Dhaba. Valid for 5 minutes. Do not share it with anyone."
+OTP_BYPASS="false"
+NEXT_PUBLIC_OTP_BYPASS="false"
+```
+
+Prove the gateway works **before** turning the bypass off, or a bad key locks every customer out of the site:
+
+```bash
+npm run sms:test 9876543210      # your own handset
+```
+
+It sends one real message and prints exactly what the gateway said. Only once it arrives should you set both `*_OTP_BYPASS` values to `"false"` and rebuild — `NEXT_PUBLIC_OTP_BYPASS` is baked in at build time, so a restart alone will not pick it up.
+
+> **`SPTL_MESSAGE` must match your DLT-approved template word for word.** Indian operators compare every message against the template registered for your sender ID and silently drop anything that differs — and the gateway still answers *submitted successfully*. A mismatch therefore looks exactly like a working integration in which no SMS ever arrives, which is why the test above ends at the handset rather than at the API response.
 
 > **NEXT_PUBLIC_ variables are baked in at build time.** Set them *before* running `npm run build` in step 6, not after.
 

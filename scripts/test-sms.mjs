@@ -1,0 +1,111 @@
+/**
+ * Sends one real SMS through the configured gateway, to prove the account
+ * works before customers depend on it.
+ *
+ *   node scripts/test-sms.mjs 9876543210
+ *
+ * Reads the same variables the app does, so run it on the machine whose .env
+ * you mean to test — the live one is the server, not your laptop. It spends
+ * one SMS credit. The API key is never printed.
+ *
+ * Worth doing because the failure that matters is invisible from the code: a
+ * message whose wording does not match the DLT template registered for your
+ * sender is accepted by the gateway, reported as submitted, and then dropped
+ * by the operator. Only a handset can tell you it arrived.
+ */
+import { readFileSync } from "node:fs";
+
+// Mirrors how Next loads .env, so this tests the configuration the app will
+// actually run with rather than a separate one.
+for (const file of [".env.local", ".env"]) {
+  try {
+    for (const line of readFileSync(file, "utf8").split("\n")) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/i);
+      if (!m) continue;
+      const key = m[1];
+      if (process.env[key] !== undefined) continue; // first file wins, as Next does
+      process.env[key] = m[2].trim().replace(/^["']|["']$/g, "");
+    }
+  } catch {
+    // A missing .env.local is normal.
+  }
+}
+
+const raw = (process.argv[2] ?? "").replace(/\D/g, "");
+const digits = raw.startsWith("91") && raw.length === 12 ? raw.slice(2) : raw;
+if (digits.length !== 10) {
+  console.error("Usage: node scripts/test-sms.mjs 9876543210");
+  process.exit(1);
+}
+
+const provider = process.env.OTP_PROVIDER ?? "console";
+const senderId = (process.env.SPTL_SENDER_ID ?? "").trim();
+const apiKey = (process.env.SPTL_API_KEY ?? "").trim();
+const templateId = (process.env.SPTL_TEMPLATE_ID ?? "").trim();
+const template =
+  (process.env.SPTL_MESSAGE ?? "").trim() ||
+  "{otp} is your OTP for DilKhush Dhaba. Valid for 5 minutes. Do not share it with anyone.";
+
+console.log(`provider     : ${provider}${provider === "sptl" ? "" : "   ⚠️  not 'sptl' — the app will NOT use this gateway"}`);
+console.log(`sender id    : ${senderId || "(missing)"}${senderId && senderId.length !== 6 ? `   ⚠️  ${senderId.length} chars, gateway expects 6` : ""}`);
+console.log(`api key      : ${apiKey ? `set (${apiKey.length} chars)` : "(not set — sending without one)"}`);
+console.log(`template id  : ${templateId || "(not set — gateway will guess the template)"}`);
+
+if (!senderId) {
+  console.error("\nSPTL_SENDER_ID is not set. Nothing to send with.");
+  process.exit(1);
+}
+
+// A fixed, obviously-fake code: this is a delivery test, and a real-looking
+// OTP in a log or a screenshot is a habit worth not starting.
+const code = "123456";
+const message = template.replace(/\{otp\}/gi, code);
+console.log(`message      : ${message}`);
+console.log(`to           : +91${digits}\n`);
+
+const url = new URL("https://smsfortius.org/V2/apikey.php");
+url.searchParams.set("senderid", senderId);
+url.searchParams.set("number", `91${digits}`);
+url.searchParams.set("message", message);
+url.searchParams.set("format", "JSON");
+if (apiKey) url.searchParams.set("apikey", apiKey);
+if (templateId) url.searchParams.set("templateid", templateId);
+
+const ERRORS = {
+  "001": "no API key sent — set SPTL_API_KEY",
+  "002": "invalid route id",
+  "004": "no message text reached the gateway",
+  "005": "schedule time is in the past",
+  "006": "invalid date/time format",
+  "007": "no valid destination number",
+  "008": "ACCOUNT OUT OF CREDIT — top up",
+  "009": "PARENT ACCOUNT OUT OF BALANCE — top up",
+  "010": "message campaign failed at the vendor",
+};
+
+try {
+  const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    console.error(`Gateway did not return JSON (HTTP ${res.status}):\n${text.slice(0, 400)}`);
+    process.exit(1);
+  }
+
+  console.log("gateway reply:", JSON.stringify(data));
+  const ok = res.ok && (data.status === true || data.status === "true" || data.code === "011");
+  if (!ok) {
+    console.error(`\n❌ Refused — code ${data.code ?? "?"}: ${ERRORS[data.code] ?? "unrecognised error code"}`);
+    process.exit(1);
+  }
+
+  console.log(`\n✅ Accepted by the gateway. Credits used: ${data.data?.totalcredit ?? "?"}`);
+  console.log("Now check the handset. If nothing arrives within a minute or two, the");
+  console.log("gateway took it but the operator dropped it — which almost always means");
+  console.log("SPTL_MESSAGE does not match the DLT template registered for this sender.");
+} catch (e) {
+  console.error(e?.name === "TimeoutError" ? "Timed out talking to the gateway." : `Network error: ${e?.message ?? e}`);
+  process.exit(1);
+}
