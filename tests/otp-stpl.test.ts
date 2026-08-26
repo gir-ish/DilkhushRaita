@@ -10,6 +10,7 @@ import { otpProvider } from "@/lib/otp";
 
 const ENV = [
   "OTP_PROVIDER", "STPL_API_KEY", "STPL_SENDER_ID", "STPL_TEMPLATE_ID", "STPL_MESSAGE",
+  "STPL_MESSAGE_FILE",
 ] as const;
 const saved: Record<string, string | undefined> = {};
 
@@ -39,6 +40,7 @@ beforeEach(() => {
   process.env.STPL_API_KEY = "test-key-not-real";
   process.env.STPL_SENDER_ID = "DKDHBA";
   delete process.env.STPL_TEMPLATE_ID;
+  delete process.env.STPL_MESSAGE_FILE;
   // Some wording has to be configured or the provider refuses to send at all —
   // there is no invented fallback, because an unapproved message costs credit
   // and is dropped. Tests that care about the text set their own.
@@ -189,6 +191,38 @@ describe("stpl provider", () => {
 
     expect(r.ok).toBe(false);
     expect(calls).toHaveLength(0); // no credit spent
+  });
+
+  it("refuses a message that lost its {otp} to a bad paste", async () => {
+    /*
+     * Exactly what reached DilKhush's server: a terminal dropped the middle of
+     * the .env line, taking the placeholder with it. The text still read like a
+     * sentence, so nothing looked wrong — and every customer got an SMS with no
+     * code in it, two credits a time.
+     */
+    process.env.STPL_MESSAGE =
+      "Dear Customer, your OTP for registration os OTP is valid for 10 minutes.";
+    reply({ status: "Success", code: "011" });
+    const r = await otpProvider().send("+919876543210", "123456");
+
+    expect(r.ok).toBe(false);
+    expect(calls).toHaveLength(0); // no credit spent
+  });
+
+  it("reads the wording from STPL_MESSAGE_FILE when no inline text is set", async () => {
+    // How the server is configured: a file delivered by git cannot lose
+    // characters the way a pasted line can.
+    delete process.env.STPL_MESSAGE;
+    process.env.STPL_MESSAGE_FILE = "config/stpl-otp-template.txt";
+    reply({ status: "Success", code: "011" });
+    const r = await otpProvider().send("+919876543210", "482913");
+
+    expect(r.ok).toBe(true);
+    expect(sent().get("message")).toBe(
+      "Dear Customer, your OTP for registration on Dilkhush Raita is482913. " +
+        "This OTP is valid for 10 minutes. Please do not share it with anyone. " +
+        "Visit https://dilkhushraita.com/"
+    );
   });
 
   it("refuses rather than mail an unfilled placeholder", async () => {

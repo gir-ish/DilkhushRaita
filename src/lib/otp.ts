@@ -1,4 +1,6 @@
 import { createHash, randomInt } from "crypto";
+import { readFileSync } from "fs";
+import path from "path";
 
 /**
  * Modular OTP/SMS provider. Select with the OTP_PROVIDER env variable:
@@ -98,6 +100,34 @@ const STPL_ERRORS: Record<string, string> = {
  * attempt at a time and deliver nothing. Better to send none at all and say so.
  */
 
+/**
+ * The DLT-approved wording, from the environment or from a file.
+ *
+ * The file exists because pasting this into a server .env is genuinely
+ * dangerous: a terminal dropped characters out of the middle of the line on
+ * DilKhush's host, leaving "…for registration os OTP is valid…" — no {otp} at
+ * all. Every message went out without a code and was dropped by the operator
+ * for not matching the template, and nothing about the .env looked obviously
+ * wrong at a glance.
+ *
+ * A file that arrives over git is byte-exact, and the wording is not a secret.
+ */
+function approvedTemplate(): string | null {
+  const inline = process.env.STPL_MESSAGE?.trim();
+  if (inline) return inline;
+
+  const file = process.env.STPL_MESSAGE_FILE?.trim();
+  if (!file) return null;
+  try {
+    // Relative paths resolve from the app root, which is where it is started.
+    const text = readFileSync(path.resolve(process.cwd(), file), "utf8").trim();
+    return text || null;
+  } catch (e) {
+    console.error(`[OTP][stpl] could not read STPL_MESSAGE_FILE (${file}):`, e);
+    return null;
+  }
+}
+
 const stplProvider: OtpProvider = {
   name: "stpl",
   async send(phone, code) {
@@ -122,15 +152,35 @@ const stplProvider: OtpProvider = {
      * which slot is which, because only the author knows whether the first one
      * is a name, an order number or the code itself.
      */
-    const template = process.env.STPL_MESSAGE?.trim();
+    const template = approvedTemplate();
     if (!template) {
       console.error(
-        "[OTP][stpl] STPL_MESSAGE is not set — refusing to send. Any other wording " +
-          "is dropped by the operator for not matching the approved template, and " +
-          "still costs credit."
+        "[OTP][stpl] no approved wording configured — refusing to send. Set " +
+          "STPL_MESSAGE, or STPL_MESSAGE_FILE pointing at a file holding it. Any " +
+          "other wording is dropped by the operator for not matching the approved " +
+          "template, and still costs credit."
       );
       return { ok: false };
     }
+    /*
+     * A template with nowhere to put the code is not a template.
+     *
+     * This is not hypothetical: a terminal paste dropped the middle of the line
+     * out of the server's .env, taking "{otp}" with it, and the app then sent a
+     * perfectly well-formed message containing no code at all — to every
+     * customer, at two credits each. Checking before substitution rather than
+     * after is what catches it, because after substitution there is nothing
+     * left to notice.
+     */
+    if (!/\{otp\}/i.test(template) && !template.includes("{#var#}")) {
+      console.error(
+        "[OTP][stpl] the configured message has no {otp} placeholder, so the code " +
+          "would be missing from it — refusing to send. Check STPL_MESSAGE / " +
+          "STPL_MESSAGE_FILE has not been truncated."
+      );
+      return { ok: false };
+    }
+
     let message = template.replace(/\{otp\}/gi, code);
     if ((message.match(/\{#var#\}/g) ?? []).length === 1)
       message = message.replace("{#var#}", code);
