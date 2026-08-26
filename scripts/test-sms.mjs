@@ -71,9 +71,32 @@ const provider = process.env.OTP_PROVIDER ?? "console";
 const senderId = (process.env.STPL_SENDER_ID ?? "").trim();
 const apiKey = (process.env.STPL_API_KEY ?? "").trim();
 const templateId = (process.env.STPL_TEMPLATE_ID ?? "").trim();
-const template =
-  (process.env.STPL_MESSAGE ?? "").trim() ||
-  "{otp} is your OTP for DilKhush Dhaba. Valid for 10 minutes. Do not share it with anyone.";
+/*
+ * Resolved exactly the way src/lib/otp.ts does it, and for the same reason
+ * there is no fallback: a diagnostic that quietly substitutes wording the app
+ * would never send reports on a configuration that does not exist. This script
+ * did have one, and it duly announced a message nobody had configured.
+ */
+const template = (() => {
+  const inline = (process.env.STPL_MESSAGE ?? "").trim();
+  if (inline) return inline;
+  const file = (process.env.STPL_MESSAGE_FILE ?? "").trim();
+  if (!file) return "";
+  try {
+    return readFileSync(file, "utf8").trim();
+  } catch (e) {
+    console.error(`Could not read STPL_MESSAGE_FILE (${file}): ${e?.message ?? e}`);
+    process.exit(1);
+  }
+})();
+
+if (!template) {
+  console.error(
+    "No approved wording configured. Set STPL_MESSAGE, or STPL_MESSAGE_FILE\n" +
+      'pointing at a file holding it (e.g. "config/stpl-otp-template.txt").'
+  );
+  process.exit(1);
+}
 
 console.log(`provider     : ${provider}${provider === "stpl" ? "" : "   ⚠️  not 'stpl' — the app will NOT use this gateway"}`);
 console.log(`sender id    : ${senderId || "(missing)"}${senderId && senderId.length !== 6 ? `   ⚠️  ${senderId.length} chars, gateway expects 6` : ""}`);
