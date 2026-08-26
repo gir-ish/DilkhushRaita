@@ -145,9 +145,29 @@ describe("stpl provider", () => {
     expect(sent().has("apikey")).toBe(false);
   });
 
-  it("accepts status as the string PHP back ends sometimes return", async () => {
-    reply({ status: "true", code: "011" });
+  it("accepts the reply the live gateway actually sends", async () => {
+    /*
+     * Captured from the real account on 2026-08-26. Worth pinning verbatim:
+     * the published documentation shows `"status": true` as a boolean, and the
+     * gateway in fact answers with the string "Success" and carries a
+     * `description` field the docs do not mention at all. Reading `status`
+     * literally would have rejected every message it successfully sent.
+     */
+    reply({
+      status: "Success",
+      code: "011",
+      description: "Message submitted successfully",
+      data: { messageid: "19351", totnumber: 1, totalcredit: 1 },
+    });
     expect((await otpProvider().send("+919876543210", "123456")).ok).toBe(true);
+  });
+
+  it("accepts the other two shapes of status seen in the wild", async () => {
+    for (const status of [true, "true"]) {
+      calls = [];
+      reply({ status, code: "011" });
+      expect((await otpProvider().send("+919876543210", "123456")).ok).toBe(true);
+    }
   });
 
   it("reports every documented failure as a failure", async () => {

@@ -95,9 +95,15 @@ try {
   }
 
   console.log("gateway reply:", JSON.stringify(data));
-  const ok = res.ok && (data.status === true || data.status === "true" || data.code === "011");
+  // "011" is the signal. `status` is documented as a boolean but comes back as
+  // the string "Success" from the live gateway, so all the observed shapes are
+  // accepted — see the note in src/lib/otp.ts.
+  const status = typeof data.status === "string" ? data.status.toLowerCase() : data.status;
+  const ok =
+    res.ok && (data.code === "011" || status === true || status === "true" || status === "success");
   if (!ok) {
-    console.error(`\n❌ Refused — code ${data.code ?? "?"}: ${ERRORS[data.code] ?? "unrecognised error code"}`);
+    const why = (data.code ? ERRORS[data.code] : undefined) ?? data.description ?? "unrecognised error";
+    console.error(`\n❌ Refused — code ${data.code ?? "?"}: ${why}`);
     process.exit(1);
   }
 

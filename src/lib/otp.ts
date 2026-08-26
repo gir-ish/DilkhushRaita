@@ -182,7 +182,12 @@ const stplProvider: OtpProvider = {
     try {
       const res = await fetch(url, { method: "GET", signal: timeout() });
       const text = await res.text();
-      let data: { status?: boolean | string; code?: string; data?: unknown } = {};
+      let data: {
+        status?: boolean | string;
+        code?: string;
+        description?: string;
+        data?: unknown;
+      } = {};
       try {
         data = JSON.parse(text);
       } catch {
@@ -192,13 +197,24 @@ const stplProvider: OtpProvider = {
         return { ok: false };
       }
 
-      // "011" is the documented success code. `status` has been seen as both a
-      // real boolean and the string "true" from PHP back ends, so accept both
-      // rather than fail a delivery that actually happened.
+      /*
+       * "011" is the documented success code and the reliable signal.
+       *
+       * `status` is not: the documentation shows a boolean true, the live
+       * gateway answers with the string "Success", and PHP back ends of this
+       * shape commonly return "true" as well. All three are accepted, because
+       * treating a delivered message as failed would have the customer asking
+       * for a second code while the first is already on its way.
+       */
+      const status = typeof data.status === "string" ? data.status.toLowerCase() : data.status;
       const ok =
-        res.ok && (data.status === true || data.status === "true" || data.code === "011");
+        res.ok &&
+        (data.code === "011" || status === true || status === "true" || status === "success");
       if (!ok) {
-        const why = data.code ? (STPL_ERRORS[data.code] ?? "unrecognised error code") : "no code returned";
+        const why =
+          (data.code ? STPL_ERRORS[data.code] : undefined) ??
+          data.description ??
+          "unrecognised error";
         // Never the URL: it carries the API key.
         console.error(`[OTP][stpl] send failed (${res.status}) code=${data.code ?? "?"}: ${why}`);
         return { ok: false };
