@@ -15,16 +15,36 @@
  */
 import { readFileSync } from "node:fs";
 
-// Mirrors how Next loads .env, so this tests the configuration the app will
-// actually run with rather than a separate one.
+/*
+ * Reads .env the way Next does, so this tests the configuration the app will
+ * actually run with rather than a separate one.
+ *
+ * The quoting matters more than it looks. A value often carries a trailing
+ * note — KEY="…"   # where this came from — and taking the rest of the line at
+ * face value sends that note along with the key. The gateway then answers
+ * "Invalid Api Key" against credentials that were perfectly good, and the hunt
+ * starts in the wrong place.
+ */
+function parseEnvValue(rest) {
+  const v = rest.trim();
+  for (const q of ['"', "'"]) {
+    if (v.startsWith(q)) {
+      const end = v.indexOf(q, 1);
+      return end === -1 ? v.slice(1) : v.slice(1, end);
+    }
+  }
+  // Unquoted: everything up to a whitespace-preceded comment marker.
+  const hash = v.search(/\s#/);
+  return (hash === -1 ? v : v.slice(0, hash)).trim();
+}
+
 for (const file of [".env.local", ".env"]) {
   try {
-    for (const line of readFileSync(file, "utf8").split("\n")) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/i);
+    for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$/);
       if (!m) continue;
-      const key = m[1];
-      if (process.env[key] !== undefined) continue; // first file wins, as Next does
-      process.env[key] = m[2].trim().replace(/^["']|["']$/g, "");
+      if (process.env[m[1]] !== undefined) continue; // first file wins, as Next does
+      process.env[m[1]] = parseEnvValue(m[2]);
     }
   } catch {
     // A missing .env.local is normal.
@@ -44,7 +64,7 @@ const apiKey = (process.env.STPL_API_KEY ?? "").trim();
 const templateId = (process.env.STPL_TEMPLATE_ID ?? "").trim();
 const template =
   (process.env.STPL_MESSAGE ?? "").trim() ||
-  "{otp} is your OTP for DilKhush Dhaba. Valid for 5 minutes. Do not share it with anyone.";
+  "{otp} is your OTP for DilKhush Dhaba. Valid for 10 minutes. Do not share it with anyone.";
 
 console.log(`provider     : ${provider}${provider === "stpl" ? "" : "   ⚠️  not 'stpl' — the app will NOT use this gateway"}`);
 console.log(`sender id    : ${senderId || "(missing)"}${senderId && senderId.length !== 6 ? `   ⚠️  ${senderId.length} chars, gateway expects 6` : ""}`);
@@ -59,7 +79,16 @@ if (!senderId) {
 // A fixed, obviously-fake code: this is a delivery test, and a real-looking
 // OTP in a log or a screenshot is a habit worth not starting.
 const code = "123456";
-const message = template.replace(/\{otp\}/gi, code);
+let message = template.replace(/\{otp\}/gi, code);
+if ((message.match(/\{#var#\}/g) ?? []).length === 1) message = message.replace("{#var#}", code);
+if (message.includes("{#var#}") || /\{otp\}/i.test(message)) {
+  console.error(
+    "\nSTPL_MESSAGE still has an unfilled placeholder. Put {otp} where the code\n" +
+      "goes and a literal value in every other {#var#} slot — otherwise the\n" +
+      "customer reads \"{#var#}\" and the operator drops the message anyway."
+  );
+  process.exit(1);
+}
 console.log(`message      : ${message}`);
 console.log(`to           : +91${digits}\n`);
 
@@ -72,7 +101,7 @@ if (apiKey) url.searchParams.set("apikey", apiKey);
 if (templateId) url.searchParams.set("templateid", templateId);
 
 const ERRORS = {
-  "001": "no API key sent — set STPL_API_KEY",
+  "001": "the gateway rejected the API key — check STPL_API_KEY",
   "002": "invalid route id",
   "004": "no message text reached the gateway",
   "005": "schedule time is in the past",
