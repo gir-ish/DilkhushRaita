@@ -9,6 +9,30 @@ const WIDTH_KEY = "dk.print.width";
 const SCALE_KEY = "dk.print.scale";
 
 /**
+ * The Bluetooth rune, drawn rather than typed.
+ *
+ * There is no dependable Unicode character for it — the logo is a bind rune
+ * that most phone fonts do not carry, and a missing glyph renders as a hollow
+ * box on the one button a cashier needs to find in a hurry.
+ */
+function BluetoothIcon({ spinning }: { spinning?: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`h-5 w-5 ${spinning ? "animate-pulse" : ""}`}
+      aria-hidden
+    >
+      <path d="m7 7 10 10-5 5V2l5 5L7 17" />
+    </svg>
+  );
+}
+
+/**
  * Prints the slip straight to a Bluetooth thermal printer.
  *
  * Sits beside the ordinary Print button rather than replacing it: the browser
@@ -30,8 +54,10 @@ export function BluetoothPrint({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  // 58mm at the standard size: what the counter printer actually is, and what
+  // uses the least paper. Both are overridable and remembered per device.
   const [width, setWidth] = useState<PaperWidth>(32);
-  const [scale, setScale] = useState<TextScale>("large");
+  const [scale, setScale] = useState<TextScale>("normal");
   const [showSettings, setShowSettings] = useState(false);
 
   // Read on mount, not during render: the server has no localStorage, and
@@ -83,14 +109,21 @@ export function BluetoothPrint({
       <button
         onClick={print}
         disabled={busy}
-        className="btn-secondary !min-h-[44px]"
+        // Square: the icon carries the meaning, so the label would only be
+        // taking room from the buttons beside it on a phone.
+        className="btn-secondary !min-h-[44px] !w-[44px] !px-0"
+        aria-label={
+          connectedPrinter()
+            ? `Print to ${connectedPrinter()!.name} over Bluetooth`
+            : "Print over Bluetooth"
+        }
         title={
           connectedPrinter()
             ? `Print to ${connectedPrinter()!.name}`
             : "Connect a Bluetooth thermal printer"
         }
       >
-        {busy ? "Printing…" : done ? "✓ Sent" : "📲 Bluetooth"}
+        {done ? "✓" : <BluetoothIcon spinning={busy} />}
       </button>
       <button
         onClick={() => setShowSettings((v) => !v)}
