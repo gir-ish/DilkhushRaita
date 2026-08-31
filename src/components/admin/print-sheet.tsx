@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { inr, istDate, istTime, parseJson } from "@/lib/utils";
+import { BluetoothPrint } from "./bluetooth-print";
 
 /**
  * Exactly the fields a bill or kitchen ticket prints — nothing else.
@@ -367,6 +368,7 @@ export function PrintSheet({
           ) : (
             <div className="flex-1" />
           )}
+          <BluetoothPrint order={order} variant={variant} />
           <button onClick={() => window.print()} className="btn-secondary !min-h-[44px]">
             🖨️ Print
           </button>
