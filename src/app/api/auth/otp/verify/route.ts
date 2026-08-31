@@ -10,6 +10,7 @@ import {
   rateLimit,
   recordIdentityFailure,
 } from "@/lib/rate-limit";
+import { recordOtpVerified } from "@/lib/otp-abuse";
 import { normalizePhone } from "@/lib/utils";
 import { createSessionCookie } from "@/lib/session";
 import { OTP_MAX_ATTEMPTS } from "@/lib/constants";
@@ -72,6 +73,13 @@ export const POST = handler(async (req: Request) => {
 
     await db.otpCode.update({ where: { id: otp.id }, data: { consumedAt: new Date() } });
     clearIdentityFailures("otp-verify", phone);
+    /*
+     * A code that was actually used. This is what marks an address as carrying
+     * real customers rather than a harvester, and on a carrier NAT it is what
+     * keeps thousands of legitimate subscribers from being judged by one of
+     * them.
+     */
+    recordOtpVerified(clientIp(req));
   }
 
   let user = await db.user.findUnique({ where: { phone } });

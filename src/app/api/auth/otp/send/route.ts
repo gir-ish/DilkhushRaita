@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { handler, HttpError } from "@/lib/guard";
 import { generateOtp, hashOtp, otpProvider, otpBypassEnabled } from "@/lib/otp";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { mayRequestOtp, recordOtpSend } from "@/lib/otp-abuse";
 import { normalizePhone } from "@/lib/utils";
 import {
   OTP_EXPIRY_MINS,
@@ -26,6 +27,17 @@ export const POST = handler(async (req: Request) => {
   const ip = clientIp(req);
   if (!rateLimit(`otp:ip:${ip}`, 15, 60 * 60 * 1000))
     throw new HttpError(429, "Too many requests. Try again later.");
+
+  /*
+   * The guard against burning the SMS balance on codes nobody reads.
+   *
+   * Every send is two credits. A script walking a list of numbers spends them
+   * as fast as the gateway accepts, and the per-number cap below never fires
+   * because each number is only asked once. What separates that script from a
+   * customer is that a customer comes back with the code.
+   */
+  const verdict = mayRequestOtp(ip, phone);
+  if (!verdict.allowed) throw new HttpError(429, verdict.reason!);
 
   /*
    * Circuit breaker on the SMS bill.
@@ -78,6 +90,9 @@ export const POST = handler(async (req: Request) => {
   });
   const sent = await otpProvider().send(phone, code);
   if (!sent.ok) throw new HttpError(502, "Could not send OTP. Please try again.");
+  // After the send, not before: a message the gateway refused cost no credit
+  // and must not count against whoever asked for it.
+  recordOtpSend(ip, phone);
 
   return NextResponse.json({
     ok: true,
