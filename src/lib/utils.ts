@@ -104,3 +104,33 @@ export function timeAgo(iso: string | Date) {
   if (h < 24) return `${h} hr ago`;
   return `${Math.floor(h / 24)} d ago`;
 }
+
+/**
+ * The post-sign-in destination, reduced to something that can only point back
+ * at this site.
+ *
+ * Both login screens read `?next=` and navigate to it once the sign-in
+ * succeeds. That parameter is part of a URL an attacker gets to write, and a
+ * router will happily send the browser to another origin, so
+ * `/admin/login?next=https://dilkhush-dhaba.example/admin/login` sent a staff
+ * member who had just typed their real password to a copy of the login screen
+ * that then asked for it again. The link starts on the genuine domain, which is
+ * exactly what makes it work.
+ *
+ * Only a path on this site is allowed through:
+ *   - it must start with a single "/", so "https://evil" and "javascript:" are out;
+ *   - the second character must not be "/" or "\", which rules out "//evil.com"
+ *     and "/\evil.com" — both of which browsers read as another host;
+ *   - a backslash anywhere is refused, since browsers normalise it to "/" and
+ *     it is only ever there to slip past a check like this one.
+ *
+ * Anything rejected falls back to `fallback` rather than failing, because a bad
+ * `next` should still sign the person in — just onto their own dashboard.
+ */
+export function safeNextPath(next: string | null | undefined, fallback: string): string {
+  if (!next) return fallback;
+  if (!next.startsWith("/")) return fallback;
+  if (next.length > 1 && (next[1] === "/" || next[1] === "\\")) return fallback;
+  if (next.includes("\\")) return fallback;
+  return next;
+}

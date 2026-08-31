@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { handler, HttpError } from "@/lib/guard";
-import { generateOtp, hashOtp, otpProvider } from "@/lib/otp";
+import { generateOtp, hashOtp, otpProvider, otpBypassEnabled } from "@/lib/otp";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { normalizePhone } from "@/lib/utils";
 import {
@@ -16,7 +16,7 @@ const Body = z.object({ phone: z.string().min(10).max(15) });
 // Launch switch. While true, ANYONE can sign in as ANY phone number with no
 // verification at all — no code is sent and none is checked. Now that STPL is
 // wired up there is no reason to turn it back on.
-const OTP_BYPASS = process.env.OTP_BYPASS === "true";
+const OTP_BYPASS = otpBypassEnabled();
 
 export const POST = handler(async (req: Request) => {
   const body = Body.parse(await req.json());

@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ErrorBox } from "@/components/ui";
+import { safeNextPath } from "@/lib/utils";
 
 // TEMPORARY: mirrors OTP_BYPASS on the server. Set NEXT_PUBLIC_OTP_BYPASS
 // (and OTP_BYPASS) to "false" together once real SMS delivery is live.
@@ -12,7 +13,7 @@ const OTP_BYPASS = process.env.NEXT_PUBLIC_OTP_BYPASS === "true";
 function LoginInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const next = params.get("next") ?? "/account";
+  const next = safeNextPath(params.get("next"), "/account");
 
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");

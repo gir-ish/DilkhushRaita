@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ErrorBox } from "@/components/ui";
+import { safeNextPath } from "@/lib/utils";
 
 type Mode = "loading" | "pin" | "password" | "setPin";
 
@@ -22,7 +23,7 @@ function AdminLoginInner() {
   const [busy, setBusy] = useState(false);
 
   const go = useCallback(() => {
-    router.push(params.get("next") ?? "/admin");
+    router.push(safeNextPath(params.get("next"), "/admin"));
     router.refresh();
   }, [router, params]);
 

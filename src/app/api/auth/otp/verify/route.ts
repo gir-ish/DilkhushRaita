@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { handler, HttpError } from "@/lib/guard";
-import { hashOtp } from "@/lib/otp";
+import { hashOtp, otpBypassEnabled, otpHashMatches } from "@/lib/otp";
 import {
   clearIdentityFailures,
   clientIp,
@@ -26,7 +26,7 @@ const Body = z.object({
 
 // TEMPORARY — mirrors the flag in otp/send/route.ts. Must both be flipped
 // back together once a test SMS has reached a real handset.
-const OTP_BYPASS = process.env.OTP_BYPASS === "true";
+const OTP_BYPASS = otpBypassEnabled();
 
 export const POST = handler(async (req: Request) => {
   const body = Body.parse(await req.json());
@@ -63,7 +63,7 @@ export const POST = handler(async (req: Request) => {
     if (otp.attempts >= OTP_MAX_ATTEMPTS)
       throw new HttpError(429, "Too many wrong attempts. Request a new OTP.");
 
-    if (otp.codeHash !== hashOtp(phone, body.code)) {
+    if (!otpHashMatches(otp.codeHash, hashOtp(phone, body.code))) {
       await db.otpCode.update({ where: { id: otp.id }, data: { attempts: { increment: 1 } } });
       recordIdentityFailure("otp-verify", phone, OTP_WINDOW);
       const left = OTP_MAX_ATTEMPTS - otp.attempts - 1;

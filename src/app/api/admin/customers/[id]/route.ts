@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { handler, requireStaff } from "@/lib/guard";
+import { handler, HttpError, requireStaff } from "@/lib/guard";
 import { audit } from "@/lib/audit";
 
 const Patch = z.object({
@@ -17,6 +17,20 @@ export const PATCH = handler(
     const { id } = await params;
     const s = await requireStaff("BRANCH_MANAGER");
     const body = Patch.parse(await req.json());
+
+    /*
+     * This screen manages CUSTOMERS, so the id has to be one.
+     *
+     * Nothing here checked, and every field below is addressed by raw id — so
+     * a branch manager who read an id out of the staff list could send
+     * { blocked: true } for the OWNER and lock the only account that can undo
+     * it out of the dashboard. The role hierarchy is enforced carefully in
+     * /api/admin/staff; it was worth nothing while this route would block any
+     * row in the table.
+     */
+    const target = await db.user.findUnique({ where: { id }, select: { role: true } });
+    if (!target || target.role !== "CUSTOMER")
+      throw new HttpError(404, "Customer not found");
 
     if (body.blocked !== undefined || body.codOnlyBlock !== undefined) {
       await db.user.update({

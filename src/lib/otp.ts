@@ -1,4 +1,4 @@
-import { createHash, randomInt } from "crypto";
+import { createHash, randomInt, timingSafeEqual } from "crypto";
 import { readFileSync } from "fs";
 import path from "path";
 
@@ -329,4 +329,44 @@ export function hashOtp(phone: string, code: string): string {
   return createHash("sha256")
     .update(`${phone}:${code}:${process.env.SESSION_SECRET}`)
     .digest("hex");
+}
+
+/**
+ * Compare a stored OTP hash with a freshly computed one without leaking, in how
+ * long the comparison takes, how much of it matched.
+ *
+ * Both sides are fixed-length SHA-256 hex here, so `!==` was not a practical
+ * way in — but this is the comparison guarding account takeover, and there is
+ * no reason for it to be the timing-variable kind.
+ */
+export function otpHashMatches(storedHash: string, candidateHash: string): boolean {
+  const a = Buffer.from(storedHash, "utf8");
+  const b = Buffer.from(candidateHash, "utf8");
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+/**
+ * Is the "skip verification entirely" switch on?
+ *
+ * OTP_BYPASS was a launch convenience: with it set, /api/auth/otp/send sends
+ * nothing and /api/auth/otp/verify checks nothing, so posting any phone number
+ * signs you in as its owner. That is the whole account system turned off by one
+ * word in a file — and the file gets copied between machines by hand.
+ *
+ * So production refuses it outright rather than trusting whoever last edited
+ * the environment. This mirrors the console provider, which likewise will not
+ * run in production: a flag whose failure mode is "anyone is anyone" should
+ * take more than a typo to switch on.
+ */
+export function otpBypassEnabled(): boolean {
+  if (process.env.OTP_BYPASS !== "true") return false;
+  if (process.env.NODE_ENV === "production") {
+    console.error(
+      "[OTP] OTP_BYPASS=true is IGNORED in production — it would let anyone sign " +
+        "in as any phone number without a code. Unset it to silence this."
+    );
+    return false;
+  }
+  return true;
 }

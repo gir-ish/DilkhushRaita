@@ -43,19 +43,54 @@ export function handler<T extends unknown[]>(
 export async function requireCustomer(): Promise<SessionPayload> {
   const s = await getSession();
   if (!s || s.role !== "CUSTOMER") throw new HttpError(401, "Please sign in to continue");
-  const user = await db.user.findUnique({ where: { id: s.uid }, select: { blocked: true } });
+  const user = await db.user.findUnique({
+    where: { id: s.uid },
+    select: { blocked: true, role: true },
+  });
   if (!user) throw new HttpError(401, "Please sign in to continue");
   if (user.blocked) throw new HttpError(403, "This account is blocked. Contact support.");
+  // The cookie says CUSTOMER; the database is what decides. A customer promoted
+  // to staff must not keep reaching customer routes on an old cookie either.
+  if (user.role !== "CUSTOMER") throw new HttpError(401, "Please sign in again");
   return s;
 }
 
-/** Staff guard. Pass allowed roles; OWNER always passes. */
+/**
+ * Staff guard. Pass allowed roles; OWNER always passes.
+ *
+ * The role and the blocked flag are re-read from the database on every call,
+ * NOT taken from the cookie.
+ *
+ * The session is a signed JWT that is valid for twelve hours and carries the
+ * role it was minted with. Trusting that field meant blocking a staff member
+ * did nothing until it expired: the account was gone from the dashboard, the
+ * owner had every reason to believe access was revoked, and the browser that
+ * was already signed in kept placing refunds and reading customer numbers for
+ * the rest of the working day. Demotions had the same hole — moving someone
+ * from BRANCH_MANAGER to KITCHEN left them a manager until their cookie ran
+ * out. Blocking someone has to take effect on their next request, so the check
+ * has to happen on the request.
+ */
 export async function requireStaff(...roles: Role[]): Promise<SessionPayload> {
   const s = await getSession();
   if (!s || !STAFF_ROLES.includes(s.role)) throw new HttpError(401, "Staff sign-in required");
-  if (s.role !== "OWNER" && roles.length > 0 && !roles.includes(s.role))
+
+  const user = await db.user.findUnique({
+    where: { id: s.uid },
+    select: { blocked: true, role: true, name: true },
+  });
+  if (!user) throw new HttpError(401, "Staff sign-in required");
+  if (user.blocked) throw new HttpError(403, "This account has been disabled.");
+
+  const role = user.role as Role;
+  if (!STAFF_ROLES.includes(role)) throw new HttpError(403, "This account is no longer staff");
+
+  if (role !== "OWNER" && roles.length > 0 && !roles.includes(role))
     throw new HttpError(403, "You do not have permission for this action");
-  return s;
+
+  // Hand back the live role, so everything downstream — branch scoping, the
+  // per-action role checks inside the order routes — sees the current one.
+  return { ...s, role, name: user.name ?? s.name };
 }
 
 /** Branch scoping: OWNER sees all; others only their assigned branches. */

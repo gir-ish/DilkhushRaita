@@ -183,6 +183,41 @@ export const POST = handler(async (req: Request) => {
     });
 
     if (quote.couponId && quote.coupon.applied) {
+      /*
+       * Re-check the redemption limits here, against the row that is about to
+       * be written.
+       *
+       * buildQuote counted redemptions and found room, but that count was taken
+       * before the stock updates above and — for an online order — before a
+       * round trip to Razorpay to open the gateway order. Several hundred
+       * milliseconds separate the check from the write, and the customer
+       * controls when requests are sent. Firing five checkouts at once with the
+       * same single-use code meant five quotes that each saw zero redemptions
+       * and five discounts granted: enough to empty a "₹200 off, one per
+       * customer" campaign, or to take a totalLimit campaign past its budget.
+       *
+       * Counting inside the transaction, immediately before the insert, closes
+       * that window down to the transaction itself.
+       */
+      const coupon = await tx.coupon.findUnique({
+        where: { id: quote.couponId },
+        select: { perCustomerLimit: true, totalLimit: true },
+      });
+      if (!coupon) throw new HttpError(400, "That offer is no longer available");
+
+      const [mine, total] = await Promise.all([
+        tx.couponRedemption.count({
+          where: { couponId: quote.couponId, userId: session.uid },
+        }),
+        coupon.totalLimit != null
+          ? tx.couponRedemption.count({ where: { couponId: quote.couponId } })
+          : Promise.resolve(0),
+      ]);
+      if (mine >= coupon.perCustomerLimit)
+        throw new HttpError(409, "You have already used this offer");
+      if (coupon.totalLimit != null && total >= coupon.totalLimit)
+        throw new HttpError(409, "This offer is fully redeemed");
+
       await tx.couponRedemption.create({
         data: {
           couponId: quote.couponId,

@@ -18,9 +18,25 @@ const MAX_AGE = 60 * 60 * 24 * 365; // a till browser should not be re-paired mo
 
 function cookieSecure() {
   const v = process.env.COOKIE_SECURE;
+  /*
+   * "false" is a local-testing affordance — it lets a production build be
+   * opened over plain HTTP from a phone on the LAN. In production it means the
+   * browser will send the session cookie over unencrypted HTTP, where anyone
+   * sharing the network can read it and become that user. The same .env gets
+   * copied from a laptop to the server, so the setting travels with it. Ignore
+   * it there and say so.
+   */
+  if (process.env.NODE_ENV === "production") {
+    if (v === "false")
+      console.error(
+        '[cookie] COOKIE_SECURE="false" is IGNORED in production — it would send ' +
+          "session cookies over plain HTTP. Remove it from the server's .env."
+      );
+    return true;
+  }
   if (v === "true") return true;
   if (v === "false") return false;
-  return process.env.NODE_ENV === "production";
+  return false;
 }
 
 export function hashDeviceToken(token: string) {
