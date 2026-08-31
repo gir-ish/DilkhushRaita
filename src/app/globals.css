@@ -668,6 +668,141 @@
     background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.6), transparent);
     animation: shimmer 1.4s infinite;
   }
+
+  /* ------------------------------------------------- landing: branch cards */
+
+  /*
+   * A branch card whose whole surface is one tap target.
+   *
+   * The button keeps the accessible name and the keyboard focus; its ::after is
+   * stretched across the entire card, so a thumb landing anywhere — the
+   * address, the ETA strip, the empty space beside a badge — opens that
+   * branch. On a phone that turns a 44px control into a 250px one, which is
+   * most of what "hard to find the branch" actually amounts to.
+   */
+  .branch-card {
+    position: relative;
+    isolation: isolate;
+  }
+  .branch-card__hit::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+  }
+  /*
+   * Anything the customer might want INSTEAD of the menu — directions, a phone
+   * call — has to sit above that invisible sheet, or the card swallows the tap
+   * and sends them to the menu anyway.
+   */
+  .branch-card__aside {
+    position: relative;
+    z-index: 2;
+  }
+
+  /*
+   * Live status pip. Colour alone is a weak signal at 8px and no signal at all
+   * to a colour-blind eye, so "open" also breathes — the label beside it still
+   * carries the meaning either way.
+   */
+  .status-pip {
+    position: relative;
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    flex: none;
+    border-radius: 9999px;
+    background: var(--leaf);
+  }
+  .status-pip::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: inherit;
+    animation: pip-breathe 2.6s var(--ease-out-expo) infinite;
+  }
+  .status-pip[data-open="false"] {
+    background: color-mix(in oklab, var(--ink) 40%, transparent);
+  }
+  .status-pip[data-open="false"]::after {
+    animation: none;
+    opacity: 0;
+  }
+  @keyframes pip-breathe {
+    0% {
+      transform: scale(1);
+      opacity: 0.6;
+    }
+    70%,
+    100% {
+      transform: scale(2.8);
+      opacity: 0;
+    }
+  }
+
+  /*
+   * Radar rings on the locate button while the browser is taking a fix.
+   * Geolocation reports no progress of its own and can sit for several
+   * seconds; a button that only swaps its label reads as stuck.
+   */
+  .radar::before,
+  .radar::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    height: 100%;
+    aspect-ratio: 1;
+    translate: -50% -50%;
+    border-radius: 9999px;
+    border: 1.5px solid var(--brass);
+    pointer-events: none;
+    animation: radar-ring 1.9s ease-out infinite;
+  }
+  .radar::after {
+    animation-delay: 0.95s;
+  }
+  @keyframes radar-ring {
+    from {
+      transform: scale(0.6);
+      opacity: 0.75;
+    }
+    to {
+      transform: scale(2.4);
+      opacity: 0;
+    }
+  }
+
+  /*
+   * The measured line — how far, how long. Set on its own brass panel away
+   * from the fee and min-order detail, because it is the one thing people
+   * actually compare two branches on.
+   */
+  .measure {
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--brass) 15%, transparent),
+      color-mix(in oklab, var(--brass) 7%, transparent)
+    );
+    border: 1px solid var(--rule-brass);
+  }
+
+  /* Scroll affordance under the hero call to action. */
+  .scroll-cue {
+    animation: cue-bob 2.4s var(--ease-out-expo) infinite;
+  }
+  @keyframes cue-bob {
+    0%,
+    100% {
+      transform: translateY(0);
+      opacity: 0.5;
+    }
+    50% {
+      transform: translateY(6px);
+      opacity: 1;
+    }
+  }
 }
 
 /* =============================================================== utilities */

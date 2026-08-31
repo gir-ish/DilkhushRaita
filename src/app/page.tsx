@@ -63,6 +63,15 @@ function StaggerWords({ text, delayMs = 0 }: { text: string; delayMs?: number })
   );
 }
 
+/*
+ * Page order is the ordering flow, not the brochure order.
+ *
+ * The story used to sit between the hero and the branch cards, which put an
+ * essay between a hungry customer and the only control on the page that starts
+ * an order — on a phone the branches were two full screens down, below a fold
+ * nothing invited you past. Hero → branches → why us → story puts the decision
+ * first and keeps the writing for the people who scroll on.
+ */
 export default function LandingPage() {
   return (
     <>
@@ -77,7 +86,7 @@ export default function LandingPage() {
             className="pattern-jaali absolute inset-0 [mask-image:radial-gradient(ellipse_70%_60%_at_50%_20%,black,transparent_75%)]"
           />
 
-          <div className="relative mx-auto max-w-5xl px-4 pt-10 pb-16 sm:pt-14">
+          <div className="relative mx-auto max-w-5xl px-4 pt-10 pb-12 sm:pt-14">
             <div className="text-center">
               {/* The arch is the signature: a two-centred Mughal profile with a
                   jaali screen inside, drawn on as the page settles. */}
@@ -100,14 +109,29 @@ export default function LandingPage() {
                 Raita Wala
               </p>
 
-              <p className="mt-7 mx-auto max-w-xl text-fluid-base text-maroon-800/75">
+              <p className="mt-6 mx-auto max-w-xl text-fluid-base text-maroon-800/75">
                 <StaggerWords
                   text="Authentic North Indian dhaba food — dal makhani simmered overnight, hot rotis off the tawa, and the raita that gave us our name."
                   delayMs={620}
                 />
               </p>
 
-              <ul className="mt-9 flex flex-wrap items-center justify-center gap-y-3 text-sm font-semibold text-maroon-700">
+              {/*
+                Both actions are anchors rather than buttons: the branch menu is
+                branch-specific, so every route into the food goes through the
+                picker, and naming a slug here would hard-code a branch the
+                owner is free to rename or close.
+              */}
+              <div className="reveal mt-8 flex flex-col sm:flex-row gap-3 justify-center items-stretch sm:items-center">
+                <a href="#branches" className="btn-primary sm:min-w-[15rem]">
+                  🍽️ Start your order
+                </a>
+                <a href="#story" className="btn-outline">
+                  See how we cook
+                </a>
+              </div>
+
+              <ul className="mt-8 flex flex-wrap items-center justify-center gap-y-3 text-sm font-semibold text-maroon-700">
                 {TRUST.map((t, i) => (
                   <li
                     key={t.label}
@@ -122,45 +146,24 @@ export default function LandingPage() {
                   </li>
                 ))}
               </ul>
-            </div>
-          </div>
-        </section>
 
-        {/* ----------------------------------------------------------- story */}
-        <section className="mx-auto max-w-5xl px-4 pb-16" aria-labelledby="story">
-          <div className="frame px-6 py-10 sm:px-14 sm:py-14">
-            <div className="max-w-2xl mx-auto">
-              <p className="eyebrow text-center">Our kitchen</p>
-              <h2
-                id="story"
-                className="font-display text-fluid-3xl font-semibold text-maroon-700 text-center mt-2"
+              {/* Says there is more below without asking for a tap. */}
+              <p
+                aria-hidden
+                className="scroll-cue mt-9 font-display text-2xl leading-none text-mustard-500"
               >
-                Cooked the long way round
-              </h2>
-              <FlourishRule className="draw mx-auto w-44 mt-5 text-mustard-500" />
-
-              <p className="dropcap mt-7 text-fluid-base text-maroon-800/80 leading-relaxed">
-                Every dhaba worth the name is built on patience. Ours starts before the shutters go
-                up: black urad soaking since the night before, onions browning slowly enough to go
-                sweet instead of bitter, the tawa coming up to heat in its own time. Nothing here
-                is finished in a hurry, because the things that make this food taste like home are
-                the ones that cannot be rushed.
-              </p>
-              <p className="mt-4 text-fluid-base text-maroon-800/75 leading-relaxed">
-                The raita is churned fresh every morning — thick, cold, flecked with roasted jeera.
-                It is the thing people come back for, and the reason the board outside says{" "}
-                <em className="text-maroon-700 not-italic font-semibold">Raita Wala</em>.
+                ⌄
               </p>
             </div>
           </div>
         </section>
 
         {/* -------------------------------------------------------- branches */}
-        <section className="mx-auto max-w-5xl px-4">
-          <header className="text-center mb-8">
+        <section id="branches" className="mx-auto max-w-5xl px-4 pt-4">
+          <header className="text-center mb-7">
             <p className="eyebrow">Two kitchens</p>
             <h2 className="font-display text-fluid-2xl font-semibold text-maroon-700 mt-1.5">
-              Choose your branch
+              Which one is closest to you?
             </h2>
             <FlourishRule className="mx-auto w-40 mt-4 text-mustard-500" />
           </header>
@@ -206,6 +209,43 @@ export default function LandingPage() {
                 <p className="text-sm text-maroon-800/70 mt-2.5 leading-relaxed">{c.copy}</p>
               </article>
             ))}
+          </div>
+        </section>
+
+        {/* ----------------------------------------------------------- story */}
+        <section id="story" className="mx-auto max-w-5xl px-4 pb-16" aria-labelledby="story-title">
+          <div className="frame px-6 py-10 sm:px-14 sm:py-14">
+            <div className="max-w-2xl mx-auto">
+              <p className="eyebrow text-center">Our kitchen</p>
+              <h2
+                id="story-title"
+                className="font-display text-fluid-3xl font-semibold text-maroon-700 text-center mt-2"
+              >
+                Cooked the long way round
+              </h2>
+              <FlourishRule className="draw mx-auto w-44 mt-5 text-mustard-500" />
+
+              <p className="dropcap mt-7 text-fluid-base text-maroon-800/80 leading-relaxed">
+                Every dhaba worth the name is built on patience. Ours starts before the shutters go
+                up: black urad soaking since the night before, onions browning slowly enough to go
+                sweet instead of bitter, the tawa coming up to heat in its own time. Nothing here
+                is finished in a hurry, because the things that make this food taste like home are
+                the ones that cannot be rushed.
+              </p>
+              <p className="mt-4 text-fluid-base text-maroon-800/75 leading-relaxed">
+                The raita is churned fresh every morning — thick, cold, flecked with roasted jeera.
+                It is the thing people come back for, and the reason the board outside says{" "}
+                <em className="text-maroon-700 not-italic font-semibold">Raita Wala</em>.
+              </p>
+
+              {/* Whoever read all of that is interested. Do not make them
+                  scroll back up to act on it. */}
+              <p className="text-center mt-9">
+                <a href="#branches" className="btn-secondary">
+                  Pick a branch and order →
+                </a>
+              </p>
+            </div>
           </div>
         </section>
 

@@ -1,6 +1,14 @@
 /* DilKhush Dhaba service worker: cache app shell, offline fallback, update flow. */
-const CACHE = "dk-shell-v1";
-const SHELL = ["/offline.html", "/manifest.webmanifest", "/icon.svg"];
+/* Bumped when SHELL changes: activate deletes every cache that is not this one. */
+const CACHE = "dk-shell-v2";
+const SHELL = [
+  "/offline.html",
+  "/manifest.webmanifest",
+  "/icon.svg",
+  // Precached because the install prompt shows this icon, and an install bar
+  // with a missing image is worse than none at all.
+  "/icon-192.png",
+];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
