@@ -34,12 +34,6 @@ const CRAFT = [
   },
 ];
 
-const TRUST = [
-  { icon: "⭐", label: "4.6 average rating" },
-  { icon: "📍", label: "Rohini & NSP, Delhi" },
-  { icon: "🟢", label: "Pure veg options" },
-];
-
 /** Splits a line into masked, index-staggered words for the rise animation. */
 function StaggerWords({ text, delayMs = 0 }: { text: string; delayMs?: number }) {
   const words = text.split(" ");
@@ -117,43 +111,16 @@ export default function LandingPage() {
               </p>
 
               {/*
-                Both actions are anchors rather than buttons: the branch menu is
-                branch-specific, so every route into the food goes through the
-                picker, and naming a slug here would hard-code a branch the
-                owner is free to rename or close.
+                One action, and it is an anchor rather than a button: the menu
+                is branch-specific, so every route into the food goes through
+                the picker below, and naming a slug here would hard-code a
+                branch the owner is free to rename or close.
               */}
-              <div className="reveal mt-8 flex flex-col sm:flex-row gap-3 justify-center items-stretch sm:items-center">
-                <a href="#branches" className="btn-primary sm:min-w-[15rem]">
-                  🍽️ Start your order
-                </a>
-                <a href="#story" className="btn-outline">
-                  See how we cook
+              <div className="reveal mt-8 flex justify-center">
+                <a href="#branches" className="btn-primary">
+                  📍 Find the Closest Branch
                 </a>
               </div>
-
-              <ul className="mt-8 flex flex-wrap items-center justify-center gap-y-3 text-sm font-semibold text-maroon-700">
-                {TRUST.map((t, i) => (
-                  <li
-                    key={t.label}
-                    className={`inline-flex items-center gap-2 px-4 sm:px-5 ${
-                      i > 0 ? "sm:border-l sm:border-maroon-800/15" : ""
-                    }`}
-                  >
-                    <span aria-hidden className="text-mustard-500">
-                      {t.icon}
-                    </span>
-                    {t.label}
-                  </li>
-                ))}
-              </ul>
-
-              {/* Says there is more below without asking for a tap. */}
-              <p
-                aria-hidden
-                className="scroll-cue mt-9 font-display text-2xl leading-none text-mustard-500"
-              >
-                ⌄
-              </p>
             </div>
           </div>
         </section>

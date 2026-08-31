@@ -787,22 +787,6 @@
     );
     border: 1px solid var(--rule-brass);
   }
-
-  /* Scroll affordance under the hero call to action. */
-  .scroll-cue {
-    animation: cue-bob 2.4s var(--ease-out-expo) infinite;
-  }
-  @keyframes cue-bob {
-    0%,
-    100% {
-      transform: translateY(0);
-      opacity: 0.5;
-    }
-    50% {
-      transform: translateY(6px);
-      opacity: 1;
-    }
-  }
 }
 
 /* =============================================================== utilities */

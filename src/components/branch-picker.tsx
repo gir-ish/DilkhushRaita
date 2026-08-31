@@ -290,7 +290,7 @@ export function BranchPicker() {
           ))}
         </div>
       ) : (
-        <div className="grid sm:grid-cols-2 gap-5 max-w-3xl mx-auto items-start">
+        <div className="grid sm:grid-cols-2 gap-5 max-w-3xl mx-auto">
           {ordered.map((b, i) => (
             <article
               key={b.id}
@@ -301,14 +301,28 @@ export function BranchPicker() {
               }`}
               style={{ "--i": i } as React.CSSProperties}
             >
-              {/* Brass cap on the recommended branch — the eye needs one place
-                  to land when both are serviceable. It names the reason,
-                  because "recommended by whom" is a fair question. */}
-              {recommended === b.id && (
-                <p className="bg-gradient-to-r from-mustard-300 via-mustard-400 to-mustard-300 px-5 py-1.5 text-center text-[11px] font-bold uppercase tracking-kicker text-maroon-800">
-                  ⭐ {crest}
-                </p>
-              )}
+              {/*
+                Brass cap on the recommended branch — the eye needs one place to
+                land when both are serviceable, and it names the reason, because
+                "recommended by whom" is a fair question.
+
+                It is ALWAYS rendered, and merely made invisible on the branch
+                that did not win. Mounting it only on the winner would make that
+                card's contents drop by the height of the strip the moment a
+                location came back, so the two cards stopped lining up and every
+                row below jumped. Reserving the space costs nothing and keeps
+                both cards identical whether or not anything is recommended.
+              */}
+              <p
+                aria-hidden={recommended !== b.id}
+                className={`px-5 py-1.5 text-center text-[11px] font-bold uppercase tracking-kicker ${
+                  recommended === b.id
+                    ? "bg-gradient-to-r from-mustard-300 via-mustard-400 to-mustard-300 text-maroon-800"
+                    : "invisible"
+                }`}
+              >
+                ⭐ {recommended === b.id ? crest : "Recommended"}
+              </p>
 
               <div className="p-5 flex flex-col gap-3 flex-1">
                 {/* Status first: whether the kitchen is on is the one thing that
@@ -324,7 +338,7 @@ export function BranchPicker() {
                 </div>
 
                 <div>
-                  <h3 className="font-display text-fluid-xl font-semibold text-maroon-700 leading-snug">
+                  <h3 className="font-display text-fluid-xl font-semibold text-maroon-700 leading-snug sm:min-h-[2.75em]">
                     {b.name}
                   </h3>
                   <p className="text-sm text-maroon-800/65 leading-relaxed mt-1">{b.address}</p>
@@ -337,7 +351,7 @@ export function BranchPicker() {
                   {b.distanceKm !== undefined ? (
                     <>
                       <span className="min-w-0">
-                        <span className="block font-display text-fluid-lg font-semibold text-maroon-700 money">
+                        <span className="block font-display text-fluid-base font-semibold text-maroon-700 money">
                           ≈{b.distanceKm} km
                         </span>
                         <span className="block text-[10px] font-bold uppercase tracking-kicker text-maroon-800/55">
@@ -346,7 +360,7 @@ export function BranchPicker() {
                       </span>
                       <span aria-hidden className="h-8 w-px bg-maroon-800/15" />
                       <span className="min-w-0">
-                        <span className="block font-display text-fluid-lg font-semibold text-maroon-700 money">
+                        <span className="block font-display text-fluid-base font-semibold text-maroon-700 money">
                           ~{b.etaMins} min
                         </span>
                         <span className="block text-[10px] font-bold uppercase tracking-kicker text-maroon-800/55">
@@ -356,7 +370,7 @@ export function BranchPicker() {
                     </>
                   ) : (
                     <span>
-                      <span className="block font-display text-fluid-lg font-semibold text-maroon-700 money">
+                      <span className="block font-display text-fluid-base font-semibold text-maroon-700 money">
                         ~{b.prepTimeMins ?? 25} min
                       </span>
                       <span className="block text-[10px] font-bold uppercase tracking-kicker text-maroon-800/55">
