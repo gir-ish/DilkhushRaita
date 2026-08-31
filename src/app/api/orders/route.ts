@@ -264,7 +264,23 @@ export const POST = handler(async (req: Request) => {
 export const GET = handler(async () => {
   const session = await requireCustomer();
   const orders = await db.order.findMany({
-    where: { userId: session.uid },
+    /*
+     * An online order that was never paid for is not an order yet.
+     *
+     * The row has to exist before the payment window can open — Razorpay needs
+     * something to attach the money to, and the webhook needs something to find
+     * when it arrives. But showing it here means a customer whose payment
+     * failed opens My Orders and sees it sitting there as though the kitchen
+     * had it, which is exactly the opposite of true: the dashboard hides it
+     * from the queue for the same reason.
+     *
+     * It reappears the moment payment lands, from either the browser or the
+     * webhook.
+     */
+    where: {
+      userId: session.uid,
+      NOT: { paymentMethod: "ONLINE", paymentStatus: { not: "PAID" } },
+    },
     orderBy: { placedAt: "desc" },
     take: 50,
     include: { items: true, branch: { select: { name: true, slug: true } } },

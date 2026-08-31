@@ -87,16 +87,58 @@ const ARRIVED_HOLD_MS = 1500;
 const REDUCED_DRIVE_MS = 500;
 const REDUCED_HOLD_MS = 700;
 
-function loadRazorpayScript(): Promise<boolean> {
+/**
+ * Loads Razorpay Checkout, and says which way it failed.
+ *
+ * "Could not open the payment window" covered three very different faults —
+ * the request never arriving, the script arriving but refusing to run, and it
+ * running without defining anything — and a customer cannot tell them apart to
+ * report. Naming them costs nothing and is the difference between reading a
+ * message and guessing at a cause, which is how an afternoon went once already.
+ */
+type ScriptFailure = "blocked" | "empty" | "timeout" | null;
+
+function loadRazorpayScript(): Promise<ScriptFailure> {
   return new Promise((resolve) => {
-    if (window.Razorpay) return resolve(true);
+    if (window.Razorpay) return resolve(null);
+
     const s = document.createElement("script");
     s.src = "https://checkout.razorpay.com/v1/checkout.js";
-    s.onload = () => resolve(true);
-    s.onerror = () => resolve(false);
+    s.async = true;
+
+    // A blocked request can hang rather than error — a captive portal, or a
+    // network that swallows the connection — and without this the customer
+    // waits on a spinner with nothing ever resolving it.
+    const timer = setTimeout(() => finish("timeout"), 15_000);
+    let settled = false;
+    const finish = (why: ScriptFailure) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (why) console.error(`[pay] Razorpay checkout could not load: ${why}`);
+      resolve(why);
+    };
+
+    // onerror covers the network refusing it and the CSP refusing it alike;
+    // onload firing without window.Razorpay means it ran and threw.
+    s.onerror = () => finish("blocked");
+    s.onload = () => finish(window.Razorpay ? null : "empty");
     document.body.appendChild(s);
   });
 }
+
+const SCRIPT_FAILURE_MESSAGE: Record<NonNullable<ScriptFailure>, string> = {
+  blocked:
+    "The payment window was blocked before it could load. An ad blocker, a VPN, " +
+    "or a restricted network will do this — try again on mobile data, or choose " +
+    "Cash on Delivery.",
+  empty:
+    "The payment window loaded but could not start. Please try again in a moment, " +
+    "or choose Cash on Delivery.",
+  timeout:
+    "The payment window took too long to load. Check your connection and try again, " +
+    "or choose Cash on Delivery.",
+};
 
 export default function CheckoutPage() {
   const cart = useCart();
@@ -192,9 +234,25 @@ export default function CheckoutPage() {
    */
   const payWithRazorpay = async (d: PlaceOrderResponse) => {
     const pay = d.payment!;
-    if (!(await loadRazorpayScript()) || !window.Razorpay) {
+    const failure = await loadRazorpayScript();
+    if (failure || !window.Razorpay) {
+      /*
+       * The payment window never opened, so no payment can be in flight, and
+       * the order must not be left behind looking placed.
+       *
+       * This is the one failure where cancelling is unambiguous. Everywhere
+       * else the customer may have paid and we simply have not heard, which is
+       * why /api/payments/abandon asks Razorpay before it cancels anything —
+       * but here Razorpay was never reached at all.
+       */
+      await fetch("/api/payments/abandon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: d.orderId }),
+        keepalive: true,
+      }).catch(() => {});
       setError(
-        "Could not open the payment window. Check your connection and retry from My Orders — your order is saved as unpaid."
+        `${SCRIPT_FAILURE_MESSAGE[failure ?? "empty"]} Nothing was ordered and nothing was charged.`
       );
       abortPlacing();
       return;
