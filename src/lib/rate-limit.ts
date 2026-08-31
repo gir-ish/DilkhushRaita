@@ -144,11 +144,81 @@ export function recordIdentityFailure(kind: string, identity: string, windowMs: 
 /** Call after a genuine sign-in, so an honest typo never accumulates. */
 export function clearIdentityFailures(kind: string, identity: string) {
   buckets.delete(identityKey(kind, identity));
+  lockouts.delete(identityKey(kind, identity));
+}
+
+/*
+ * Lockouts, kept apart from the failure counts on purpose.
+ *
+ * A sliding window forgets: three wrong passwords inside five minutes stops
+ * mattering once those five minutes pass, so a patient script simply waits and
+ * carries on. A lockout is the opposite — it is earned inside the window and
+ * then has to outlive it, which is what turns "slow down" into "stop".
+ */
+const lockouts = new Map<string, number>();
+
+export interface LockState {
+  locked: boolean;
+  /** Milliseconds until it lifts. Zero when not locked. */
+  retryAfterMs: number;
+}
+
+/** Is this identity currently locked out? Records nothing. */
+export function identityLock(kind: string, identity: string): LockState {
+  const until = lockouts.get(identityKey(kind, identity));
+  if (until === undefined) return { locked: false, retryAfterMs: 0 };
+  const left = until - Date.now();
+  if (left <= 0) {
+    lockouts.delete(identityKey(kind, identity));
+    return { locked: false, retryAfterMs: 0 };
+  }
+  return { locked: true, retryAfterMs: left };
+}
+
+/**
+ * Records a failure and locks the identity out once too many land inside the
+ * window. Returns the state after recording, so the caller can say how long.
+ *
+ * Failures only, and cleared by a real sign-in — counting every attempt would
+ * hand anyone who knows an email address a way to shut that person out on
+ * demand.
+ */
+export function recordFailureWithLockout(
+  kind: string,
+  identity: string,
+  max: number,
+  windowMs: number,
+  lockoutMs: number
+): LockState {
+  const now = Date.now();
+  const key = identityKey(kind, identity);
+  if (buckets.size >= SWEEP_AT) prune(now, windowMs);
+
+  const hits = (buckets.get(key) ?? []).filter((t) => now - t < windowMs);
+  hits.push(now);
+  buckets.set(key, hits);
+
+  if (hits.length >= max) {
+    lockouts.set(key, now + lockoutMs);
+    // The count is spent: it has become the lockout, and leaving it behind
+    // would re-lock on the first failure after the block lifts.
+    buckets.delete(key);
+    return { locked: true, retryAfterMs: lockoutMs };
+  }
+  return { locked: false, retryAfterMs: 0 };
+}
+
+/** How many tries are left before the door shuts. */
+export function triesLeft(kind: string, identity: string, max: number, windowMs: number): number {
+  const now = Date.now();
+  const hits = (buckets.get(identityKey(kind, identity)) ?? []).filter((t) => now - t < windowMs);
+  return Math.max(0, max - hits.length);
 }
 
 /** Test seam: forget every recorded hit. */
 export function __resetRateLimits() {
   buckets.clear();
+  lockouts.clear();
 }
 
 /** Test seam: how many keys are being tracked right now. */
