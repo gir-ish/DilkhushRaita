@@ -313,12 +313,22 @@ export function PrintSheet({
   variant: initial = "bill",
   onClose,
   allowKot = true,
+  allowPrint = true,
 }: {
   order: PrintableOrder;
   variant?: "bill" | "kot";
   onClose: () => void;
   /** Off for customers — a kitchen ticket is a staff document. */
   allowKot?: boolean;
+  /**
+   * Off for customers, who get to read their bill and nothing more.
+   *
+   * Printing belongs to whoever is standing at the counter: it is the shop's
+   * copy, on the shop's paper, from the shop's printer. A customer reaching it
+   * from their own phone can only ever send a job to a printer they are not
+   * standing next to, or spend the shop's roll.
+   */
+  allowPrint?: boolean;
 }) {
   const [variant, setVariant] = useState<"bill" | "kot">(initial);
   const [mounted, setMounted] = useState(false);
@@ -368,10 +378,14 @@ export function PrintSheet({
           ) : (
             <div className="flex-1" />
           )}
-          <BluetoothPrint order={order} variant={variant} />
-          <button onClick={() => window.print()} className="btn-secondary !min-h-[44px]">
-            🖨️ Print
-          </button>
+          {allowPrint && (
+            <>
+              <BluetoothPrint order={order} variant={variant} />
+              <button onClick={() => window.print()} className="btn-secondary !min-h-[44px]">
+                🖨️ Print
+              </button>
+            </>
+          )}
           <button
             onClick={onClose}
             className="btn-ghost !min-h-[44px] !bg-white/15 !text-white hover:!bg-white/25"

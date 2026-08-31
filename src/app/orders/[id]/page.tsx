@@ -303,7 +303,12 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
         {/* The same bill the counter prints. allowKot is off: a kitchen ticket
             is a staff document and has no place in a customer's invoice. */}
         {showBill && (
-          <PrintSheet order={order} allowKot={false} onClose={() => setShowBill(false)} />
+          <PrintSheet
+            order={order}
+            allowKot={false}
+            allowPrint={false}
+            onClose={() => setShowBill(false)}
+          />
         )}
       </main>
     </>
