@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { SmsCampaign } from "@/components/admin/sms-campaign";
 import { ErrorBox, Modal, Spinner } from "@/components/ui";
 import { inr } from "@/lib/utils";
 
@@ -124,6 +125,7 @@ export default function MarketingPage() {
       </section>
 
       <PointValueEditor />
+      <SmsCampaign />
       {tiers && <TierEditor tiers={tiers} onSaved={load} />}
       {showNew && <CouponModal onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); load(); }} />}
       {editing && (

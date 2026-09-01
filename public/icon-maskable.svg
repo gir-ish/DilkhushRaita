@@ -1,19 +1,39 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="DilKhush Dhaba">
   <!--
-    Maskable variant. Android crops this to whatever shape the launcher uses —
-    circle, squircle, teardrop — so the art is drawn inside the safe zone (the
-    centre 80%, i.e. a circle of radius 205 about the middle) and the maroon
-    runs edge to edge with no rounded corners of its own. Anything outside that
-    circle must be background only, or a round launcher will slice it off.
+    Maskable variant of icon.svg. Android crops this to whatever shape the
+    launcher uses - circle, squircle, teardrop - keeping only the centre 80%
+    (a circle of radius 205). The wordmark reaches the corners of the art, so
+    the whole composition is recentred and scaled to sit inside that circle,
+    and the maroon runs edge to edge with no rounded corners of its own.
+
+    Generated from icon.svg - do not hand-edit; change icon.svg and re-run
+    scripts/make-icons.mjs.
   -->
-  <rect width="512" height="512" fill="#71201C"/>
-  <g transform="translate(256 256) scale(0.72) translate(-256 -256)">
-    <g fill="none" stroke="#DFC57C" stroke-width="18" stroke-linecap="round">
-      <path d="M196 206c-22-26 22-42 0-68"/>
-      <path d="M256 196c-22-26 22-42 0-68"/>
-      <path d="M316 206c-22-26 22-42 0-68"/>
+  <rect width="512" height="512" fill="#7B1E1E"/>
+  <g transform="translate(256 256) scale(0.82) translate(-256 -245)"><text x="256" y="120" text-anchor="middle" fill="#FAF3E3" font-weight="bold"
+          font-size="64" font-family="Georgia, 'Times New Roman', 'Liberation Serif', serif">DilKhush</text>
+  
+    <circle cx="256" cy="280" r="136" fill="#FAF3E3"/>
+    <circle cx="256" cy="280" r="104" fill="#DFB53E"/>
+  
+    <!-- Handles sit behind the pan so the body covers where they meet it. -->
+    <g fill="#5A4790">
+      <circle cx="214" cy="244" r="13"/>
+      <circle cx="298" cy="316" r="13"/>
     </g>
-    <rect x="104" y="252" width="304" height="34" rx="17" fill="#DFC57C"/>
-    <path d="M132 286h248a124 124 0 0 1-248 0z" fill="#FAF3E3"/>
+    <circle cx="214" cy="244" r="5" fill="#DFB53E"/>
+    <circle cx="298" cy="316" r="5" fill="#DFB53E"/>
+  
+    <circle cx="256" cy="280" r="52" fill="#5A4790"/>
+    <circle cx="256" cy="280" r="41" fill="#453573"/>
+    <circle cx="256" cy="280" r="33" fill="#FFD34E"/>
+  
+    <!-- Peppers and peas. Everything stays inside r=29 so nothing clips the rim. -->
+    <ellipse cx="246" cy="268" rx="7" ry="4.5" fill="#7BC142" transform="rotate(-25 246 268)"/>
+    <ellipse cx="264" cy="286" rx="7" ry="4.5" fill="#7BC142" transform="rotate(20 264 286)"/>
+    <circle cx="268" cy="270" r="5" fill="#F1892E"/>
+    <circle cx="242" cy="288" r="4.5" fill="#F1892E"/>
+    <circle cx="258" cy="262" r="4" fill="#E24B3F"/>
+    <circle cx="270" cy="294" r="4" fill="#E24B3F"/>
   </g>
 </svg>

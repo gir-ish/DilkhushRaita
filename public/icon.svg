@@ -1,20 +1,41 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="DilKhush Dhaba">
   <!--
-    PLACEHOLDER brand mark — a katori of raita, which is what the shop is known
-    for. Replace with the real logo when there is one, then re-run
-    `node scripts/make-icons.mjs` to rebuild every PNG size from this file.
+    The shop's mark: the wordmark over a katori of dhaba food, on brand maroon.
+    Drawn at 512 so the PNGs in make-icons.mjs come off it crisply.
 
-    Deliberately pure vector: no emoji and no font text. An emoji renders in
-    whatever the rasteriser happens to have (ours came out as a flat monochrome
-    blob), and "DilKhush" set at this size is unreadable once Android squeezes
-    the icon into a 48px launcher tile. Shapes survive both.
+    The dish is vector, not the 🥘 emoji it was first sketched with. An emoji is
+    drawn by whatever font the *rasteriser* owns, and ours has only the
+    monochrome fallback — the pan came out a flat black blob in every generated
+    PNG while looking perfectly colourful in Chrome. These paths are the same
+    dish, and they come out the same on every device and in every size.
+
+    Edit here, then re-run `node scripts/make-icons.mjs` to rebuild every PNG.
   -->
-  <rect width="512" height="512" rx="112" fill="#71201C"/>
-  <g fill="none" stroke="#DFC57C" stroke-width="18" stroke-linecap="round">
-    <path d="M196 206c-22-26 22-42 0-68"/>
-    <path d="M256 196c-22-26 22-42 0-68"/>
-    <path d="M316 206c-22-26 22-42 0-68"/>
+  <rect width="512" height="512" rx="112" fill="#7B1E1E"/>
+
+  <text x="256" y="120" text-anchor="middle" fill="#FAF3E3" font-weight="bold"
+        font-size="64" font-family="Georgia, 'Times New Roman', 'Liberation Serif', serif">DilKhush</text>
+
+  <circle cx="256" cy="280" r="136" fill="#FAF3E3"/>
+  <circle cx="256" cy="280" r="104" fill="#DFB53E"/>
+
+  <!-- Handles sit behind the pan so the body covers where they meet it. -->
+  <g fill="#5A4790">
+    <circle cx="214" cy="244" r="13"/>
+    <circle cx="298" cy="316" r="13"/>
   </g>
-  <rect x="104" y="252" width="304" height="34" rx="17" fill="#DFC57C"/>
-  <path d="M132 286h248a124 124 0 0 1-248 0z" fill="#FAF3E3"/>
+  <circle cx="214" cy="244" r="5" fill="#DFB53E"/>
+  <circle cx="298" cy="316" r="5" fill="#DFB53E"/>
+
+  <circle cx="256" cy="280" r="52" fill="#5A4790"/>
+  <circle cx="256" cy="280" r="41" fill="#453573"/>
+  <circle cx="256" cy="280" r="33" fill="#FFD34E"/>
+
+  <!-- Peppers and peas. Everything stays inside r=29 so nothing clips the rim. -->
+  <ellipse cx="246" cy="268" rx="7" ry="4.5" fill="#7BC142" transform="rotate(-25 246 268)"/>
+  <ellipse cx="264" cy="286" rx="7" ry="4.5" fill="#7BC142" transform="rotate(20 264 286)"/>
+  <circle cx="268" cy="270" r="5" fill="#F1892E"/>
+  <circle cx="242" cy="288" r="4.5" fill="#F1892E"/>
+  <circle cx="258" cy="262" r="4" fill="#E24B3F"/>
+  <circle cx="270" cy="294" r="4" fill="#E24B3F"/>
 </svg>

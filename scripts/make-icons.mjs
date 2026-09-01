@@ -27,7 +27,7 @@ const ROOT = path.resolve(import.meta.dirname, "..");
 const PUBLIC = path.join(ROOT, "public");
 
 /** The maroon behind the art, used to square off the Apple icon. */
-const BRAND_BG = "#71201C";
+const BRAND_BG = "#7B1E1E";
 
 let sharp;
 try {

@@ -1,6 +1,6 @@
 /* DilKhush Dhaba service worker: cache app shell, offline fallback, update flow. */
 /* Bumped when SHELL changes: activate deletes every cache that is not this one. */
-const CACHE = "dk-shell-v3";
+const CACHE = "dk-shell-v4";
 const SHELL = [
   "/offline.html",
   "/manifest.webmanifest",
