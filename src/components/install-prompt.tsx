@@ -91,12 +91,69 @@ function offerFor(app: (typeof APPS)[keyof typeof APPS]): InstallEvent | null {
 const SNOOZE_DAYS = 14;
 
 /**
+ * What the bar is offering.
+ *
+ *   prompt — the browser handed us a real install offer; one tap does it.
+ *   ios    — no offer exists and none ever will; point at the Share sheet.
+ *   manual — the browser can install this but did not offer, so name the menu
+ *            item that does it. Dashboard only; see the note where it is set.
+ */
+type Mode = "prompt" | "ios" | "manual" | null;
+
+/**
  * Long enough that the bar does not race the first paint or cover the hero
  * before it has been read; short enough that it is still obviously part of
  * arriving on the site. A customer who has already tapped through to something
  * has told us they are busy, and the checks below get out of the way.
  */
 const APPEAR_AFTER_MS = 3500;
+
+/**
+ * The manual fallback waits longer than a real offer, deliberately.
+ *
+ * `beforeinstallprompt` does not always arrive with the first paint — the
+ * browser may still be fetching the manifest and checking the worker. Giving a
+ * late offer a clear run at winning stops us telling the owner to go hunting
+ * through a menu a second before the one-tap button was going to appear.
+ */
+const MANUAL_AFTER_MS = 6000;
+
+/**
+ * Where "install this page as an app" lives in the menu of whatever is running.
+ *
+ * Every browser buries it somewhere different and renames it every few
+ * versions, so this names the trail rather than promising exact words.
+ */
+function manualHint(): string {
+  const ua = navigator.userAgent;
+  const mobile = /android|mobile/i.test(ua);
+  /*
+   * iOS, but not Safari — Chrome, Firefox, Edge and Opera on an iPhone.
+   *
+   * They are all Safari underneath and none of them can install a web app:
+   * only Safari's own share sheet carries the entry that does it. Their menus
+   * DO have similarly named items, which is worse than having none, so the
+   * only honest instruction is to change browser first. Checked before the
+   * per-browser branches below, which would otherwise match on the engine
+   * name and send the owner to a menu item that quietly does nothing.
+   */
+  if (isIos()) {
+    return "Open this page in Safari, then tap Share → Add to Home Screen. Only Safari can install an app on iPhone.";
+  }
+  if (/edg/i.test(ua)) {
+    return mobile
+      ? "Open the ⋯ menu, then choose Add to phone."
+      : "Open the ⋯ menu, then Apps → Install this site as an app.";
+  }
+  if (/firefox|fxios/i.test(ua)) {
+    return mobile
+      ? "Open the ⋮ menu, then choose Install."
+      : "Firefox on a computer cannot install apps — open this page in Chrome or Edge.";
+  }
+  return mobile
+    ? "Open the ⋮ menu, then choose Add to Home screen."
+    : "Open the ⋮ menu, then look for Install page as an app (older versions say Install…).";
+}
 
 /** Already installed — the app is running from the home screen icon. */
 function isInstalled(): boolean {
@@ -107,14 +164,18 @@ function isInstalled(): boolean {
   );
 }
 
-function isIosSafari(): boolean {
-  const ua = navigator.userAgent;
-  const ios =
-    /iphone|ipad|ipod/i.test(ua) ||
+function isIos(): boolean {
+  return (
+    /iphone|ipad|ipod/i.test(navigator.userAgent) ||
     // iPadOS 13+ reports itself as a Mac. A desktop Mac has no touch screen,
     // so the touch points are what separate them.
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  if (!ios) return false;
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+}
+
+function isIosSafari(): boolean {
+  const ua = navigator.userAgent;
+  if (!isIos()) return false;
   /*
    * Chrome, Firefox and Edge on iOS are Safari underneath, but only Safari's
    * own share sheet carries "Add to Home Screen". Showing these instructions
@@ -153,7 +214,7 @@ function snooze(key: string) {
 export function InstallPrompt() {
   const pathname = usePathname();
   const { count } = useCart();
-  const [mode, setMode] = useState<"prompt" | "ios" | null>(null);
+  const [mode, setMode] = useState<Mode>(null);
 
   /*
    * Which app the page in front of us belongs to. The browser has already
@@ -189,15 +250,28 @@ export function InstallPrompt() {
     if (isInstalled() || suppressed(app.storageKey)) return;
 
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const showLater = (m: "prompt" | "ios") => {
+    const showLater = (m: Mode, after = APPEAR_AFTER_MS) => {
       clearTimeout(timer);
-      timer = setTimeout(() => setMode(m), APPEAR_AFTER_MS);
+      timer = setTimeout(() => setMode(m), after);
     };
 
     // The event usually fires before React has hydrated, which is why it is
     // caught in the document head and parked on `window` for us to find here.
     if (offerFor(app)) showLater("prompt");
     else if (isIosSafari()) showLater("ios");
+    /*
+     * No offer, and not an iPhone: the browser can install this and simply
+     * chose not to say so. Chrome stays quiet when the page already sits
+     * inside the scope of an app that is installed — and the shop app's scope
+     * is "/", which covers the dashboard — so an owner with the customer app
+     * on their phone is never offered the dashboard, with nothing to explain
+     * the silence.
+     *
+     * Only for the dashboard. It is one owner, on their own device, who has
+     * asked for this app; showing every customer a menu-hunting instruction
+     * because their browser declined to offer an install would be spam.
+     */
+    else if (app === APPS.admin) showLater("manual", MANUAL_AFTER_MS);
 
     const onInstallable = () => {
       if (offerFor(app)) showLater("prompt");
@@ -243,6 +317,10 @@ export function InstallPrompt() {
 
   if (!mode) return null;
 
+  // Safe to read navigator here: `mode` is null until the effect has run, so
+  // this is never reached during server rendering or the first paint.
+  const hint = mode === "manual" ? manualHint() : "";
+
   return (
     <aside
       aria-label={app.label}
@@ -270,6 +348,8 @@ export function InstallPrompt() {
                   Tap <IosShareIcon /> in the toolbar below, then choose{" "}
                   <span className="font-semibold text-maroon-800">Add to Home Screen</span>.
                 </>
+              ) : mode === "manual" ? (
+                hint
               ) : (
                 app.body
               )}
