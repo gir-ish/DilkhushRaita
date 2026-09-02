@@ -1,0 +1,40 @@
+{
+  "id": "/admin",
+  "name": "DilKhush Dashboard",
+  "short_name": "Dashboard",
+  "description": "Counter, kitchen and orders for DilKhush Dhaba staff.",
+  "start_url": "/admin?source=pwa",
+  "scope": "/admin",
+  "display": "standalone",
+  "lang": "en-IN",
+  "dir": "ltr",
+  "categories": ["business", "productivity"],
+  "background_color": "#FAF3E3",
+  "theme_color": "#382C5C",
+  "icons": [
+    { "src": "/icon-admin-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-admin-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-admin-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icon-admin-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Counter",
+      "short_name": "Counter",
+      "url": "/admin/counter?source=pwa",
+      "icons": [{ "src": "/icon-admin-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Order queue",
+      "short_name": "Orders",
+      "url": "/admin/orders?source=pwa",
+      "icons": [{ "src": "/icon-admin-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Kitchen",
+      "short_name": "Kitchen",
+      "url": "/admin/kitchen?source=pwa",
+      "icons": [{ "src": "/icon-admin-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

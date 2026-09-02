@@ -36,10 +36,58 @@ declare global {
   interface Window {
     /** Stashed by the inline script in layout.tsx — see the note there. */
     __dkInstallEvent?: InstallEvent | null;
+    /** The path that was open when the event above fired. */
+    __dkInstallPath?: string | null;
   }
 }
 
-const SNOOZE_KEY = "dk_install";
+/**
+ * The two installable apps on this origin, and what to say about each.
+ *
+ * The dashboard is a second app with its own manifest, icon and scope — see
+ * src/app/admin/layout.tsx. Which one a browser is offering depends entirely
+ * on which page the customer or the owner is standing on, so this component
+ * only has to pick the right words for it. The dismissals are remembered
+ * separately: a customer who waved away the shop app has said nothing at all
+ * about the dashboard, and an owner who installed the dashboard should still
+ * be asked about the shop.
+ */
+const APPS = {
+  shop: {
+    storageKey: "dk_install",
+    icon: "/icon-192.png",
+    label: "Install the DilKhush app",
+    title: "Install the DilKhush app",
+    iosTitle: "Add DilKhush to your Home Screen",
+    body: "Order in one tap from your home screen. No app store, no download.",
+  },
+  admin: {
+    storageKey: "dk_install_admin",
+    icon: "/icon-admin-192.png",
+    label: "Install the DilKhush Dashboard app",
+    title: "Install the Dashboard app",
+    iosTitle: "Add the Dashboard to your Home Screen",
+    body: "Open the counter from your home screen — no browser, no address to type.",
+  },
+} as const;
+
+/** Which of the two apps a given path belongs to. */
+function appFor(pathname: string) {
+  return pathname.startsWith("/admin") ? APPS.admin : APPS.shop;
+}
+
+/**
+ * The parked install offer, but only if it belongs to the app we are about to
+ * name. After a client-side navigation across the /admin boundary the offer
+ * left on `window` is the other app's, and no fresh event follows — there is
+ * no new document for the browser to fire one into.
+ */
+function offerFor(app: (typeof APPS)[keyof typeof APPS]): InstallEvent | null {
+  const evt = window.__dkInstallEvent;
+  if (!evt) return null;
+  return appFor(window.__dkInstallPath ?? "/") === app ? evt : null;
+}
+
 const SNOOZE_DAYS = 14;
 
 /**
@@ -76,10 +124,10 @@ function isIosSafari(): boolean {
   return !/crios|fxios|edgios|opios/i.test(ua);
 }
 
-/** True while the customer has asked not to be bothered, or has installed. */
-function suppressed(): boolean {
+/** True while this person has asked not to be bothered, or has installed. */
+function suppressed(key: string): boolean {
   try {
-    const v = localStorage.getItem(SNOOZE_KEY);
+    const v = localStorage.getItem(key);
     if (!v) return false;
     if (v === "installed") return true;
     return Date.now() < Number(v);
@@ -90,16 +138,16 @@ function suppressed(): boolean {
   }
 }
 
-function remember(value: string) {
+function remember(key: string, value: string) {
   try {
-    localStorage.setItem(SNOOZE_KEY, value);
+    localStorage.setItem(key, value);
   } catch {
     /* nothing to do — see suppressed() */
   }
 }
 
-function snooze() {
-  remember(String(Date.now() + SNOOZE_DAYS * 24 * 60 * 60 * 1000));
+function snooze(key: string) {
+  remember(key, String(Date.now() + SNOOZE_DAYS * 24 * 60 * 60 * 1000));
 }
 
 export function InstallPrompt() {
@@ -108,29 +156,37 @@ export function InstallPrompt() {
   const [mode, setMode] = useState<"prompt" | "ios" | null>(null);
 
   /*
+   * Which app the page in front of us belongs to. The browser has already
+   * decided this from the manifest the page links; we only follow it.
+   */
+  const app = appFor(pathname);
+
+  /*
    * Where this must never appear.
    *
-   * /admin is the staff dashboard — the people running the kitchen are not the
-   * audience for a customer app, and the order queue is not a place to put a
-   * dismissible bar over.
+   * On the dashboard, only the two screens nobody is working on: the login
+   * page, which is where an owner who has not installed it yet always starts,
+   * and the overview. The counter, the kitchen and the order queue are live
+   * screens with their own controls along the bottom edge, and a dismissible
+   * bar over a ticket during service is worth less than nothing.
    *
-   * /checkout is somebody halfway through paying. Nothing we want to say is
-   * worth a lost order.
-   *
-   * A non-empty cart covers the rest: it means the customer is mid-task, and
-   * it is exactly when the menu and cart screens raise their own fixed bar
-   * along the bottom edge — the same edge this bar wants. Waiting until they
-   * are not shopping avoids both problems at once.
+   * On the shop side, /checkout is somebody halfway through paying — nothing
+   * we want to say is worth a lost order. A non-empty cart covers the rest: it
+   * means the customer is mid-task, and it is exactly when the menu and cart
+   * screens raise their own fixed bar along the bottom edge, the same edge
+   * this bar wants. Waiting until they are not shopping avoids both at once.
    */
   const unwelcome =
-    pathname.startsWith("/admin") || pathname.startsWith("/checkout") || count > 0;
+    app === APPS.admin
+      ? pathname !== "/admin" && pathname !== "/admin/login"
+      : pathname.startsWith("/checkout") || count > 0;
 
   useEffect(() => {
     if (unwelcome) {
       setMode(null);
       return;
     }
-    if (isInstalled() || suppressed()) return;
+    if (isInstalled() || suppressed(app.storageKey)) return;
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     const showLater = (m: "prompt" | "ios") => {
@@ -140,12 +196,14 @@ export function InstallPrompt() {
 
     // The event usually fires before React has hydrated, which is why it is
     // caught in the document head and parked on `window` for us to find here.
-    if (window.__dkInstallEvent) showLater("prompt");
+    if (offerFor(app)) showLater("prompt");
     else if (isIosSafari()) showLater("ios");
 
-    const onInstallable = () => showLater("prompt");
+    const onInstallable = () => {
+      if (offerFor(app)) showLater("prompt");
+    };
     const onInstalled = () => {
-      remember("installed");
+      remember(app.storageKey, "installed");
       setMode(null);
     };
     window.addEventListener("dk-installable", onInstallable);
@@ -155,15 +213,15 @@ export function InstallPrompt() {
       window.removeEventListener("dk-installable", onInstallable);
       window.removeEventListener("appinstalled", onInstalled);
     };
-  }, [unwelcome]);
+  }, [unwelcome, app]);
 
   const dismiss = useCallback(() => {
-    snooze();
+    snooze(app.storageKey);
     setMode(null);
-  }, []);
+  }, [app]);
 
   const install = useCallback(async () => {
-    const evt = window.__dkInstallEvent;
+    const evt = offerFor(app);
     if (!evt) return dismiss();
     // Ours closes first: the browser's own dialog is about to take the screen,
     // and two install prompts at once reads as a scam.
@@ -172,9 +230,9 @@ export function InstallPrompt() {
     const { outcome } = await evt.userChoice;
     // Single use. Chrome issues a fresh event if they become eligible again.
     window.__dkInstallEvent = null;
-    if (outcome === "accepted") remember("installed");
-    else snooze();
-  }, [dismiss]);
+    if (outcome === "accepted") remember(app.storageKey, "installed");
+    else snooze(app.storageKey);
+  }, [dismiss, app]);
 
   useEffect(() => {
     if (!mode) return;
@@ -187,7 +245,7 @@ export function InstallPrompt() {
 
   return (
     <aside
-      aria-label="Install the DilKhush app"
+      aria-label={app.label}
       className="fixed inset-x-0 bottom-0 z-40 p-3 no-print
         pb-[max(0.75rem,env(safe-area-inset-bottom))]
         sm:inset-x-auto sm:right-4 sm:bottom-4 sm:w-[22rem] sm:p-0"
@@ -196,7 +254,7 @@ export function InstallPrompt() {
         <div className="flex items-start gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/icon-192.png"
+            src={app.icon}
             alt=""
             width={48}
             height={48}
@@ -204,7 +262,7 @@ export function InstallPrompt() {
           />
           <div className="min-w-0 flex-1">
             <p className="font-display text-fluid-lg font-semibold text-maroon-800">
-              {mode === "ios" ? "Add DilKhush to your Home Screen" : "Install the DilKhush app"}
+              {mode === "ios" ? app.iosTitle : app.title}
             </p>
             <p className="mt-0.5 text-fluid-sm text-maroon-700/80">
               {mode === "ios" ? (
@@ -213,7 +271,7 @@ export function InstallPrompt() {
                   <span className="font-semibold text-maroon-800">Add to Home Screen</span>.
                 </>
               ) : (
-                "Order in one tap from your home screen. No app store, no download."
+                app.body
               )}
             </p>
           </div>

@@ -1,18 +1,37 @@
 /**
- * Rasterises the app icons in public/ from their SVG sources.
+ * Builds every app icon in public/ from one drawing: public/icon.svg.
  *
  *   node scripts/make-icons.mjs
  *
- * Run it after editing public/icon.svg or public/icon-maskable.svg — and when
- * the shop finally has a real logo, that is the only thing to change: drop it
- * in as those two files, run this, and every size follows.
+ * There are two installable apps on this origin — the customer shop and the
+ * staff dashboard — and each needs a rounded icon, a maskable icon and PNGs at
+ * two sizes. That is a lot of files to keep in step by hand, so all of them are
+ * derived here and only icon.svg is ever edited. When the shop finally has a
+ * real logo, redraw that one file, run this, and every variant follows.
  *
- * Why PNGs at all, when the manifest already points at the SVGs: iOS does not
- * accept an SVG for the home-screen icon. Without a PNG apple-touch-icon,
- * "Add to Home Screen" saves a shrunken screenshot of the page instead of the
- * icon, which is the single ugliest thing about a home-made PWA. Android is
- * happier with SVG, but hands a PNG to the install dialog and the task
- * switcher more predictably.
+ * The two variants:
+ *
+ *   shop   — the mark as drawn, on brand maroon.
+ *   admin  — the same mark on indigo, wordmarked "Dashboard". The owner ends up
+ *            with two icons side by side on one home screen, so they differ in
+ *            both colour and word: at 48px a colour is what the eye catches
+ *            first, and the word is what settles it.
+ *
+ * The two shapes:
+ *
+ *   rounded  — corners of its own, for iOS and for browsers that do no masking.
+ *   maskable — Android crops this to whatever shape the launcher uses (circle,
+ *              squircle, teardrop), keeping only the centre 80%: a circle of
+ *              radius 205. The wordmark reaches the corners of the art, so the
+ *              whole composition is recentred on the art's own middle and
+ *              scaled to fit inside that circle, over a field that runs edge to
+ *              edge with no corners of its own.
+ *
+ * Why PNGs at all, when a manifest may point at an SVG: iOS does not accept an
+ * SVG for the home-screen icon. Without a PNG apple-touch-icon, "Add to Home
+ * Screen" saves a shrunken screenshot of the page instead of the icon, which is
+ * the single ugliest thing about a home-made PWA. Android is happier with SVG,
+ * but hands a PNG to the install dialog and the task switcher more predictably.
  *
  * `sharp` is not in package.json — it arrives underneath Next, which uses it
  * for image optimisation. That is fine for a tool run by hand a few times a
@@ -26,8 +45,21 @@ import path from "node:path";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const PUBLIC = path.join(ROOT, "public");
 
-/** The maroon behind the art, used to square off the Apple icon. */
-const BRAND_BG = "#7B1E1E";
+const SHOP_BG = "#7B1E1E";
+const ADMIN_BG = "#382C5C";
+
+/**
+ * The art's own centre and radius, in the 512 grid.
+ *
+ * Not the canvas centre: the wordmark sits high and the katori low, so the
+ * composition's middle is a little above 256. Measured off icon.svg — if the
+ * drawing changes shape, re-measure, or a round launcher will clip a corner
+ * of the wordmark.
+ */
+const ART_MID_Y = 245;
+const ART_RADIUS = 221;
+/** Android's safe circle is r=205; landing just inside it leaves a hair of margin. */
+const MASK_SCALE = 0.82;
 
 let sharp;
 try {
@@ -40,28 +72,77 @@ try {
   process.exit(1);
 }
 
+const source = readFileSync(path.join(PUBLIC, "icon.svg"), "utf8");
+
 /**
- * Rendered at 4x and downscaled with a proper filter rather than rasterised
- * straight to the target size — the 18px steam strokes turn to gravel at 192px
- * otherwise.
+ * Everything inside icon.svg except its background rectangle — the drawing on
+ * its own, ready to be dropped onto a field of either colour or shape.
  */
-async function render(srcFile, size, outFile, { opaque = false } = {}) {
-  const svg = readFileSync(path.join(PUBLIC, srcFile));
-  let img = sharp(svg, { density: 72 * 4 }).resize(size, size, { fit: "contain" });
-  // iOS ignores transparency and composites onto black, so the rounded corners
-  // of icon.svg would come out as black wedges. Filling them with the brand
-  // maroon gives a full square, which is what Apple wants anyway: it applies
-  // its own squircle mask on top.
-  if (opaque) img = img.flatten({ background: BRAND_BG });
-  const png = await img.png({ compressionLevel: 9 }).toBuffer();
-  writeFileSync(path.join(PUBLIC, outFile), png);
-  console.log(`  ${outFile.padEnd(28)} ${String(size).padStart(4)}px  ${(png.length / 1024).toFixed(1)} kB`);
+const art = source
+  .replace(/^[\s\S]*?<rect width="512" height="512"[^>]*\/>/, "")
+  .replace(/<\/svg>\s*$/, "")
+  .trimEnd();
+
+const HEAD =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img"' +
+  ' aria-label="{LABEL}">\n' +
+  "  <!-- Generated by scripts/make-icons.mjs from icon.svg. Do not hand-edit. -->\n";
+
+function compose({ bg, label, wordmark, maskable }) {
+  const body = wordmark ? art.replace(">DilKhush</text>", `>${wordmark}</text>`) : art;
+  const field = maskable
+    ? `  <rect width="512" height="512" fill="${bg}"/>`
+    : `  <rect width="512" height="512" rx="112" fill="${bg}"/>`;
+  const inner = maskable
+    ? `  <g transform="translate(256 256) scale(${MASK_SCALE}) translate(-256 -${ART_MID_Y})">` +
+      `${body.replace(/\n/g, "\n  ")}\n  </g>`
+    : body;
+  return `${HEAD.replace("{LABEL}", label)}${field}\n${inner}\n</svg>\n`;
 }
 
+/**
+ * Rendered at 4x and downscaled with a proper filter rather than rasterised
+ * straight to the target size — the thin katori rim turns to gravel at 192px
+ * otherwise.
+ */
+async function png(svg, size, outFile, { opaque } = {}) {
+  let img = sharp(Buffer.from(svg), { density: 72 * 4 }).resize(size, size, { fit: "contain" });
+  // iOS ignores transparency and composites onto black, so the rounded corners
+  // would come out as black wedges. Filling them with the field colour gives a
+  // full square, which is what Apple wants anyway: it applies its own squircle
+  // mask on top.
+  if (opaque) img = img.flatten({ background: opaque });
+  const buf = await img.png({ compressionLevel: 9 }).toBuffer();
+  writeFileSync(path.join(PUBLIC, outFile), buf);
+  console.log(`  ${outFile.padEnd(30)} ${String(size).padStart(4)}px  ${(buf.length / 1024).toFixed(1)} kB`);
+}
+
+const VARIANTS = [
+  { prefix: "icon", bg: SHOP_BG, label: "DilKhush Dhaba", wordmark: null, apple: "apple-touch-icon.png" },
+  {
+    prefix: "icon-admin",
+    bg: ADMIN_BG,
+    label: "DilKhush Dashboard",
+    wordmark: "Dashboard",
+    apple: "apple-touch-icon-admin.png",
+  },
+];
+
 console.log("Rendering app icons…");
-await render("icon.svg", 192, "icon-192.png");
-await render("icon.svg", 512, "icon-512.png");
-await render("icon-maskable.svg", 192, "icon-maskable-192.png");
-await render("icon-maskable.svg", 512, "icon-maskable-512.png");
-await render("icon.svg", 180, "apple-touch-icon.png", { opaque: true });
+for (const v of VARIANTS) {
+  const rounded = compose({ bg: v.bg, label: v.label, wordmark: v.wordmark, maskable: false });
+  const masked = compose({ bg: v.bg, label: v.label, wordmark: v.wordmark, maskable: true });
+
+  // icon.svg is the hand-drawn source and is never rewritten; the other SVGs
+  // are outputs, and are on disk because the manifests and <link rel=icon> can
+  // serve a vector to anything that prefers one.
+  if (v.prefix !== "icon") writeFileSync(path.join(PUBLIC, `${v.prefix}.svg`), rounded);
+  writeFileSync(path.join(PUBLIC, `${v.prefix}-maskable.svg`), masked);
+
+  await png(rounded, 192, `${v.prefix}-192.png`);
+  await png(rounded, 512, `${v.prefix}-512.png`);
+  await png(masked, 192, `${v.prefix}-maskable-192.png`);
+  await png(masked, 512, `${v.prefix}-maskable-512.png`);
+  await png(rounded, 180, v.apple, { opaque: v.bg });
+}
 console.log("Done.");

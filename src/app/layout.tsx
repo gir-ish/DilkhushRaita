@@ -100,13 +100,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           the install bar then never appears for reasons that look like
           nothing at all. Parking the event on `window` here and announcing it
           means InstallPrompt can mount whenever it likes and still find it.
+
+          The path is parked alongside it because this origin serves two
+          installable apps — the shop and the dashboard — and the event says
+          nothing about which manifest it belongs to. It belongs to the page
+          that was open when it fired, and a client-side navigation from one
+          app's pages into the other's would otherwise leave a stale offer
+          lying here: the bar would read "Install the Dashboard app" and
+          install the shop. InstallPrompt compares this against where it is.
         */}
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "window.__dkInstallEvent=null;" +
+              "window.__dkInstallEvent=null;window.__dkInstallPath=null;" +
               "addEventListener('beforeinstallprompt',function(e){" +
               "e.preventDefault();window.__dkInstallEvent=e;" +
+              "window.__dkInstallPath=location.pathname;" +
               "dispatchEvent(new Event('dk-installable'))});",
           }}
         />
