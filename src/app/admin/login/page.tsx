@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ErrorBox } from "@/components/ui";
 import { safeNextPath } from "@/lib/utils";
+import { InstallAppButton } from "@/components/install-app-button";
 
 type Mode = "loading" | "pin" | "password" | "setPin";
 
@@ -103,6 +104,9 @@ function AdminLoginInner() {
           <p className="text-sm text-maroon-800/60">DilKhush Dhaba – Raita Wala</p>
         </div>
         {children}
+        {/* Sits under every sign-in state, not just one: the owner asking for
+            the app is not always the owner typing a password. */}
+        <InstallAppButton className="border-t border-maroon-800/10 pt-4" />
       </div>
     </main>
   );
