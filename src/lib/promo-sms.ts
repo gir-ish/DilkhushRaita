@@ -32,9 +32,8 @@ import { normalizePhone } from "./utils";
  * it approved, then change it here to match.
  */
 export const PROMO_MESSAGE =
-  "Dilkhush Raita Wala Dhaba is now online! Enjoy delicious dhaba-style food, " +
-  "fresh flavors and your favorite dishes from the comfort of home. " +
-  "Explore our menu and order now at https://dilkhushraita.com/";
+  "Craving real dhaba flavours? Dilkhush Raita Wala Dhaba is now online! " +
+  "Explore our tasty menu & order fresh food now: https://dilkhushraita.com/";
 
 /** 160 GSM-7 characters in one credit; longer messages are billed per 153. */
 export function creditsFor(message: string): number {

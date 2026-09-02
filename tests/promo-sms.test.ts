@@ -23,9 +23,8 @@ describe("the approved message", () => {
      * any log to say why.
      */
     expect(PROMO_MESSAGE).toBe(
-      "Dilkhush Raita Wala Dhaba is now online! Enjoy delicious dhaba-style food, " +
-        "fresh flavors and your favorite dishes from the comfort of home. " +
-        "Explore our menu and order now at https://dilkhushraita.com/"
+      "Craving real dhaba flavours? Dilkhush Raita Wala Dhaba is now online! " +
+        "Explore our tasty menu & order fresh food now: https://dilkhushraita.com/"
     );
   });
 
@@ -45,11 +44,17 @@ describe("the approved message", () => {
     expect(PROMO_MESSAGE).toContain("https://dilkhushraita.com/");
   });
 
-  it("costs two credits, which is what the dashboard must show", () => {
-    // 200 characters. Worth knowing before a thousand-number campaign, not
-    // after.
-    expect(PROMO_MESSAGE.length).toBe(200);
-    expect(creditsFor(PROMO_MESSAGE)).toBe(2);
+  it("fits in one credit, which is the whole point of its length", () => {
+    /*
+     * 143 characters, under the 160 that fit in a single SMS. The earlier
+     * wording ran to 200 and cost two credits for every recipient — this one
+     * halves the price of every campaign, permanently, so the length is a
+     * decision and not an accident. Anything that pushes it past 160 doubles
+     * the bill again.
+     */
+    expect(PROMO_MESSAGE.length).toBe(143);
+    expect(PROMO_MESSAGE.length).toBeLessThanOrEqual(160);
+    expect(creditsFor(PROMO_MESSAGE)).toBe(1);
   });
 });
 
