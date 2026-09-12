@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { handler, HttpError } from "@/lib/guard";
 import { isBranchOpen } from "@/lib/geo";
 import { hhmm, withinTimeWindow } from "@/lib/utils";
+import { menuPricing } from "@/lib/menu-pricing";
 
 /** Full menu for a branch, with branch-specific price/availability applied. */
 export const GET = handler(
@@ -38,10 +39,14 @@ export const GET = handler(
         id: c.id,
         name: c.name,
         slug: c.slug,
-        items: c.items.map((i) => {
+        // A dish this branch does not sell is left off its menu altogether,
+        // rather than shown as unavailable; a category left empty drops out
+        // below.
+        items: c.items.filter((i) => i.branchItems[0]?.onMenu !== false).map((i) => {
           const bi = i.branchItems[0];
           const inWindow = bi ? withinTimeWindow(nowHHmm, bi.availableFrom, bi.availableTo) : true;
           const inStock = !bi || bi.stockQty === -1 || bi.stockQty > 0;
+          const priced = menuPricing(i, bi);
           return {
             id: i.id,
             name: i.name,
@@ -49,7 +54,7 @@ export const GET = handler(
             description: i.description,
             imageUrl: i.imageUrl,
             imageEmoji: i.imageEmoji,
-            price: bi?.priceOverride ?? i.basePrice,
+            price: priced.price,
             veg: i.veg,
             vegan: i.vegan,
             spicy: i.spicy,
@@ -65,12 +70,9 @@ export const GET = handler(
                 ? "Sold out for now"
                 : null,
             stockQty: bi?.stockQty ?? -1,
-            variants: i.variants.map((v) => ({
-              id: v.id,
-              name: v.name,
-              priceDelta: v.priceDelta,
-              isDefault: v.isDefault,
-            })),
+            // This branch's own Half/Full prices, as a difference from the
+            // listed price — which is what every client adds up.
+            variants: priced.variants,
             addOns: i.addOns.map((a) => ({
               id: a.id,
               name: a.name,

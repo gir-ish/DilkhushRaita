@@ -221,6 +221,10 @@ model BranchMenuItem {
   menuItemId    String
   menuItem      MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
   priceOverride Float?
+  // {"Half":70,"Full":120} — this branch's price per portion. See schema.prisma.
+  variantPricesJson String @default("{}") @db.VarChar(1000)
+  // Sold at this branch at all; false hides it there. See schema.prisma.
+  onMenu        Boolean  @default(true)
   available     Boolean  @default(true)
   stockQty      Int      @default(-1)
   availableFrom String?

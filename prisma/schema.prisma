@@ -222,6 +222,16 @@ model BranchMenuItem {
   menuItemId    String
   menuItem      MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
   priceOverride Float?
+  // This branch's price for each portion, by variant name: {"Half":70,"Full":120}.
+  // Rohini and NSP charge different gaps between Half and Full, which one
+  // global priceDelta cannot express. A portion missing here falls back to
+  // (priceOverride ?? basePrice) + its priceDelta.
+  variantPricesJson String @default("{}")
+  // Whether this branch sells the dish at all. false hides it from that
+  // branch's menu entirely — NSP's soups do not appear at Rohini. Different
+  // from `available`, which is today's stock: an unavailable dish is still on
+  // the menu, shown as sold out.
+  onMenu        Boolean  @default(true)
   available     Boolean  @default(true)
   stockQty      Int      @default(-1) // -1 = untracked/unlimited
   availableFrom String? // "HH:mm" daily window start

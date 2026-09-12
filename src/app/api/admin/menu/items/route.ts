@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { handler, requireStaff } from "@/lib/guard";
 import { audit } from "@/lib/audit";
-import { toCsv } from "@/lib/csv";
+import { menuToCsv } from "@/lib/menu-csv";
 import { ItemBody } from "@/lib/validation";
 
 export const GET = handler(async (req: Request) => {
@@ -18,20 +18,17 @@ export const GET = handler(async (req: Request) => {
     },
   });
   if (url.searchParams.get("format") === "csv") {
-    const rows = items.map((i) => ({
-      id: i.id,
-      name: i.name,
-      category: i.category.name,
-      basePrice: i.basePrice,
-      veg: i.veg,
-      spicy: i.spicy,
-      bestseller: i.bestseller,
-      active: i.active,
-      description: i.description,
-    }));
-    return new Response(toCsv(rows), {
+    // The import format, so a download can be edited and uploaded back. Only
+    // what is on the menu: re-importing a hidden dish would switch it back on.
+    const branches = await db.branch.findMany({ orderBy: { createdAt: "asc" }, select: { id: true, slug: true } });
+    const onMenu = await db.menuItem.findMany({
+      where: { active: true },
+      orderBy: [{ category: { displayOrder: "asc" } }, { displayOrder: "asc" }, { name: "asc" }],
+      include: { category: { select: { name: true } }, variants: true, addOns: true, branchItems: true },
+    });
+    return new Response(menuToCsv(onMenu, branches), {
       headers: {
-        "Content-Type": "text/csv",
+        "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": "attachment; filename=menu-export.csv",
       },
     });

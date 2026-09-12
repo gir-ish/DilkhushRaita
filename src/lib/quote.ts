@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { HttpError } from "./guard";
 import { computeTotals, deliveryFeeFor, subtotalOf } from "./pricing";
+import { branchBase, portionPrice } from "./menu-pricing";
 import { evaluateCoupon, type CouponEvaluation } from "./coupons";
 import { tierFor } from "./loyalty";
 import { pointsValue, redeemablePoints } from "./loyalty";
@@ -163,6 +164,10 @@ export async function buildQuote(
       continue;
     }
     const bi = item.branchItems[0];
+    if (bi && !bi.onMenu) {
+      fail(`${item.name} is not on the menu at ${branch.name}`);
+      continue;
+    }
     if (bi && !bi.available) {
       fail(`${item.name} is unavailable at ${branch.name}`);
       continue;
@@ -175,7 +180,8 @@ export async function buildQuote(
       fail(`${item.name} is available ${bi.availableFrom}–${bi.availableTo} only`);
       continue;
     }
-    let price = bi?.priceOverride ?? item.basePrice;
+    // This branch's own price for the chosen portion — see menu-pricing.ts.
+    let price = branchBase(item, bi);
     let variantName: string | null = null;
     if (input.variantId) {
       const v = item.variants.find((v) => v.id === input.variantId && v.active);
@@ -183,12 +189,12 @@ export async function buildQuote(
         fail(`The selected portion of ${item.name} is unavailable`);
         continue;
       }
-      price += v.priceDelta;
+      price = portionPrice(item, bi, v);
       variantName = v.name;
     } else {
       const def = item.variants.find((v) => v.isDefault && v.active);
       if (def) {
-        price += def.priceDelta;
+        price = portionPrice(item, bi, def);
         variantName = def.name;
       }
     }
