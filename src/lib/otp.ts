@@ -1,7 +1,7 @@
 import { createHash, randomInt, timingSafeEqual } from "crypto";
 import { readFileSync } from "fs";
 import path from "path";
-import { NAME_FALLBACK, creditsFor, firstName } from "@/lib/sms-templates";
+import { firstName } from "@/lib/sms-templates";
 
 /**
  * Modular OTP/SMS provider. Select with the OTP_PROVIDER env variable:
@@ -34,29 +34,35 @@ export interface OtpProvider {
 }
 
 /**
- * The approved wording with the code and the customer's first name filled in.
+ * What the OTP greets someone as when their first name will not do: there is
+ * none, or it is longer than this word.
+ */
+export const OTP_NAME_FALLBACK = "Customer";
+
+/**
+ * The first name to greet with, or "Customer".
+ *
+ * The shop's rule: a first name no longer than "Customer" is used; anything
+ * longer is replaced by "Customer". That bounds the greeting at eight
+ * characters, so the longest message is fixed by the template — which is what
+ * lets a template be sized to stay inside one 160-character SMS every time.
+ */
+export function otpGreeting(name?: string | null): string {
+  const first = firstName(name);
+  return first && first.length <= OTP_NAME_FALLBACK.length ? first : OTP_NAME_FALLBACK;
+}
+
+/**
+ * The approved wording with the code and the greeting filled in.
  *
  * {otp} is the code. {name} is the DLT greeting slot — "Dear {#var#}" on the
- * registration — and takes the first name only, falling back to "Friend".
- * A lone {#var#} is unambiguous and is taken to be the code.
- *
- * A name never costs an extra credit: if the message with it would run into
- * one more SMS part than the same message with the fallback, the fallback is
- * used. With DilKhush's template this cannot actually happen — the fixed text
- * and the code are already 163 characters, so every OTP is two credits, and
- * two cover 306 — but a later, shorter template sitting just under 160 would
- * otherwise double in price for a long name.
+ * registration — and takes otpGreeting(). A lone {#var#} is unambiguous and
+ * is taken to be the code.
  */
 export function composeOtpMessage(template: string, code: string, name?: string | null): string {
   let message = template.replace(/\{otp\}/gi, code);
   if ((message.match(/\{#var#\}/g) ?? []).length === 1) message = message.replace("{#var#}", code);
-  if (!/\{name\}/i.test(message)) return message;
-
-  const plain = message.replace(/\{name\}/gi, NAME_FALLBACK);
-  const first = firstName(name);
-  if (!first) return plain;
-  const named = message.replace(/\{name\}/gi, first);
-  return creditsFor(named) > creditsFor(plain) ? plain : named;
+  return message.replace(/\{name\}/gi, otpGreeting(name));
 }
 
 /**

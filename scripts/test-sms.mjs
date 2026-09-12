@@ -114,16 +114,15 @@ if (!senderId) {
 const code = "123456";
 /*
  * --name Rahul greets the way the app would greet that customer: first word,
- * letters only, capitalised — "Friend" when nothing usable is left. Kept in
- * step with firstName() in src/lib/sms-templates.ts by hand, since this script
- * runs without a TypeScript build.
+ * letters only, capitalised — and "Customer" when that is longer than
+ * "Customer" or nothing usable is left. Kept in step with otpGreeting() in
+ * src/lib/otp.ts by hand, since this script runs without a TypeScript build.
  */
 const nameAt = process.argv.indexOf("--name");
 const typed = nameAt === -1 ? "" : (process.argv[nameAt + 1] ?? "");
 const word = (typed.replace(/[^\x20-\x7E]/g, "").trim().split(/\s+/)[0] ?? "").replace(/[^A-Za-z'.-]/g, "");
-const greet = /[A-Za-z]/.test(word)
-  ? (word[0].toUpperCase() + word.slice(1).toLowerCase()).slice(0, 20)
-  : "Friend";
+const cased = /[A-Za-z]/.test(word) ? word[0].toUpperCase() + word.slice(1).toLowerCase() : "";
+const greet = cased && cased.length <= "Customer".length ? cased : "Customer";
 let message = template.replace(/\{otp\}/gi, code).replace(/\{name\}/gi, greet);
 if ((message.match(/\{#var#\}/g) ?? []).length === 1) message = message.replace("{#var#}", code);
 if (message.includes("{#var#}") || /\{(otp|name)\}/i.test(message)) {

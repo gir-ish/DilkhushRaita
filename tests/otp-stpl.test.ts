@@ -227,43 +227,54 @@ describe("stpl provider", () => {
     );
   });
 
-  it("greets by first name, never as 'Customer'", async () => {
+  it("greets by a first name no longer than 'Customer', and as 'Customer' otherwise", async () => {
     delete process.env.STPL_MESSAGE;
     process.env.STPL_MESSAGE_FILE = "config/stpl-otp-template.txt";
     reply({ status: "Success", code: "011" });
 
     for (const [name, greeting] of [
-      ["PRIYA SINGH", "Dear Priya,"],
+      ["PRIYA SINGH", "Dear Priya,"], // first name only
       ["  aman  ", "Dear Aman,"],
-      [null, "Dear Friend,"], // no name to be had
-      ["राहुल", "Dear Friend,"], // Devanagari would force the whole SMS into UCS-2
-      ["🎉", "Dear Friend,"],
+      ["Harpreet Kaur", "Dear Harpreet,"], // eight letters, as long as "Customer": kept
+      ["Abhimanyu Singh", "Dear Customer,"], // nine: longer than "Customer"
+      [null, "Dear Customer,"], // no name to be had
+      ["राहुल", "Dear Customer,"], // Devanagari would force the whole SMS into UCS-2
+      ["🎉", "Dear Customer,"],
     ] as const) {
       calls = [];
       await otpProvider().send("+919876543210", "482913", name);
       const msg = sent().get("message") ?? "";
       expect(msg.startsWith(greeting), `${name} → ${msg.slice(0, 20)}`).toBe(true);
-      expect(msg).not.toContain("Customer");
     }
   });
 
-  it("keeps the real template at two credits whatever the name", async () => {
-    // Fixed text plus code is 163 characters, so it is two credits even with
-    // an empty greeting; two cover 306, far more than a 20-letter first name.
+  it("never makes the message longer than 'Customer' would", () => {
+    // The greeting is capped at eight characters, so a template's longest
+    // message is known in advance whatever the customer is called.
     const template = readFileSync("config/stpl-otp-template.txt", "utf8").trim();
-    expect(creditsFor(composeOtpMessage(template, "482913", "Friend"))).toBe(2);
-    expect(creditsFor(composeOtpMessage(template, "482913", "Abcdefghijklmnopqrstuvwxyz"))).toBe(2);
+    const withCustomer = composeOtpMessage(template, "482913", null).length;
+    for (const name of ["Ram", "Harpreet", "Abhimanyu", "Abcdefghijklmnopqrstuvwxyz"])
+      expect(composeOtpMessage(template, "482913", name).length).toBeLessThanOrEqual(withCustomer);
   });
 
-  it("drops a name that would cost an extra credit, keeping the greeting", () => {
-    // A shorter template sitting just under 160 must not double in price
-    // because one customer has a long first name.
-    const base = "Dear {name}, your code is {otp}. ";
-    const fixed = base.replace("{name}", "").replace("{otp}", "123456").length;
-    const template = base + "x".repeat(150 - fixed); // 150 characters before the name
+  it("keeps the current template at two credits, as it always was", () => {
+    // Its fixed words are 157 characters: over 160 with any code at all.
+    const template = readFileSync("config/stpl-otp-template.txt", "utf8").trim();
+    expect(creditsFor(composeOtpMessage(template, "482913", null))).toBe(2);
+    expect(creditsFor(composeOtpMessage(template, "482913", "Ram"))).toBe(2);
+  });
 
-    expect(composeOtpMessage(template, "123456", "Aman")).toMatch(/^Dear Aman,/); // 154
-    expect(composeOtpMessage(template, "123456", "Abcdefghijklmnopqrst")).toMatch(/^Dear Friend,/); // 170 would be 2
+  it("fits the replacement template in one SMS in the worst case, with a 4-digit code", () => {
+    // The shorter wording the shop is registering on DLT to halve the cost of
+    // every login. Worst case: the longest greeting and the longest code.
+    const replacement =
+      "Dear {name}, your OTP for registration on Dilkhush Raita is {otp}. " +
+      "Valid for 10 minutes. Do not share it with anyone. Visit https://dilkhushraita.com/";
+    for (const name of [null, "Ram", "Harpreet", "Abhimanyu", "Abcdefghijklmnopqrstuvwxyz"]) {
+      const msg = composeOtpMessage(replacement, "9999", name);
+      expect(msg.length, msg).toBeLessThanOrEqual(160);
+      expect(creditsFor(msg)).toBe(1);
+    }
   });
 
   it("refuses rather than mail an unfilled placeholder", async () => {
