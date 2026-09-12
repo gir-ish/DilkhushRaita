@@ -3,6 +3,7 @@
  * works before customers depend on it.
  *
  *   node scripts/test-sms.mjs 9876543210
+ *   node scripts/test-sms.mjs 9876543210 --name Rahul --dry
  *
  * Reads the same variables the app does, so run it on the machine whose .env
  * you mean to test — the live one is the server, not your laptop. It spends
@@ -111,13 +112,25 @@ if (!senderId) {
 // A fixed, obviously-fake code: this is a delivery test, and a real-looking
 // OTP in a log or a screenshot is a habit worth not starting.
 const code = "123456";
-let message = template.replace(/\{otp\}/gi, code);
+/*
+ * --name Rahul greets the way the app would greet that customer: first word,
+ * letters only, capitalised — "Friend" when nothing usable is left. Kept in
+ * step with firstName() in src/lib/sms-templates.ts by hand, since this script
+ * runs without a TypeScript build.
+ */
+const nameAt = process.argv.indexOf("--name");
+const typed = nameAt === -1 ? "" : (process.argv[nameAt + 1] ?? "");
+const word = (typed.replace(/[^\x20-\x7E]/g, "").trim().split(/\s+/)[0] ?? "").replace(/[^A-Za-z'.-]/g, "");
+const greet = /[A-Za-z]/.test(word)
+  ? (word[0].toUpperCase() + word.slice(1).toLowerCase()).slice(0, 20)
+  : "Friend";
+let message = template.replace(/\{otp\}/gi, code).replace(/\{name\}/gi, greet);
 if ((message.match(/\{#var#\}/g) ?? []).length === 1) message = message.replace("{#var#}", code);
-if (message.includes("{#var#}") || /\{otp\}/i.test(message)) {
+if (message.includes("{#var#}") || /\{(otp|name)\}/i.test(message)) {
   console.error(
     "\nSTPL_MESSAGE still has an unfilled placeholder. Put {otp} where the code\n" +
-      "goes and a literal value in every other {#var#} slot — otherwise the\n" +
-      "customer reads \"{#var#}\" and the operator drops the message anyway."
+      "goes, {name} in the greeting, and a literal value in any other {#var#}\n" +
+      "slot — otherwise the customer reads \"{#var#}\" and the operator drops it."
   );
   process.exit(1);
 }
@@ -131,8 +144,9 @@ if (DRY) {
     message.length,
     message.length > 160 ? "(over 160 → 2 credits per send)" : "(1 credit per send)"
   );
+  // The registration's greeting slot filled with the same name.
   const approved =
-    `Dear Customer, your OTP for registration on Dilkhush Raita is${code}. ` +
+    `Dear ${greet}, your OTP for registration on Dilkhush Raita is${code}. ` +
     `This OTP is valid for 10 minutes. Please do not share it with anyone. ` +
     `Visit https://dilkhushraita.com/`;
   if (message === approved) {
@@ -158,13 +172,18 @@ if (DRY) {
   process.exit(0);
 }
 
-const url = new URL("https://smsfortius.org/V2/apikey.php");
-url.searchParams.set("senderid", senderId);
-url.searchParams.set("number", `91${digits}`);
-url.searchParams.set("message", message);
-url.searchParams.set("format", "JSON");
-if (apiKey) url.searchParams.set("apikey", apiKey);
-if (templateId) url.searchParams.set("templateid", templateId);
+// Built by hand, as in src/lib/otp.ts: URLSearchParams writes spaces as "+",
+// which the gateway passes through and the operator then drops as a mismatch.
+const url =
+  "https://smsfortius.org/V2/apikey.php?" +
+  [
+    ...(apiKey ? [`apikey=${encodeURIComponent(apiKey)}`] : []),
+    `senderid=${encodeURIComponent(senderId)}`,
+    ...(templateId ? [`templateid=${encodeURIComponent(templateId)}`] : []),
+    `number=${encodeURIComponent(`91${digits}`)}`,
+    `message=${encodeURIComponent(message)}`,
+    "format=JSON",
+  ].join("&");
 
 const ERRORS = {
   "001": "the gateway rejected the API key — check STPL_API_KEY",

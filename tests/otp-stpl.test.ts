@@ -1,5 +1,7 @@
+import { readFileSync } from "fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { otpProvider } from "@/lib/otp";
+import { composeOtpMessage, otpProvider } from "@/lib/otp";
+import { creditsFor } from "@/lib/sms-templates";
 
 /**
  * The STPL gateway is a general SMS API, not an OTP route: we compose the
@@ -215,14 +217,53 @@ describe("stpl provider", () => {
     delete process.env.STPL_MESSAGE;
     process.env.STPL_MESSAGE_FILE = "config/stpl-otp-template.txt";
     reply({ status: "Success", code: "011" });
-    const r = await otpProvider().send("+919876543210", "482913");
+    const r = await otpProvider().send("+919876543210", "482913", "Rahul Kumar");
 
     expect(r.ok).toBe(true);
     expect(sent().get("message")).toBe(
-      "Dear Customer, your OTP for registration on Dilkhush Raita is482913. " +
+      "Dear Rahul, your OTP for registration on Dilkhush Raita is482913. " +
         "This OTP is valid for 10 minutes. Please do not share it with anyone. " +
         "Visit https://dilkhushraita.com/"
     );
+  });
+
+  it("greets by first name, never as 'Customer'", async () => {
+    delete process.env.STPL_MESSAGE;
+    process.env.STPL_MESSAGE_FILE = "config/stpl-otp-template.txt";
+    reply({ status: "Success", code: "011" });
+
+    for (const [name, greeting] of [
+      ["PRIYA SINGH", "Dear Priya,"],
+      ["  aman  ", "Dear Aman,"],
+      [null, "Dear Friend,"], // no name to be had
+      ["राहुल", "Dear Friend,"], // Devanagari would force the whole SMS into UCS-2
+      ["🎉", "Dear Friend,"],
+    ] as const) {
+      calls = [];
+      await otpProvider().send("+919876543210", "482913", name);
+      const msg = sent().get("message") ?? "";
+      expect(msg.startsWith(greeting), `${name} → ${msg.slice(0, 20)}`).toBe(true);
+      expect(msg).not.toContain("Customer");
+    }
+  });
+
+  it("keeps the real template at two credits whatever the name", async () => {
+    // Fixed text plus code is 163 characters, so it is two credits even with
+    // an empty greeting; two cover 306, far more than a 20-letter first name.
+    const template = readFileSync("config/stpl-otp-template.txt", "utf8").trim();
+    expect(creditsFor(composeOtpMessage(template, "482913", "Friend"))).toBe(2);
+    expect(creditsFor(composeOtpMessage(template, "482913", "Abcdefghijklmnopqrstuvwxyz"))).toBe(2);
+  });
+
+  it("drops a name that would cost an extra credit, keeping the greeting", () => {
+    // A shorter template sitting just under 160 must not double in price
+    // because one customer has a long first name.
+    const base = "Dear {name}, your code is {otp}. ";
+    const fixed = base.replace("{name}", "").replace("{otp}", "123456").length;
+    const template = base + "x".repeat(150 - fixed); // 150 characters before the name
+
+    expect(composeOtpMessage(template, "123456", "Aman")).toMatch(/^Dear Aman,/); // 154
+    expect(composeOtpMessage(template, "123456", "Abcdefghijklmnopqrst")).toMatch(/^Dear Friend,/); // 170 would be 2
   });
 
   it("refuses rather than mail an unfilled placeholder", async () => {

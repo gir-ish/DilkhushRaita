@@ -37,7 +37,7 @@ function LoginInner() {
       const res = await fetch("/api/auth/otp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ phone, name: name.trim() }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error);

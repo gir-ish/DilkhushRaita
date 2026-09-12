@@ -6,13 +6,18 @@ import { generateOtp, hashOtp, otpProvider, otpBypassEnabled } from "@/lib/otp";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { mayRequestOtp, recordOtpSend } from "@/lib/otp-abuse";
 import { normalizePhone } from "@/lib/utils";
+import { firstName } from "@/lib/sms-templates";
 import {
   OTP_EXPIRY_MINS,
   OTP_MAX_PER_HOUR,
   OTP_RESEND_COOLDOWN_SECS,
 } from "@/lib/constants";
 
-const Body = z.object({ phone: z.string().min(10).max(15) });
+const Body = z.object({
+  phone: z.string().min(10).max(15),
+  // What the sign-in form says to call them — used to greet a new customer.
+  name: z.string().max(60).optional(),
+});
 
 // Launch switch. While true, ANYONE can sign in as ANY phone number with no
 // verification at all — no code is sent and none is checked. Now that STPL is
@@ -88,7 +93,16 @@ export const POST = handler(async (req: Request) => {
       expiresAt: new Date(Date.now() + OTP_EXPIRY_MINS * 60 * 1000),
     },
   });
-  const sent = await otpProvider().send(phone, code);
+  /*
+   * Greet them by first name. An account's own name wins over whatever was
+   * typed into the form — the same precedence verify uses, which only takes
+   * the typed name for a new account or one that has none — so a returning
+   * customer is greeted as they are known here. The name goes only into the
+   * SMS, to the number's owner, and never back in the response.
+   */
+  const account = await db.user.findUnique({ where: { phone }, select: { name: true } });
+  const greet = firstName(account?.name) ?? body.name;
+  const sent = await otpProvider().send(phone, code, greet);
   if (!sent.ok) throw new HttpError(502, "Could not send OTP. Please try again.");
   // After the send, not before: a message the gateway refused cost no credit
   // and must not count against whoever asked for it.

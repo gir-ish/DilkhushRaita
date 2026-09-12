@@ -1,6 +1,7 @@
 import { createHash, randomInt, timingSafeEqual } from "crypto";
 import { readFileSync } from "fs";
 import path from "path";
+import { NAME_FALLBACK, creditsFor, firstName } from "@/lib/sms-templates";
 
 /**
  * Modular OTP/SMS provider. Select with the OTP_PROVIDER env variable:
@@ -28,7 +29,34 @@ import path from "path";
 
 export interface OtpProvider {
   name: string;
-  send(phone: string, code: string): Promise<{ ok: boolean; devCode?: string }>;
+  /** `name` is who the message greets — see composeOtpMessage. */
+  send(phone: string, code: string, name?: string | null): Promise<{ ok: boolean; devCode?: string }>;
+}
+
+/**
+ * The approved wording with the code and the customer's first name filled in.
+ *
+ * {otp} is the code. {name} is the DLT greeting slot — "Dear {#var#}" on the
+ * registration — and takes the first name only, falling back to "Friend".
+ * A lone {#var#} is unambiguous and is taken to be the code.
+ *
+ * A name never costs an extra credit: if the message with it would run into
+ * one more SMS part than the same message with the fallback, the fallback is
+ * used. With DilKhush's template this cannot actually happen — the fixed text
+ * and the code are already 163 characters, so every OTP is two credits, and
+ * two cover 306 — but a later, shorter template sitting just under 160 would
+ * otherwise double in price for a long name.
+ */
+export function composeOtpMessage(template: string, code: string, name?: string | null): string {
+  let message = template.replace(/\{otp\}/gi, code);
+  if ((message.match(/\{#var#\}/g) ?? []).length === 1) message = message.replace("{#var#}", code);
+  if (!/\{name\}/i.test(message)) return message;
+
+  const plain = message.replace(/\{name\}/gi, NAME_FALLBACK);
+  const first = firstName(name);
+  if (!first) return plain;
+  const named = message.replace(/\{name\}/gi, first);
+  return creditsFor(named) > creditsFor(plain) ? plain : named;
 }
 
 /**
@@ -130,7 +158,7 @@ function approvedTemplate(): string | null {
 
 const stplProvider: OtpProvider = {
   name: "stpl",
-  async send(phone, code) {
+  async send(phone, code, name) {
     const senderId = process.env.STPL_SENDER_ID?.trim();
     if (!senderId) {
       console.error("[OTP][stpl] STPL_SENDER_ID is not set — cannot send");
@@ -181,9 +209,7 @@ const stplProvider: OtpProvider = {
       return { ok: false };
     }
 
-    let message = template.replace(/\{otp\}/gi, code);
-    if ((message.match(/\{#var#\}/g) ?? []).length === 1)
-      message = message.replace("{#var#}", code);
+    const message = composeOtpMessage(template, code, name);
 
     /*
      * Never send a half-built message. A leftover slot means the customer gets
@@ -191,10 +217,11 @@ const stplProvider: OtpProvider = {
      * for not matching the template anyway, so the only thing achieved would be
      * spending a credit to confuse someone.
      */
-    if (message.includes("{#var#}") || /\{otp\}/i.test(message)) {
+    if (message.includes("{#var#}") || /\{(otp|name)\}/i.test(message)) {
       console.error(
         "[OTP][stpl] STPL_MESSAGE still has an unfilled placeholder — refusing to send. " +
-          "Put {otp} where the code goes and a literal value in every other {#var#} slot."
+          "Put {otp} where the code goes, {name} where the greeting goes, and a " +
+          "literal value in every other {#var#} slot."
       );
       return { ok: false };
     }
