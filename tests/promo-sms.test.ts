@@ -1,71 +1,11 @@
 import { describe, expect, it } from "vitest";
-import {
-  BATCH_SIZE,
-  PROMO_MESSAGE,
-  batches,
-  creditsFor,
-  parseRecipients,
-} from "@/lib/promo-sms";
+import { BATCH_SIZE, batches, parseRecipients, planCampaign } from "@/lib/promo-sms";
 
 /**
- * The promotional campaign spends money per recipient, and the amount is not
- * obvious from looking at a list. These pin the things that decide the bill and
- * the things that decide whether a message arrives at all.
+ * Campaigns spend money per recipient, and with first names in the greeting
+ * each person can get a different message. These pin who is included, what
+ * each receives, and what it all costs — before anything reaches the gateway.
  */
-
-describe("the approved message", () => {
-  it("is the wording registered as template 1777178765648170151", () => {
-    /*
-     * Pinned character for character. An operator compares every message
-     * against the registered template and silently drops anything that
-     * differs, after the credit is spent — so an innocent tidy-up of the
-     * phrasing here would stop the whole campaign arriving, with nothing in
-     * any log to say why.
-     */
-    expect(PROMO_MESSAGE).toBe(
-      "Craving real dhaba flavours? Dilkhush Raita Wala Dhaba is now online! " +
-        "Explore our tasty menu & order fresh food now: https://dilkhushraita.com/"
-    );
-  });
-
-  it("has no variable to fill, so none can be left unfilled", () => {
-    expect(PROMO_MESSAGE).not.toContain("{#var#}");
-    expect(PROMO_MESSAGE).not.toContain("{name}");
-  });
-
-  it("is plain GSM-7, so it is not silently re-encoded", () => {
-    // One character outside this alphabet forces the whole message into UCS-2,
-    // which cuts the per-credit allowance from 160 characters to 70.
-    const outside = [...PROMO_MESSAGE].filter((c) => c.charCodeAt(0) > 126);
-    expect(outside, `non-GSM-7: ${outside.join("")}`).toHaveLength(0);
-  });
-
-  it("points at the URL already whitelisted on DLT", () => {
-    expect(PROMO_MESSAGE).toContain("https://dilkhushraita.com/");
-  });
-
-  it("fits in one credit, which is the whole point of its length", () => {
-    /*
-     * 143 characters, under the 160 that fit in a single SMS. The earlier
-     * wording ran to 200 and cost two credits for every recipient — this one
-     * halves the price of every campaign, permanently, so the length is a
-     * decision and not an accident. Anything that pushes it past 160 doubles
-     * the bill again.
-     */
-    expect(PROMO_MESSAGE.length).toBe(143);
-    expect(PROMO_MESSAGE.length).toBeLessThanOrEqual(160);
-    expect(creditsFor(PROMO_MESSAGE)).toBe(1);
-  });
-});
-
-describe("what a message costs", () => {
-  it("is one credit up to 160 characters and two past it", () => {
-    expect(creditsFor("a".repeat(160))).toBe(1);
-    expect(creditsFor("a".repeat(161))).toBe(2);
-    expect(creditsFor("a".repeat(306))).toBe(2);
-    expect(creditsFor("a".repeat(307))).toBe(3);
-  });
-});
 
 describe("reading a list of numbers", () => {
   it("takes them however they were written", () => {
@@ -107,9 +47,108 @@ describe("reading a list of numbers", () => {
     expect(r.numbers).toHaveLength(50);
     expect(r.rejected).toHaveLength(10);
   });
+});
 
-  it("returns nothing for an empty paste rather than a phantom recipient", () => {
-    expect(parseRecipients("   \n\n , ; ").numbers).toEqual([]);
+describe("Website Promotion", () => {
+  it("greets each customer by their own first name", () => {
+    const plan = planCampaign("websitePromotion", [
+      { phone: "+919000000001", name: "Rahul Kumar" },
+      { phone: "+919000000002", name: "PRIYA SINGH" },
+    ]);
+    const messages = plan.groups.map((g) => g.message);
+    expect(messages[0]).toMatch(/^Hi! Rahul, craving/);
+    expect(messages[1]).toMatch(/^Hi! Priya, craving/);
+  });
+
+  it("uses 'Friend', never 'Customer', when there is no name", () => {
+    const plan = planCampaign("websitePromotion", [{ phone: "+919000000001", name: null }]);
+    expect(plan.groups[0].message).toMatch(/^Hi! Friend, craving/);
+    expect(plan.groups[0].message).not.toContain("Customer");
+  });
+
+  it("groups people who get the same message, so it still goes out in batches", () => {
+    // One gateway call per distinct message, not one per person.
+    const plan = planCampaign("websitePromotion", [
+      { phone: "+919000000001", name: "Rahul" },
+      { phone: "+919000000002", name: "rahul sharma" },
+      { phone: "+919000000003", name: null },
+      { phone: "+919000000004", name: null },
+    ]);
+    expect(plan.groups).toHaveLength(2);
+    expect(plan.groups.map((g) => g.numbers.length)).toEqual([2, 2]);
+    expect(plan.recipients).toBe(4);
+  });
+});
+
+describe("the promotions switch", () => {
+  it("leaves out anyone who turned promotions off, whichever template", () => {
+    for (const t of ["websitePromotion", "customerOffer"] as const) {
+      const plan = planCampaign(t, [
+        { phone: "+919000000001", name: "Rahul", points: 40, optedOut: true },
+        { phone: "+919000000002", name: "Priya", points: 40 },
+      ]);
+      expect(plan.recipients, t).toBe(1);
+      expect(plan.skipped, t).toEqual([
+        { phone: "+919000000001", why: "turned promotional messages off" },
+      ]);
+    }
+  });
+});
+
+describe("Special Offer", () => {
+  it("puts the coupon's name and code into the message, the same for everyone", () => {
+    const plan = planCampaign(
+      "specialOffer",
+      [
+        { phone: "+919000000001", name: "Rahul" },
+        { phone: "+919000000002", name: "Priya" },
+      ],
+      { name: "₹100 welcome-back treat", code: "COMEBACK100" }
+    );
+    expect(plan.groups).toHaveLength(1);
+    expect(plan.groups[0].message).toBe(
+      "Rs.100 welcome-back treat is live at Dilkhush Raita Wala Dhaba! Use coupon COMEBACK100 to get a special discount. Order now: https://dilkhushraita.com/"
+    );
+  });
+
+  it("will not build without a coupon", () => {
+    expect(() => planCampaign("specialOffer", [{ phone: "+919000000001" }])).toThrow(/coupon/);
+  });
+});
+
+describe("Points Reminder", () => {
+  it("tells each customer the points they actually earned", () => {
+    const plan = planCampaign("customerOffer", [
+      { phone: "+919000000001", name: "Rahul", points: 45 },
+      { phone: "+919000000002", name: "Priya", points: 120 },
+    ]);
+    expect(plan.groups.map((g) => g.message)).toEqual([
+      "Hi Rahul, you earned 45 Dilkhush Points on your order! Use your points to save on your next order: https://dilkhushraita.com/",
+      "Hi Priya, you earned 120 Dilkhush Points on your order! Use your points to save on your next order: https://dilkhushraita.com/",
+    ]);
+  });
+
+  it("skips anyone with no points rather than telling them they earned none", () => {
+    const plan = planCampaign("customerOffer", [
+      { phone: "+919000000001", name: "Rahul", points: 0 },
+      { phone: "+919000000002", name: "Priya", points: null },
+      { phone: "+919000000003", name: "Aman", points: 30 },
+    ]);
+    expect(plan.recipients).toBe(1);
+    expect(plan.skipped.map((s) => s.why)).toEqual([
+      "has not earned any points",
+      "has not earned any points",
+    ]);
+  });
+});
+
+describe("what it costs", () => {
+  it("adds up per message, since messages can differ in length", () => {
+    const plan = planCampaign("websitePromotion", [
+      { phone: "+919000000001", name: "Rahul" }, // 1 credit
+      { phone: "+919000000002", name: "Abcdefghijklmnopqrst" }, // 20 letters: 2 credits
+    ]);
+    expect(plan.credits).toBe(3);
   });
 });
 

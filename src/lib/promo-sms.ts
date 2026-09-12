@@ -1,44 +1,23 @@
 import { normalizePhone } from "./utils";
+import {
+  NAME_FALLBACK,
+  SMS_TEMPLATES,
+  creditsFor,
+  fillTemplate,
+  firstName,
+  type CampaignTemplate,
+} from "./sms-templates";
 
 /**
- * Promotional SMS — the "Website Promotion" campaign sent from the Marketing
- * page.
+ * Campaigns from the Marketing page: Website Promotion, Special Offer and the
+ * Points Reminder.
  *
- * Kept entirely separate from the OTP path in src/lib/otp.ts, and not sharing
- * its code, because the two are different things that happen to use one
- * gateway. An OTP is transactional: one code, one number that just asked for
- * it, on a template registered as transactional. This is promotional: one fixed
- * message to a list, on its own DLT template, and every recipient is billed.
- * Mixing them is how a promotion ends up sent on the OTP template, which gets
- * it dropped and gets the sender ID complained about.
- *
- * The message lives here rather than in the environment on purpose. It carries
- * no secret and never changes between machines — it changes only when DLT
- * approves a new version — so a constant in version control is both safer than
- * a pasted line and the only copy that can be reviewed in a diff. The
- * environment holds credentials and IDs, which is what an environment is for.
+ * Kept apart from the order messages and from the OTP path. An OTP and an order
+ * update are transactional — one message to one person about something they
+ * just did — while these go to a list, are billed per recipient, cannot reach a
+ * number on the Do Not Disturb register, and must respect a customer who has
+ * switched promotions off.
  */
-
-/**
- * The wording approved as DLT template 1777178765648170151, character for
- * character as it appears in the provider's portal.
- *
- * It carries no {#var#} — the whole message is fixed text, so there is nothing
- * to substitute and nothing that can be left unfilled.
- *
- * DO NOT EDIT to improve the phrasing. An Indian operator compares every
- * message against the registered template and silently drops anything that
- * differs, after the credit has been spent. Change it in the portal first, get
- * it approved, then change it here to match.
- */
-export const PROMO_MESSAGE =
-  "Craving real dhaba flavours? Dilkhush Raita Wala Dhaba is now online! " +
-  "Explore our tasty menu & order fresh food now: https://dilkhushraita.com/";
-
-/** 160 GSM-7 characters in one credit; longer messages are billed per 153. */
-export function creditsFor(message: string): number {
-  return message.length <= 160 ? 1 : Math.ceil(message.length / 153);
-}
 
 export interface RecipientList {
   /** Valid, unique, in the order first seen. */
@@ -108,82 +87,104 @@ export function batches<T>(items: T[], size = BATCH_SIZE): T[][] {
   return out;
 }
 
-export interface PromoConfig {
-  senderId: string;
-  templateId: string;
-  apiKey?: string;
+/** One person a campaign might go to, with what is known about them. */
+export interface CampaignRecipient {
+  /** +91XXXXXXXXXX */
+  phone: string;
+  /** Their name as stored, if they are a customer. */
+  name?: string | null;
+  /** Points earned on their most recent order — the Points Reminder's second slot. */
+  points?: number | null;
+  /** True when they have turned promotional messages off in their account. */
+  optedOut?: boolean;
+}
+
+/** The coupon a Special Offer announces. */
+export interface CampaignOffer {
+  name: string;
+  code: string;
+}
+
+export interface CampaignGroup {
+  /** The exact text every number in this group receives. */
+  message: string;
+  numbers: string[];
+  /** Credits for ONE copy of this message. */
+  creditsEach: number;
+}
+
+export interface CampaignPlan {
+  groups: CampaignGroup[];
+  recipients: number;
+  credits: number;
+  skipped: { phone: string; why: string }[];
 }
 
 /**
- * Credentials and IDs, which DO belong in the environment: they differ between
- * machines and one of them is a secret.
- */
-export function promoConfig(): PromoConfig | null {
-  const senderId = process.env.STPL_SENDER_ID?.trim();
-  const templateId = process.env.STPL_PROMO_TEMPLATE_ID?.trim();
-  if (!senderId || !templateId) return null;
-  return { senderId, templateId, apiKey: process.env.STPL_API_KEY?.trim() || undefined };
-}
-
-/** What the gateway said about one batch. */
-export interface BatchResult {
-  ok: boolean;
-  detail?: string;
-}
-
-/**
- * Sends one batch.
+ * Works out exactly what each recipient will receive, and what it costs.
  *
- * The query is assembled by hand with encodeURIComponent so spaces travel as
- * %20. URLSearchParams writes them as "+", which this gateway does not decode
- * back — the operator then sees "Dilkhush+Raita+Wala..." , finds it different
- * from the registered template, and drops it while still charging. That is not
- * hypothetical; it is what silently broke every OTP for a day.
+ * With a real first name in the greeting, messages differ from person to
+ * person, so a campaign can no longer be one text sent fifty numbers at a time.
+ * Recipients are grouped by the message they get instead — everyone called
+ * Rahul shares a batch, as does everyone with no usable name — so batching
+ * still does the heavy lifting and nothing is sent one-by-one that did not need
+ * to be.
+ *
+ * Nobody who turned promotions off is included, however they came to be on the
+ * list. That switch is in their account page and it has to mean something.
  */
-export async function sendPromoBatch(
-  cfg: PromoConfig,
-  numbers: string[],
-  message: string
-): Promise<BatchResult> {
-  const query = [
-    ...(cfg.apiKey ? [`apikey=${encodeURIComponent(cfg.apiKey)}`] : []),
-    `senderid=${encodeURIComponent(cfg.senderId)}`,
-    `templateid=${encodeURIComponent(cfg.templateId)}`,
-    `number=${encodeURIComponent(numbers.map((n) => n.replace(/^\+/, "")).join(","))}`,
-    `message=${encodeURIComponent(message)}`,
-    "format=JSON",
-  ].join("&");
+export function planCampaign(
+  template: CampaignTemplate,
+  recipients: CampaignRecipient[],
+  offer?: CampaignOffer
+): CampaignPlan {
+  const byMessage = new Map<string, CampaignGroup>();
+  const skipped: { phone: string; why: string }[] = [];
 
-  try {
-    const res = await fetch(`https://smsfortius.org/V2/apikey.php?${query}`, {
-      signal: AbortSignal.timeout(30_000),
-    });
-    const text = await res.text();
-    let data: { status?: boolean | string; code?: string; description?: string } = {};
-    try {
-      data = JSON.parse(text);
-    } catch {
-      return { ok: false, detail: `gateway did not return JSON (HTTP ${res.status})` };
-    }
-    // "011" is the reliable signal. `status` is documented as a boolean and
-    // arrives as the string "Success"; both are accepted.
-    const status = typeof data.status === "string" ? data.status.toLowerCase() : data.status;
-    const ok =
-      res.ok && (data.code === "011" || status === true || status === "true" || status === "success");
-    if (ok) return { ok: true };
-
-    const KNOWN: Record<string, string> = {
-      "001": "the gateway rejected the API key",
-      "003": "the gateway does not recognise this sender ID",
-      "007": "no valid destination number in the batch",
-      "008": "ACCOUNT OUT OF CREDIT",
-      "009": "PARENT ACCOUNT OUT OF BALANCE",
-    };
-    return {
-      ok: false,
-      detail: (data.code ? KNOWN[data.code] : undefined) ?? data.description ?? `code ${data.code ?? "?"}`,
-    };
-  } catch (e) {
-    return { ok: false, detail: e instanceof Error && e.name === "TimeoutError" ? "timed out" : "network error" };
+  // The offer is the same for everyone, so a bad one fails the whole campaign
+  // up front rather than every recipient separately.
+  let offerMessage: string | null = null;
+  if (template === "specialOffer") {
+    if (!offer) throw new Error("Choose the coupon this offer announces.");
+    offerMessage = fillTemplate("specialOffer", [offer.name, offer.code]);
   }
+
+  for (const r of recipients) {
+    if (r.optedOut) {
+      skipped.push({ phone: r.phone, why: "turned promotional messages off" });
+      continue;
+    }
+
+    let message: string;
+    if (template === "specialOffer") {
+      message = offerMessage!;
+    } else if (template === "customerOffer") {
+      // "You earned 0 points" is not a message anyone should get, and a number
+      // that is not a customer has no points to report.
+      if (!r.points || r.points <= 0) {
+        skipped.push({ phone: r.phone, why: "has not earned any points" });
+        continue;
+      }
+      message = fillTemplate("customerOffer", [firstName(r.name) ?? NAME_FALLBACK, String(r.points)]);
+    } else {
+      message = fillTemplate("websitePromotion", [firstName(r.name) ?? NAME_FALLBACK]);
+    }
+
+    const g = byMessage.get(message) ?? { message, numbers: [], creditsEach: creditsFor(message) };
+    g.numbers.push(r.phone);
+    byMessage.set(message, g);
+  }
+
+  const groups = [...byMessage.values()];
+  return {
+    groups,
+    recipients: groups.reduce((n, g) => n + g.numbers.length, 0),
+    credits: groups.reduce((n, g) => n + g.numbers.length * g.creditsEach, 0),
+    skipped,
+  };
+}
+
+/** The template a campaign sends on — for the gateway and the audit log. */
+export function campaignTemplate(template: CampaignTemplate) {
+  return SMS_TEMPLATES[template];
 }

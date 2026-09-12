@@ -5,6 +5,7 @@ import { allowedBranchIds, handler, HttpError, requireStaff } from "@/lib/guard"
 import { POINT_VALUE_RUPEES, REJECTION_REASONS, nextStatusesFor } from "@/lib/constants";
 import { onOrderCancelled, onOrderDelivered } from "@/lib/order-effects";
 import { notifyUser } from "@/lib/notify";
+import { sendOrderSms } from "@/lib/order-sms";
 import { audit } from "@/lib/audit";
 
 const Body = z.discriminatedUnion("action", [
@@ -57,6 +58,9 @@ export const PATCH = handler(
           data: { status: "ACCEPTED", acceptedAt: new Date(), prepTimeMins: prep },
         });
         await notifyUser(order.userId, "ORDER_ACCEPTED", ...CUSTOMER_MESSAGES.ACCEPTED);
+        // Not awaited: the order is already accepted, and a slow gateway must
+        // not hold up the click or undo it. Off unless NOTIFY_SMS_ENABLED.
+        void sendOrderSms(id, "confirmed");
         await audit(actor, "ORDER_ACCEPTED", "Order", id, { prep });
         break;
       }
@@ -107,6 +111,9 @@ export const PATCH = handler(
         if (body.status === "CANCELLED") await onOrderCancelled(id, false);
         const msg = CUSTOMER_MESSAGES[body.status];
         if (msg) await notifyUser(order.userId, body.status, ...msg);
+        // Not awaited, for the same reason as on accept.
+        if (body.status === "OUT_FOR_DELIVERY") void sendOrderSms(id, "dispatched");
+        if (body.status === "DELIVERED") void sendOrderSms(id, "delivered");
         await audit(actor, `ORDER_${body.status}`, "Order", id);
         break;
       }

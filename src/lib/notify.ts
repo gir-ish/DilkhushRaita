@@ -26,7 +26,8 @@ export async function notifyUser(
 
 async function sendExternal(userId: string, type: string, title: string, body: string) {
   if (process.env.NOTIFY_SMS_ENABLED === "true") {
-    // TODO(production): send via the STPL gateway — see src/lib/otp.ts
+    // Order updates go out by SMS from src/lib/order-sms.ts, which has the
+    // order number the DLT templates need and this generic hook does not.
   }
   if (process.env.NOTIFY_WHATSAPP_ENABLED === "true") {
     // TODO(production): send via WhatsApp Business API

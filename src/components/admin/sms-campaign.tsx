@@ -1,18 +1,51 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ErrorBox } from "@/components/ui";
 
+type Template = "websitePromotion" | "specialOffer" | "customerOffer";
+
+/**
+ * What each template does, in the operator's terms. The wording itself is the
+ * DLT-approved text in src/lib/sms-templates.ts; this only explains the slots.
+ */
+const TEMPLATES: { key: Template; label: string; blurb: string }[] = [
+  {
+    key: "websitePromotion",
+    label: "Website Promotion",
+    blurb: "Invites people to order online. Greets each customer by first name.",
+  },
+  {
+    key: "specialOffer",
+    label: "Special Offer",
+    blurb: "Announces one of your coupons — its name and code go into the message.",
+  },
+  {
+    key: "customerOffer",
+    label: "Points Reminder",
+    blurb:
+      "Tells customers the points they earned on their last order and nudges them to spend them. Only goes to customers who have earned points.",
+  },
+];
+
+interface Coupon {
+  id: string;
+  code: string;
+  name: string;
+  active: boolean;
+}
+
 interface Preview {
-  message: string;
-  length: number;
-  creditsPerMessage: number;
+  template: { key: Template; name: string; id: string };
+  samples: { message: string; recipients: number; creditsEach: number }[];
+  distinctMessages: number;
   recipients: number;
   credits: number;
+  skipped: { phone: string; why: string }[];
+  skippedCount: number;
   duplicatesRemoved: number;
   rejected: { raw: string; why: string }[];
   rejectedCount: number;
-  batches: number;
 }
 
 interface SendResult {
@@ -24,15 +57,17 @@ interface SendResult {
 }
 
 /**
- * Sends the promotional SMS to a list of numbers.
+ * Sends a promotional SMS to a list of numbers.
  *
  * Two steps on purpose. This is the only button in the dashboard that spends
- * money per press, and the amount is not obvious from the list — a paste of
- * eight hundred numbers is sixteen hundred credits, and nothing on screen says
- * so until it is worked out. So: preview first, showing the exact message, the
- * count and the cost; then a send that refuses if either number has moved since.
+ * money per press, and the amount is not obvious from the list. So: preview
+ * first, showing real messages with real names in them, the count and the cost;
+ * then a send that refuses if either figure has moved since.
  */
 export function SmsCampaign() {
+  const [template, setTemplate] = useState<Template>("websitePromotion");
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [couponId, setCouponId] = useState("");
   const [source, setSource] = useState<"paste" | "customers">("customers");
   const [recipients, setRecipients] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -42,13 +77,28 @@ export function SmsCampaign() {
   const [confirming, setConfirming] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    fetch("/api/admin/coupons")
+      .then((r) => (r.ok ? r.json() : { coupons: [] }))
+      .then((d) => setCoupons((d.coupons ?? []).filter((c: Coupon) => c.active)))
+      .catch(() => setCoupons([]));
+  }, []);
+
+  // Anything that changes who gets what makes the old preview a lie.
+  const invalidate = () => {
+    setPreview(null);
+    setResult(null);
+    setConfirming(false);
+  };
+
   const call = async (dryRun: boolean, expect?: { count: number; credits: number }) => {
     const r = await fetch("/api/admin/marketing/campaign", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        // The server fills this itself when the source is the customer list.
-        recipients: source === "customers" ? "customers" : recipients,
+        template,
+        couponId: template === "specialOffer" ? couponId : undefined,
+        recipients: source === "customers" ? "" : recipients,
         source,
         dryRun,
         expect,
@@ -96,22 +146,84 @@ export function SmsCampaign() {
     reader.onload = () => {
       setSource("paste");
       setRecipients(String(reader.result ?? ""));
-      setPreview(null);
+      invalidate();
     };
     reader.readAsText(f);
   };
 
+  const pill = (active: boolean) =>
+    `min-h-[38px] flex-1 rounded-lg border px-3 text-sm font-semibold ${
+      active ? "border-maroon-600 bg-maroon-600 text-white" : "border-maroon-800/20"
+    }`;
+
+  const current = TEMPLATES.find((t) => t.key === template)!;
+  const canPreview =
+    !busy &&
+    (source === "customers" || recipients.trim().length > 0) &&
+    (template !== "specialOffer" || !!couponId);
+
   return (
     <section className="card p-4 mt-4" aria-label="SMS campaign">
-      <h2 className="font-semibold mb-1">📣 Promotional SMS</h2>
+      <h2 className="font-semibold mb-1">📣 SMS campaigns</h2>
       <p className="text-sm text-maroon-800/60 mb-3">
-        Sends the DLT-approved &ldquo;Website Promotion&rdquo; message. Every recipient costs
-        credits from the SMS balance.
+        Sends a DLT-approved promotional message. Every recipient costs credits, customers who
+        switched promotions off are never included, and numbers on Do Not Disturb will not
+        receive promotional SMS.
       </p>
 
       <ErrorBox message={error} />
 
-      <div className="flex gap-2 my-3">
+      <p className="mt-3 mb-1 text-xs font-bold uppercase tracking-wide text-maroon-800/50">Message</p>
+      <div className="flex flex-wrap gap-2">
+        {TEMPLATES.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => {
+              setTemplate(t.key);
+              invalidate();
+            }}
+            aria-pressed={template === t.key}
+            className={pill(template === t.key)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-sm text-maroon-800/70">{current.blurb}</p>
+
+      {template === "specialOffer" && (
+        <div className="mt-3">
+          <label className="label" htmlFor="campaign-coupon">
+            Coupon to announce
+          </label>
+          <select
+            id="campaign-coupon"
+            className="input"
+            value={couponId}
+            onChange={(e) => {
+              setCouponId(e.target.value);
+              invalidate();
+            }}
+          >
+            <option value="">Choose an active coupon…</option>
+            {coupons.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.code} — {c.name}
+              </option>
+            ))}
+          </select>
+          {coupons.length === 0 && (
+            <p className="mt-1 text-xs text-maroon-800/60">
+              No active coupons. Switch one on above before announcing it.
+            </p>
+          )}
+        </div>
+      )}
+
+      <p className="mt-4 mb-1 text-xs font-bold uppercase tracking-wide text-maroon-800/50">
+        Send to
+      </p>
+      <div className="flex gap-2">
         {(
           [
             ["customers", "Our customers"],
@@ -122,13 +234,10 @@ export function SmsCampaign() {
             key={s}
             onClick={() => {
               setSource(s);
-              setPreview(null);
-              setResult(null);
+              invalidate();
             }}
             aria-pressed={source === s}
-            className={`min-h-[38px] flex-1 rounded-lg border px-3 text-sm font-semibold ${
-              source === s ? "border-maroon-600 bg-maroon-600 text-white" : "border-maroon-800/20"
-            }`}
+            className={pill(source === s)}
           >
             {label}
           </button>
@@ -136,22 +245,22 @@ export function SmsCampaign() {
       </div>
 
       {source === "customers" ? (
-        <p className="rounded-lg bg-cream-100 px-3 py-2 text-sm">
-          Everyone who has ordered from you and is not blocked. These are the numbers with
-          the clearest claim to consent — they were given to you to place an order.
+        <p className="mt-2 rounded-lg bg-cream-100 px-3 py-2 text-sm">
+          Everyone who has ordered from you, is not blocked and has not turned promotions off.
+          Each is greeted by their own first name.
         </p>
       ) : (
         <>
           <textarea
-            className="input !h-32 font-mono text-sm"
+            className="input !h-32 font-mono text-sm mt-2"
             placeholder={"9876543210\n9812345678\n… one per line, or comma separated"}
             value={recipients}
             onChange={(e) => {
               setRecipients(e.target.value);
-              setPreview(null);
+              invalidate();
             }}
           />
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             <input
               ref={fileRef}
               type="file"
@@ -163,18 +272,15 @@ export function SmsCampaign() {
               📄 Upload CSV
             </button>
             <span className="text-xs text-maroon-800/60">
-              Any column; anything unusable is listed back to you.
+              Numbers that belong to customers get their name; others are greeted
+              &ldquo;Friend&rdquo;.
             </span>
           </div>
         </>
       )}
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button
-          onClick={doPreview}
-          disabled={busy || (source === "paste" && !recipients.trim())}
-          className="btn-outline !min-h-[40px]"
-        >
+      <div className="mt-3">
+        <button onClick={doPreview} disabled={!canPreview} className="btn-outline !min-h-[40px]">
           {busy && !confirming ? "Checking…" : "Preview & cost"}
         </button>
       </div>
@@ -182,20 +288,39 @@ export function SmsCampaign() {
       {preview && (
         <div className="mt-4 rounded-xl border border-maroon-800/15 p-3">
           <p className="text-xs font-bold uppercase tracking-wide text-maroon-800/50">
-            Exactly what will be sent
-          </p>
-          <p className="mt-1 whitespace-pre-wrap rounded-lg bg-cream-100 p-3 font-mono text-sm">
-            {preview.message}
+            {preview.template.name} · template {preview.template.id}
           </p>
 
-          <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-4">
-            <div><dt className="text-maroon-800/60">Recipients</dt><dd className="font-bold">{preview.recipients}</dd></div>
-            <div><dt className="text-maroon-800/60">Credits each</dt><dd className="font-bold">{preview.creditsPerMessage}</dd></div>
+          <p className="mt-2 text-xs text-maroon-800/60">
+            {preview.distinctMessages > 1
+              ? `${preview.distinctMessages} different messages — one per first name. A few of them:`
+              : "Exactly what will be sent:"}
+          </p>
+          <ul className="mt-1 space-y-2">
+            {preview.samples.map((s, i) => (
+              <li key={i} className="rounded-lg bg-cream-100 p-3">
+                <p className="whitespace-pre-wrap font-mono text-sm">{s.message}</p>
+                <p className="mt-1 text-xs text-maroon-800/60">
+                  {s.recipients} recipient{s.recipients === 1 ? "" : "s"} · {s.message.length} chars ·{" "}
+                  {s.creditsEach} credit{s.creditsEach === 1 ? "" : "s"} each
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
+            <div>
+              <dt className="text-maroon-800/60">Recipients</dt>
+              <dd className="font-bold">{preview.recipients}</dd>
+            </div>
             <div>
               <dt className="text-maroon-800/60">Total credits</dt>
               <dd className="font-bold text-lg text-maroon-700">{preview.credits}</dd>
             </div>
-            <div><dt className="text-maroon-800/60">Length</dt><dd className="font-bold">{preview.length} chars</dd></div>
+            <div>
+              <dt className="text-maroon-800/60">Left out</dt>
+              <dd className="font-bold">{preview.skippedCount + preview.rejectedCount}</dd>
+            </div>
           </dl>
 
           {preview.duplicatesRemoved > 0 && (
@@ -205,10 +330,25 @@ export function SmsCampaign() {
             </p>
           )}
 
+          {preview.skippedCount > 0 && (
+            <details className="mt-2 text-sm">
+              <summary className="cursor-pointer font-semibold text-maroon-800">
+                {preview.skippedCount} left out on purpose
+              </summary>
+              <ul className="mt-1 max-h-32 overflow-y-auto text-xs text-maroon-800/70">
+                {preview.skipped.map((s, i) => (
+                  <li key={i}>
+                    <code>{s.phone}</code> — {s.why}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+
           {preview.rejectedCount > 0 && (
             <details className="mt-2 text-sm">
               <summary className="cursor-pointer font-semibold text-red-700">
-                {preview.rejectedCount} entr{preview.rejectedCount === 1 ? "y" : "ies"} cannot be used
+                {preview.rejectedCount} entr{preview.rejectedCount === 1 ? "y" : "ies"} could not be used
               </summary>
               <ul className="mt-1 max-h-32 overflow-y-auto text-xs text-maroon-800/70">
                 {preview.rejected.map((r, i) => (
@@ -221,10 +361,10 @@ export function SmsCampaign() {
           )}
 
           {preview.recipients === 0 ? (
-            <p className="mt-3 font-semibold text-red-700">Nothing to send.</p>
+            <p className="mt-3 font-semibold text-red-700">Nobody to send to.</p>
           ) : !confirming ? (
             <button onClick={() => setConfirming(true)} className="btn-primary !min-h-[44px] mt-3">
-              Send to {preview.recipients} number{preview.recipients === 1 ? "" : "s"}
+              Send to {preview.recipients} {preview.recipients === 1 ? "person" : "people"}
             </button>
           ) : (
             <div className="mt-3 rounded-xl bg-red-50 border border-red-200 p-3">
@@ -232,8 +372,8 @@ export function SmsCampaign() {
                 This spends {preview.credits} credits and cannot be undone.
               </p>
               <p className="text-sm text-red-900/80 mt-1">
-                {preview.recipients} people will receive this message. Messages already sent cannot
-                be recalled.
+                {preview.recipients} {preview.recipients === 1 ? "person" : "people"} will receive it.
+                Messages already sent cannot be recalled.
               </p>
               <div className="mt-3 flex gap-2">
                 <button onClick={doSend} disabled={busy} className="btn-primary !min-h-[44px]">
@@ -264,8 +404,8 @@ export function SmsCampaign() {
             </ul>
           )}
           <p className="mt-2 text-xs text-maroon-800/60">
-            Accepted by the gateway is not the same as delivered — numbers on DND may still be
-            dropped by the operator.
+            Accepted by the gateway is not the same as delivered — numbers on Do Not Disturb are
+            dropped by the operator for promotional messages.
           </p>
         </div>
       )}
