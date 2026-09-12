@@ -60,7 +60,37 @@ export default function AdminMenuPage() {
   // are out of the way here unless asked for.
   const [showHidden, setShowHidden] = useState(false);
   const hiddenCount = items?.filter((i) => !i.active).length ?? 0;
+  // Counted separately: a hidden category with nothing else hidden must still
+  // be findable, or there is no way back to it from this page.
+  const hiddenCats = categories?.filter((c) => !c.active).length ?? 0;
   const shown = items?.filter((i) => showHidden || i.active) ?? null;
+
+  const setCategoryActive = async (c: Category, active: boolean) => {
+    if (!active && !confirm(`Hide "${c.name}"? Every dish in it disappears from both branches' menus until you show it again.`))
+      return;
+    setError(null);
+    const r = await fetch(`/api/admin/menu/categories/${c.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ active }),
+    });
+    if (!r.ok) setError((await r.json()).error ?? "Could not change the category");
+    load();
+  };
+
+  /** Puts a hidden dish back on the menu — and its category, if that is hidden too. */
+  const putBack = async (it: Item) => {
+    setError(null);
+    const r = await fetch(`/api/admin/menu/items/${it.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ active: true }),
+    });
+    if (!r.ok) return setError((await r.json()).error ?? "Could not put it back");
+    const cat = categories?.find((c) => c.id === it.categoryId);
+    if (cat && !cat.active) await setCategoryActive(cat, true);
+    else load();
+  };
 
   const load = useCallback(() => {
     fetch("/api/admin/menu/categories").then((r) => r.json()).then((d) => setCategories(d.categories ?? []));
@@ -222,27 +252,35 @@ export default function AdminMenuPage() {
       <ErrorBox message={error} />
 
       <section className="card p-4 mb-4" aria-label="Categories">
-        <h2 className="font-semibold mb-2">Categories</h2>
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <h2 className="font-semibold mr-auto">Categories</h2>
+          {(hiddenCats > 0 || hiddenCount > 0) && (
+            <label className="inline-flex items-center gap-1 text-sm cursor-pointer">
+              <input type="checkbox" className="h-4 w-4 accent-maroon-600" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} />
+              Show hidden
+              {hiddenCats > 0 && ` · ${hiddenCats} ${hiddenCats === 1 ? "category" : "categories"}`}
+              {hiddenCount > 0 && ` · ${hiddenCount} ${hiddenCount === 1 ? "dish" : "dishes"}`}
+            </label>
+          )}
+        </div>
         <div className="flex flex-wrap gap-2 items-center">
-          {categories?.filter((c) => showHidden || c.active).map((c) => (
-            <span key={c.id} className={`chip ${!c.active ? "opacity-50" : ""}`}>
-              {c.name} ({c._count.items})
-              <button
-                aria-label={`${c.active ? "Deactivate" : "Activate"} ${c.name}`}
-                className="ml-1 underline text-xs"
-                onClick={async () => {
-                  await fetch(`/api/admin/menu/categories/${c.id}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ active: !c.active }),
-                  });
-                  load();
-                }}
-              >
-                {c.active ? "hide" : "show"}
-              </button>
-            </span>
-          ))}
+          {categories?.filter((c) => showHidden || c.active).map((c) =>
+            c.active ? (
+              <span key={c.id} className="chip">
+                {c.name} ({c._count.items})
+                <button aria-label={`Hide ${c.name}`} className="ml-1 underline text-xs" onClick={() => setCategoryActive(c, false)}>
+                  hide
+                </button>
+              </span>
+            ) : (
+              <span key={c.id} className="chip border-dashed opacity-70">
+                <s>{c.name}</s> ({c._count.items}) · hidden
+                <button aria-label={`Show ${c.name} again`} className="ml-1 text-xs font-bold text-leaf-600 underline" onClick={() => setCategoryActive(c, true)}>
+                  Show again
+                </button>
+              </span>
+            )
+          )}
           <span className="flex gap-1">
             <input className="input !min-h-[36px] !py-1 !w-36" placeholder="New category" value={newCat} onChange={(e) => setNewCat(e.target.value)} aria-label="New category name" />
             <button onClick={addCategory} className="btn-secondary !min-h-[36px] !px-3">Add</button>
@@ -255,12 +293,6 @@ export default function AdminMenuPage() {
           <>Change any Half, Full or single price, then press <strong>Save prices</strong>. Changed boxes are highlighted.</>
         ) : (
           <>Each branch has its own Half and Full price. Press <strong>Edit prices</strong> to change them for every dish at once, or <strong>Edit</strong> on one dish.</>
-        )}
-        {hiddenCount > 0 && (
-          <label className="ml-2 inline-flex items-center gap-1 cursor-pointer whitespace-nowrap">
-            <input type="checkbox" className="h-4 w-4 accent-maroon-600" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} />
-            show {hiddenCount} hidden
-          </label>
         )}
       </p>
 
@@ -286,7 +318,7 @@ export default function AdminMenuPage() {
             </thead>
             <tbody>
               {shown.map((it) => (
-                <tr key={it.id} className={`border-b border-cream-100 ${!it.active ? "opacity-40" : ""}`}>
+                <tr key={it.id} className={`border-b border-cream-100 ${!it.active ? "bg-cream-100/60 text-maroon-800/50" : ""}`}>
                   <td className="p-3">
                     <span className="flex items-center gap-2">
                       {it.imageUrl ? (
@@ -301,6 +333,7 @@ export default function AdminMenuPage() {
                       )}
                       <VegMark veg={it.veg} />
                       <span className="font-semibold">{it.name}</span>
+                      {!it.active && <span className="chip !py-0 text-[11px]">hidden</span>}
                       {it.bestseller && "⭐"}
                     </span>
                   </td>
@@ -361,6 +394,11 @@ export default function AdminMenuPage() {
                     );
                   })}
                   <td className="p-3">
+                    {!priceMode && !it.active && (
+                      <button onClick={() => putBack(it)} className="block mb-1 text-xs font-bold text-leaf-600 underline whitespace-nowrap">
+                        Show again
+                      </button>
+                    )}
                     {!priceMode && <button onClick={() => setEditing(it)} className="underline text-maroon-600">Edit</button>}
                   </td>
                 </tr>
