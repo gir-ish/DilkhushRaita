@@ -192,6 +192,20 @@ export function OrderDetailModal({
         {/* An unpaid dine-in tab is still open even after it is marked served,
             so billing and adding another round must be reachable from here —
             not only from the Counter screen. */}
+        {/* A parcel paid for when it is collected: take the money at the
+            counter, where the method (cash, UPI, khata) is recorded. Marking
+            it delivered here instead records it as cash. */}
+        {!kitchenMode &&
+          order.type === "PICKUP" &&
+          order.paymentMethod === "COD" &&
+          order.paymentStatus === "PENDING" &&
+          ["ACCEPTED", "PREPARING", "READY"].includes(order.status) && (
+            <p className="rounded-xl border border-mustard-400 bg-mustard-100 p-3 text-sm no-print">
+              💰 {inr(order.total)} to collect when the customer takes the parcel —{" "}
+              <a href="/admin/counter" className="underline font-semibold">Counter → Parcels waiting</a> to take cash,
+              UPI / card or khata.
+            </p>
+          )}
         {/* Billed to khata is not open: what is owed lives on the khata now. */}
         {!kitchenMode &&
           order.paymentMethod === "KHATA" &&

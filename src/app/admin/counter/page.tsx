@@ -32,6 +32,19 @@ interface OpenTab {
   items: { id: string; name: string; variantName: string | null; qty: number; lineTotal: number; round: number }[];
 }
 
+interface Pickup {
+  id: string;
+  orderNumber: string;
+  status: string;
+  total: number;
+  placedAt: string;
+  paymentMethod: string;
+  paymentStatus: string;
+  customer: { name: string | null; phone: string | null };
+  itemCount: number;
+  items: { id: string; name: string; variantName: string | null; qty: number; lineTotal: number }[];
+}
+
 interface Line {
   key: string; // identity of an item+variant+add-on combination
   menuItemId: string;
@@ -64,6 +77,9 @@ function CounterInner() {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"PARCEL" | "DINE_IN">("PARCEL");
   const [tabs, setTabs] = useState<OpenTab[] | null>(null);
+  // Parcels ordered and not yet handed over, and the one being collected.
+  const [pickups, setPickups] = useState<Pickup[] | null>(null);
+  const [collecting, setCollecting] = useState<Pickup | null>(null);
   // When set, the cart is being added to this existing tab rather than
   // starting a new order.
   const [addingTo, setAddingTo] = useState<OpenTab | null>(null);
@@ -87,6 +103,20 @@ function CounterInner() {
   }, [branchId]);
 
   useEffect(loadTabs, [loadTabs]);
+
+  const loadPickups = useCallback(() => {
+    if (!branchId) return;
+    fetch(`/api/admin/counter/pickups?branchId=${branchId}`)
+      .then((r) => (r.ok ? r.json() : { pickups: [] }))
+      .then((d) => setPickups(d.pickups ?? []))
+      .catch(() => setPickups([]));
+  }, [branchId]);
+  useEffect(() => {
+    loadPickups();
+    // The kitchen moves parcels along from its own screen; keep up with it.
+    const t = setInterval(loadPickups, 20_000);
+    return () => clearInterval(t);
+  }, [loadPickups]);
 
   // Deep link from Orders -> "Add items" on an open tab.
   const wantedTab = params.get("tab");
@@ -358,6 +388,10 @@ function CounterInner() {
 
       <ErrorBox message={error} />
 
+      {mode === "PARCEL" && (
+        <WaitingParcels pickups={pickups} onCollect={(p) => setCollecting(p)} />
+      )}
+
       {mode === "DINE_IN" && !addingTo && (
         <OpenTabs
           tabs={tabs}
@@ -524,16 +558,30 @@ function CounterInner() {
           lines={lines}
           mode={mode}
           onClose={() => setCheckout(false)}
-          onDone={(orderId) => {
+          onDone={(orderId, payLater) => {
             setCheckout(false);
             setLines([]);
             if (mode === "DINE_IN") loadTabs();
+            // Paying at pickup: the customer is waiting here, so the parcel
+            // stays on this screen until they collect it.
+            else if (payLater) loadPickups();
             else router.push(`/admin/orders?highlight=${orderId}`);
           }}
         />
       )}
 
       {khataOpen && <KhataFinder onClose={() => setKhataOpen(false)} />}
+
+      {collecting && (
+        <CollectModal
+          parcel={collecting}
+          onClose={() => setCollecting(null)}
+          onDone={() => {
+            setCollecting(null);
+            loadPickups();
+          }}
+        />
+      )}
 
       {settling && (
         <SettleModal
@@ -719,14 +767,15 @@ function CheckoutModal({
   lines: Line[];
   mode: "PARCEL" | "DINE_IN";
   onClose: () => void;
-  onDone: (orderId: string) => void;
+  onDone: (orderId: string, payLater: boolean) => void;
 }) {
   const [search, setSearch] = useState("");
   const [hits, setHits] = useState<CustomerHit[]>([]);
   const [picked, setPicked] = useState<CustomerHit | null>(null);
   const [name, setName] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "ONLINE" | "KHATA">("CASH");
-  const [paid, setPaid] = useState(true);
+  // LATER: the customer waits for the parcel and pays when they collect it.
+  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "ONLINE" | "KHATA" | "LATER">("CASH");
+  const payLater = paymentMethod === "LATER";
   // Khata: anything paid towards the bill now; the rest goes on the account.
   const [paidNow, setPaidNow] = useState("");
   const [paidNowMethod, setPaidNowMethod] = useState<PayMethod>("CASH");
@@ -777,8 +826,8 @@ function CheckoutModal({
             : { name: name.trim() || null, phone: search }),
           orderType: mode,
           tableNo: mode === "DINE_IN" ? tableNo.trim() || null : null,
-          paymentMethod,
-          paid,
+          paymentMethod: payLater ? "CASH" : paymentMethod,
+          paid: !payLater,
           ...(paymentMethod === "KHATA" ? { paidNow: +paidNow || 0, paidNowMethod } : {}),
           instructions: instructions.trim() || null,
         }),
@@ -793,9 +842,11 @@ function CheckoutModal({
           ? `Tab opened · ${d.orderNumber} · ${inr(d.total)} so far`
           : paymentMethod === "KHATA"
             ? `Order ${d.orderNumber} placed · ${inr(Math.max(d.total - (+paidNow || 0), 0))} added to khata`
-            : `Order ${d.orderNumber} placed · ${inr(d.total)}`
+            : payLater
+              ? `Order ${d.orderNumber} placed · collect ${inr(d.total)} when they take the parcel`
+              : `Order ${d.orderNumber} placed · ${inr(d.total)}`
       );
-      onDone(d.orderId);
+      onDone(d.orderId, mode !== "DINE_IN" && payLater);
     } catch (e) {
       playTone("error");
       setError(e instanceof Error ? e.message : "Could not place the order");
@@ -917,17 +968,23 @@ function CheckoutModal({
         <div className={mode === "DINE_IN" ? "hidden" : "border-t border-cream-200 pt-3"}>
           <span className="label">Payment</span>
           <div className="flex flex-wrap gap-2">
-            {(["CASH", "ONLINE", "KHATA"] as const).map((m) => (
+            {(["CASH", "ONLINE", "KHATA", "LATER"] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => setPaymentMethod(m)}
                 className={`chip ${paymentMethod === m ? "chip-active" : ""}`}
               >
-                {m === "CASH" ? "💵 Cash" : m === "ONLINE" ? "📱 UPI / Card" : "📒 Khata (pay later)"}
+                {m === "CASH" ? "💵 Cash" : m === "ONLINE" ? "📱 UPI / Card" : m === "KHATA" ? "📒 Khata (pay later)" : "⏳ Pay at pickup"}
               </button>
             ))}
           </div>
-          {paymentMethod === "KHATA" ? (
+          {payLater && (
+            <p className="mt-2 text-xs text-maroon-800/60">
+              The parcel waits under <strong>Parcels waiting</strong>. When they collect it, tap it and take
+              cash, UPI or card — or put it on their khata.
+            </p>
+          )}
+          {paymentMethod === "KHATA" && (
             <KhataPaidNow
               who={picked?.name ?? (name.trim() || null)}
               due={picked?.khataDue ?? 0}
@@ -936,11 +993,6 @@ function CheckoutModal({
               method={paidNowMethod}
               setMethod={setPaidNowMethod}
             />
-          ) : (
-            <label className="flex items-center gap-2 mt-3 text-sm cursor-pointer">
-              <input type="checkbox" className="h-4 w-4 accent-maroon-600" checked={paid} onChange={(e) => setPaid(e.target.checked)} />
-              Payment collected now
-            </label>
           )}
         </div>
 
@@ -1271,6 +1323,179 @@ function KhataFinder({ onClose }: { onClose: () => void }) {
             ))}
           </ul>
         )}
+      </div>
+    </Modal>
+  );
+}
+
+const PICKUP_STAGE: Record<string, { label: string; tone: string }> = {
+  ACCEPTED: { label: "🧾 Ordered", tone: "bg-cream-200 text-maroon-700" },
+  PREPARING: { label: "🍳 Preparing", tone: "bg-mustard-100 text-mustard-600" },
+  READY: { label: "✅ Ready", tone: "bg-leaf-50 text-leaf-600" },
+};
+
+/** What is still owed on a waiting parcel, in words. */
+function pickupPayment(p: Pickup): { label: string; due: boolean } {
+  if (p.paymentStatus === "PAID") return { label: "Paid ✓", due: false };
+  if (p.paymentMethod === "KHATA") return { label: "📒 On khata", due: false };
+  return { label: `${inr(p.total)} to collect`, due: true };
+}
+
+/**
+ * Parcels ordered and waiting to be collected. Ready ones first — someone is
+ * standing at the counter for those.
+ */
+function WaitingParcels({ pickups, onCollect }: { pickups: Pickup[] | null; onCollect: (p: Pickup) => void }) {
+  if (!pickups || pickups.length === 0) return null;
+  const sorted = [...pickups].sort((a, b) => (a.status === "READY" ? 0 : 1) - (b.status === "READY" ? 0 : 1));
+  return (
+    <section className="mb-4" aria-label="Parcels waiting">
+      <h2 className="font-semibold text-maroon-700 mb-2">
+        Parcels waiting <span className="text-maroon-800/50">· {pickups.length}</span>
+      </h2>
+      <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+        {sorted.map((p) => {
+          const stage = PICKUP_STAGE[p.status] ?? PICKUP_STAGE.ACCEPTED;
+          const pay = pickupPayment(p);
+          return (
+            <div
+              key={p.id}
+              className={`card p-3 sm:p-4 border-l-4 ${p.status === "READY" ? "border-l-leaf-500" : "border-l-mustard-400"}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <span className="font-bold text-lg">🛍️ {p.orderNumber}</span>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-bold whitespace-nowrap ${stage.tone}`}>{stage.label}</span>
+              </div>
+              <p className="text-sm text-maroon-800/70 mt-0.5">
+                {p.customer.name ?? "Walk-in"}
+                {p.customer.phone && ` · ${p.customer.phone.replace(/^\+91/, "")}`}
+              </p>
+              <p className="text-xs text-maroon-800/50 truncate mt-1">
+                {p.items.map((i) => `${i.qty}×${i.name}`).join(", ")}
+              </p>
+              <p className={`mt-2 text-xl font-bold ${pay.due ? "text-maroon-700" : "text-leaf-600"}`}>{pay.label}</p>
+              <button onClick={() => onCollect(p)} className="btn-primary w-full !min-h-[46px] mt-3">
+                {pay.due ? "💰 Collect & hand over" : "📦 Hand over"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The customer has come for their parcel: take the money — cash, UPI, card
+ * or khata — and hand it over. Payment can also be taken before the food is
+ * ready, leaving the parcel on the list until it goes out.
+ */
+function CollectModal({ parcel, onClose, onDone }: { parcel: Pickup; onClose: () => void; onDone: () => void }) {
+  const pay = pickupPayment(parcel);
+  const [method, setMethod] = useState<"CASH" | "ONLINE" | "KHATA">("CASH");
+  const [paidNow, setPaidNow] = useState("");
+  const [paidNowMethod, setPaidNowMethod] = useState<PayMethod>("CASH");
+  const [handOver, setHandOver] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/admin/counter/pickups/${parcel.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(pay.due ? { paymentMethod: method, ...(method === "KHATA" ? { paidNow: +paidNow || 0, paidNowMethod } : {}) } : {}),
+          handOver: pay.due ? handOver : true,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      playTone("success");
+      onDone();
+    } catch (e) {
+      playTone("error");
+      setError(e instanceof Error ? e.message : "Could not save");
+      setBusy(false);
+    }
+  };
+
+  const label = !pay.due
+    ? "📦 Hand over"
+    : method === "KHATA"
+      ? +paidNow > 0
+        ? `Take ${inr(+paidNow)} · ${inr(Math.max(parcel.total - +paidNow, 0))} on khata`
+        : `Put ${inr(parcel.total)} on khata`
+      : `Take ${inr(parcel.total)} by ${method === "CASH" ? "cash" : "UPI / card"}`;
+
+  return (
+    <Modal open onClose={onClose} title={`Parcel · ${parcel.orderNumber}`} wide>
+      <div className="space-y-4">
+        <p className="text-sm text-maroon-800/70">
+          {parcel.customer.name ?? "Walk-in"}
+          {parcel.customer.phone && ` · ${parcel.customer.phone}`} · {(PICKUP_STAGE[parcel.status] ?? PICKUP_STAGE.ACCEPTED).label}
+        </p>
+        <ul className="divide-y divide-cream-200 text-sm">
+          {parcel.items.map((i) => (
+            <li key={i.id} className="py-1.5 flex justify-between gap-3">
+              <span>
+                {i.qty} × {i.name}
+                {i.variantName && <span className="text-maroon-800/60"> ({i.variantName})</span>}
+              </span>
+              <span className="font-medium shrink-0">{inr(i.lineTotal)}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="flex justify-between items-baseline border-t-2 border-cream-200 pt-3">
+          <span className="font-bold text-lg">{pay.due ? "To collect" : "Total"}</span>
+          <span className="font-bold text-3xl text-maroon-700">{inr(parcel.total)}</span>
+        </div>
+
+        {pay.due ? (
+          <div>
+            <span className="label">Paid by</span>
+            <div className="flex flex-wrap gap-2">
+              {(["CASH", "ONLINE", "KHATA"] as const).map((m) => (
+                <button key={m} onClick={() => setMethod(m)} className={`chip ${method === m ? "chip-active" : ""}`}>
+                  {m === "CASH" ? "💵 Cash" : m === "ONLINE" ? "📱 UPI / Card" : "📒 Khata (pay later)"}
+                </button>
+              ))}
+            </div>
+            {method === "KHATA" && (
+              <KhataPaidNow
+                who={parcel.customer.name}
+                due={null}
+                paidNow={paidNow}
+                setPaidNow={setPaidNow}
+                method={paidNowMethod}
+                setMethod={setPaidNowMethod}
+                max={parcel.total}
+              />
+            )}
+            <label className="flex items-center gap-2 mt-3 text-sm cursor-pointer">
+              <input type="checkbox" className="h-4 w-4 accent-maroon-600" checked={handOver} onChange={(e) => setHandOver(e.target.checked)} />
+              Parcel handed over to the customer now
+            </label>
+            {!handOver && (
+              <p className="text-xs text-maroon-800/60 mt-1">
+                Payment is taken; the parcel stays under Parcels waiting until you hand it over.
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-leaf-600 font-semibold">{pay.label} — nothing to collect.</p>
+        )}
+
+        <ErrorBox message={error} />
+        <button
+          onClick={submit}
+          disabled={busy || (pay.due && method === "KHATA" && +paidNow > parcel.total)}
+          className="btn-primary w-full !py-4 !text-lg"
+        >
+          {busy ? "Saving…" : label}
+        </button>
       </div>
     </Modal>
   );
