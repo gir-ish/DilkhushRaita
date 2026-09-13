@@ -5,6 +5,7 @@ import { allowedBranchIds, handler, HttpError, requireStaff } from "@/lib/guard"
 import { audit } from "@/lib/audit";
 import { buildQuote } from "@/lib/quote";
 import { genOrderNumber, normalizePhone } from "@/lib/utils";
+import { KHATA_METHODS, ON_KHATA, chargeToKhata } from "@/lib/khata";
 
 const Body = z.object({
   branchId: z.string(),
@@ -28,8 +29,12 @@ const Body = z.object({
   // customer keeps adding to, settled when they leave.
   orderType: z.enum(["PARCEL", "DINE_IN"]).default("PARCEL"),
   tableNo: z.string().max(20).nullish(),
-  paymentMethod: z.enum(["CASH", "ONLINE"]).default("CASH"),
+  // KHATA: the customer pays later; the bill goes on their khata.
+  paymentMethod: z.enum(["CASH", "ONLINE", "KHATA"]).default("CASH"),
   paid: z.boolean().default(true),
+  // With KHATA, anything they pay towards the bill there and then.
+  paidNow: z.number().min(0).max(10_000_000).optional(),
+  paidNowMethod: z.enum(KHATA_METHODS).optional(),
   instructions: z.string().max(500).nullish(),
 });
 
@@ -110,8 +115,13 @@ export const POST = handler(async (req: Request) => {
   );
 
   // A dine-in tab is settled when the customer leaves, so it must not be
-  // marked paid up front however the client asks.
-  const paid = dineIn ? false : body.paid;
+  // marked paid up front however the client asks — and it goes on khata then,
+  // if at all, not now.
+  if (dineIn && body.paymentMethod === "KHATA")
+    throw new HttpError(400, "A table goes on khata when it is billed, not when the tab opens");
+  const khata = body.paymentMethod === "KHATA";
+  const paid = dineIn || khata ? false : body.paid;
+  const method = khata ? "KHATA" : body.paymentMethod === "CASH" ? "COD" : "ONLINE";
 
   const orderNumber = genOrderNumber();
   const order = await db.$transaction(async (tx) => {
@@ -134,7 +144,7 @@ export const POST = handler(async (req: Request) => {
       }
     }
 
-    return tx.order.create({
+    const created = await tx.order.create({
       data: {
         orderNumber,
         userId: userId!,
@@ -152,8 +162,8 @@ export const POST = handler(async (req: Request) => {
         tax: quote.totals.tax,
         loyaltyCredit: 0,
         total: quote.totals.total,
-        paymentMethod: body.paymentMethod === "CASH" ? "COD" : "ONLINE",
-        paymentStatus: paid ? "PAID" : "PENDING",
+        paymentMethod: method,
+        paymentStatus: khata ? ON_KHATA : paid ? "PAID" : "PENDING",
         etaMins: quote.etaMins,
         staffNotes: `Counter order taken by ${s.name ?? "staff"}`,
         items: {
@@ -170,14 +180,25 @@ export const POST = handler(async (req: Request) => {
         },
         payment: {
           create: {
-            provider: "cod",
-            method: body.paymentMethod === "CASH" ? "CASH" : "ONLINE",
-            status: paid ? "PAID" : "PENDING",
+            provider: khata ? "khata" : "cod",
+            method: khata ? "KHATA" : body.paymentMethod === "CASH" ? "CASH" : "ONLINE",
+            status: khata ? ON_KHATA : paid ? "PAID" : "PENDING",
             amount: quote.totals.total,
           },
         },
       },
     });
+    if (khata)
+      await chargeToKhata(tx, {
+        userId: userId!,
+        orderId: created.id,
+        branchId: quote.branch.id,
+        amount: quote.totals.total,
+        paidNow: body.paidNow,
+        paidNowMethod: body.paidNowMethod,
+        staff: { uid: s.uid, name: s.name },
+      });
+    return created;
   });
 
   await audit({ uid: s.uid, name: s.name }, "COUNTER_ORDER_CREATED", "Order", order.id, {
@@ -185,6 +206,7 @@ export const POST = handler(async (req: Request) => {
     total: quote.totals.total,
     paid,
     orderType: body.orderType,
+    ...(khata ? { khata: true, paidNow: body.paidNow ?? 0 } : {}),
   });
 
   return NextResponse.json({

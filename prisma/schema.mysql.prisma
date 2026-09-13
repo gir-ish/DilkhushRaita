@@ -38,6 +38,7 @@ model User {
   metrics            CustomerMetrics?
   addresses          Address[]
   orders             Order[]
+  khata              KhataEntry[]
   favourites         Favourite[]
   loyaltyTx          LoyaltyTransaction[]
   redemptions        CouponRedemption[]
@@ -330,6 +331,7 @@ model Order {
   review      Review?
   tickets     SupportTicket[]
   loyaltyTx   LoyaltyTransaction[]
+  khata       KhataEntry[]
 
   @@index([branchId, status])
   @@index([userId, placedAt])
@@ -575,6 +577,40 @@ model StaffDevice {
   createdAt  DateTime @default(now())
 
   @@index([userId])
+}
+
+/// The khata: what a customer owes for bills they chose to pay later, and
+/// what they have paid against it. One CHARGE per order put on khata; PAYMENT
+/// and WAIVE entries bring the balance down. Entries are never edited — a
+/// mistake is corrected by another entry — so the history is the account.
+/// Balance = charges − payments − waivers, where a charge for an order that was
+/// later cancelled or rejected no longer counts.
+model KhataEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String // CHARGE | PAYMENT | WAIVE
+  amount    Float // always positive; `kind` says which way it moves the balance
+  orderId   String? // the bill a CHARGE is for, or that a payment was taken with
+  order     Order?   @relation(fields: [orderId], references: [id])
+  branchId  String?
+  method    String? // PAYMENT: CASH | UPI | CARD
+  note      String? @db.VarChar(300)
+  staffId   String?
+  staffName String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([orderId])
+}
+
+/// Where the khata colours change: yellow once a customer owes more than
+/// `yellowAbove`, red once they owe more than `redAbove`. One row, owner-set.
+model KhataSettings {
+  id          String   @id @default("singleton")
+  yellowAbove Float    @default(0)
+  redAbove    Float    @default(1000)
+  updatedAt   DateTime @updatedAt
 }
 
 model OtpCode {

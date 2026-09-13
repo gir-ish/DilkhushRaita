@@ -8,6 +8,7 @@ import { computeTotals } from "@/lib/pricing";
 import { TAB_CLOSED_STATUSES } from "@/lib/constants";
 import type { SessionPayload } from "@/lib/session";
 import { onOrderDelivered } from "@/lib/order-effects";
+import { KHATA_METHODS, ON_KHATA, chargeToKhata } from "@/lib/khata";
 
 /** Loads an open tab and checks the caller is allowed to touch it. */
 async function loadOpenTab(id: string, session: SessionPayload) {
@@ -15,6 +16,8 @@ async function loadOpenTab(id: string, session: SessionPayload) {
   if (!order) throw new HttpError(404, "Tab not found");
   if (order.type !== "DINE_IN") throw new HttpError(400, "That order is not a dine-in tab");
   if (order.paymentStatus === "PAID") throw new HttpError(409, "That tab is already settled");
+  // Billed to khata: the tab is closed, what is owed now lives on the khata.
+  if (order.paymentStatus !== "PENDING") throw new HttpError(409, "That tab is already billed");
   // DELIVERED is intentionally not a blocker: served but unpaid is still open.
   if (TAB_CLOSED_STATUSES.includes(order.status as never))
     throw new HttpError(409, `That tab is already ${order.status.toLowerCase()}`);
@@ -144,10 +147,13 @@ export const POST = handler(
 );
 
 const SettleBody = z.object({
-  paymentMethod: z.enum(["CASH", "ONLINE"]).default("CASH"),
+  // KHATA: the customer leaves without paying in full; the bill goes on their khata.
+  paymentMethod: z.enum(["CASH", "ONLINE", "KHATA"]).default("CASH"),
+  paidNow: z.number().min(0).max(10_000_000).optional(),
+  paidNowMethod: z.enum(KHATA_METHODS).optional(),
 });
 
-/** Settles the tab — the customer is leaving and has paid. */
+/** Settles the tab — the customer is leaving, and has paid or put it on khata. */
 export const PATCH = handler(
   async (req: Request, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;
@@ -156,34 +162,47 @@ export const PATCH = handler(
     const order = await loadOpenTab(id, s);
 
     if (order.items.length === 0) throw new HttpError(400, "This tab has no items");
+    const khata = body.paymentMethod === "KHATA";
+    const status = khata ? ON_KHATA : "PAID";
 
-    await db.$transaction([
-      db.order.update({
+    await db.$transaction(async (tx) => {
+      await tx.order.update({
         where: { id: order.id },
         data: {
-          paymentStatus: "PAID",
-          paymentMethod: body.paymentMethod === "CASH" ? "COD" : "ONLINE",
-          // Paying is the end of the meal: the food has been served.
+          paymentStatus: status,
+          paymentMethod: khata ? "KHATA" : body.paymentMethod === "CASH" ? "COD" : "ONLINE",
+          // Billing is the end of the meal: the food has been served.
           status: "DELIVERED",
           deliveredAt: new Date(),
         },
-      }),
-      db.payment.updateMany({
+      });
+      await tx.payment.updateMany({
         where: { orderId: order.id },
         data: {
-          status: "PAID",
-          method: body.paymentMethod === "CASH" ? "CASH" : "ONLINE",
+          status,
+          method: khata ? "KHATA" : body.paymentMethod === "CASH" ? "CASH" : "ONLINE",
           amount: order.total,
         },
-      }),
-    ]);
+      });
+      if (khata)
+        await chargeToKhata(tx, {
+          userId: order.userId,
+          orderId: order.id,
+          branchId: order.branchId,
+          amount: order.total,
+          paidNow: body.paidNow,
+          paidNowMethod: body.paidNowMethod,
+          staff: { uid: s.uid, name: s.name },
+        });
+    });
 
     // Same side effects as any delivered order: loyalty points, customer metrics.
     await onOrderDelivered(order.id);
 
-    await audit({ uid: s.uid, name: s.name }, "TAB_SETTLED", "Order", order.id, {
+    await audit({ uid: s.uid, name: s.name }, khata ? "TAB_TO_KHATA" : "TAB_SETTLED", "Order", order.id, {
       total: order.total,
       paymentMethod: body.paymentMethod,
+      ...(khata ? { paidNow: body.paidNow ?? 0 } : {}),
     });
 
     return NextResponse.json({ ok: true, orderNumber: order.orderNumber, total: order.total });

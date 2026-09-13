@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ErrorBox, Modal, Spinner, VegMark } from "@/components/ui";
 import { inr } from "@/lib/utils";
 import { playTone } from "@/lib/sound";
+import { KhataModal } from "@/components/admin/khata-modal";
 
 interface Variant { id: string; name: string; priceDelta: number; isDefault: boolean }
 interface AddOn { id: string; name: string; price: number; veg: boolean }
@@ -18,7 +19,7 @@ interface MenuData {
   categories: { id: string; name: string; items: MenuItem[] }[];
 }
 interface BranchLite { id: string; name: string; slug: string }
-interface CustomerHit { id: string; name: string | null; phone: string | null; completedOrders: number }
+interface CustomerHit { id: string; name: string | null; phone: string | null; completedOrders: number; khataDue?: number }
 interface OpenTab {
   id: string;
   orderNumber: string;
@@ -67,6 +68,8 @@ function CounterInner() {
   // starting a new order.
   const [addingTo, setAddingTo] = useState<OpenTab | null>(null);
   const [settling, setSettling] = useState<OpenTab | null>(null);
+  // "Khata" at the counter: someone has come in to pay what they owe.
+  const [khataOpen, setKhataOpen] = useState(false);
   // Phone only: the cart lives in a sheet behind the bottom bar.
   const [cartOpen, setCartOpen] = useState(false);
   // Brief flash on the bottom bar so a tap is visibly acknowledged when the
@@ -294,7 +297,8 @@ function CounterInner() {
       )}
 
       {/* Parcel bills at once; dine-in opens a tab billed when they leave. */}
-      <div className="flex gap-2 mb-3" role="group" aria-label="Order kind">
+      <div className="flex gap-2 mb-3">
+      <div className="flex gap-2 flex-1" role="group" aria-label="Order kind">
         {([
           ["PARCEL", "🛍️ Parcel", "Bill now"],
           ["DINE_IN", "🍽️ Dine-in", "Open a table tab"],
@@ -321,6 +325,14 @@ function CounterInner() {
             </span>
           </button>
         ))}
+      </div>
+        <button
+          onClick={() => setKhataOpen(true)}
+          className="rounded-xl px-3 sm:px-5 py-2.5 sm:py-3 text-left bg-white text-maroon-700 border border-cream-300 hover:border-mustard-400 hover:bg-mustard-100 transition"
+        >
+          <span className="block text-sm sm:text-[15px] font-bold">📒 Khata</span>
+          <span className="block text-xs text-maroon-800/50">Receive a payment</span>
+        </button>
       </div>
 
       {addingTo && (
@@ -521,6 +533,8 @@ function CounterInner() {
         />
       )}
 
+      {khataOpen && <KhataFinder onClose={() => setKhataOpen(false)} />}
+
       {settling && (
         <SettleModal
           tab={settling}
@@ -711,8 +725,11 @@ function CheckoutModal({
   const [hits, setHits] = useState<CustomerHit[]>([]);
   const [picked, setPicked] = useState<CustomerHit | null>(null);
   const [name, setName] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "ONLINE">("CASH");
+  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "ONLINE" | "KHATA">("CASH");
   const [paid, setPaid] = useState(true);
+  // Khata: anything paid towards the bill now; the rest goes on the account.
+  const [paidNow, setPaidNow] = useState("");
+  const [paidNowMethod, setPaidNowMethod] = useState<PayMethod>("CASH");
   const [instructions, setInstructions] = useState("");
   const [tableNo, setTableNo] = useState("");
   const [busy, setBusy] = useState(false);
@@ -762,6 +779,7 @@ function CheckoutModal({
           tableNo: mode === "DINE_IN" ? tableNo.trim() || null : null,
           paymentMethod,
           paid,
+          ...(paymentMethod === "KHATA" ? { paidNow: +paidNow || 0, paidNowMethod } : {}),
           instructions: instructions.trim() || null,
         }),
       });
@@ -773,7 +791,9 @@ function CheckoutModal({
       alert(
         mode === "DINE_IN"
           ? `Tab opened · ${d.orderNumber} · ${inr(d.total)} so far`
-          : `Order ${d.orderNumber} placed · ${inr(d.total)}`
+          : paymentMethod === "KHATA"
+            ? `Order ${d.orderNumber} placed · ${inr(Math.max(d.total - (+paidNow || 0), 0))} added to khata`
+            : `Order ${d.orderNumber} placed · ${inr(d.total)}`
       );
       onDone(d.orderId);
     } catch (e) {
@@ -828,6 +848,7 @@ function CheckoutModal({
                     <span className="text-maroon-800/60">{h.phone}</span>
                     <span className="block text-xs text-maroon-800/50">
                       {h.completedOrders} previous order{h.completedOrders === 1 ? "" : "s"}
+                      {(h.khataDue ?? 0) > 0 && <span className="text-red-700 font-semibold"> · khata due {inr(h.khataDue!)}</span>}
                     </span>
                   </button>
                 </li>
@@ -837,6 +858,11 @@ function CheckoutModal({
           {picked && (
             <p className="mt-2 rounded-xl bg-leaf-50 border border-leaf-500/30 px-3 py-2 text-sm">
               ✓ <strong>{picked.name}</strong> · {picked.phone}
+              {(picked.khataDue ?? 0) > 0 && (
+                <span className="ml-2 rounded-full bg-red-100 text-red-700 px-2 py-0.5 text-xs font-bold">
+                  📒 Khata due {inr(picked.khataDue!)}
+                </span>
+              )}
               <button
                 className="underline ml-2"
                 onClick={() => {
@@ -890,21 +916,32 @@ function CheckoutModal({
 
         <div className={mode === "DINE_IN" ? "hidden" : "border-t border-cream-200 pt-3"}>
           <span className="label">Payment</span>
-          <div className="flex gap-2">
-            {(["CASH", "ONLINE"] as const).map((m) => (
+          <div className="flex flex-wrap gap-2">
+            {(["CASH", "ONLINE", "KHATA"] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => setPaymentMethod(m)}
                 className={`chip ${paymentMethod === m ? "chip-active" : ""}`}
               >
-                {m === "CASH" ? "💵 Cash" : "📱 UPI / Card"}
+                {m === "CASH" ? "💵 Cash" : m === "ONLINE" ? "📱 UPI / Card" : "📒 Khata (pay later)"}
               </button>
             ))}
           </div>
-          <label className="flex items-center gap-2 mt-3 text-sm cursor-pointer">
-            <input type="checkbox" className="h-4 w-4 accent-maroon-600" checked={paid} onChange={(e) => setPaid(e.target.checked)} />
-            Payment collected now
-          </label>
+          {paymentMethod === "KHATA" ? (
+            <KhataPaidNow
+              who={picked?.name ?? (name.trim() || null)}
+              due={picked?.khataDue ?? 0}
+              paidNow={paidNow}
+              setPaidNow={setPaidNow}
+              method={paidNowMethod}
+              setMethod={setPaidNowMethod}
+            />
+          ) : (
+            <label className="flex items-center gap-2 mt-3 text-sm cursor-pointer">
+              <input type="checkbox" className="h-4 w-4 accent-maroon-600" checked={paid} onChange={(e) => setPaid(e.target.checked)} />
+              Payment collected now
+            </label>
+          )}
         </div>
 
         <div>
@@ -914,7 +951,7 @@ function CheckoutModal({
 
         <ErrorBox message={error} />
         <button onClick={place} disabled={busy || !ready} className="btn-primary w-full !py-4">
-          {busy ? "Placing…" : mode === "DINE_IN" ? "Open tab" : "Place order"}
+          {busy ? "Placing…" : mode === "DINE_IN" ? "Open tab" : paymentMethod === "KHATA" ? "Place order on khata" : "Place order"}
         </button>
       </div>
     </Modal>
@@ -996,9 +1033,13 @@ function SettleModal({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "ONLINE">("CASH");
+  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "ONLINE" | "KHATA">("CASH");
+  const [paidNow, setPaidNow] = useState("");
+  const [paidNowMethod, setPaidNowMethod] = useState<PayMethod>("CASH");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const khata = paymentMethod === "KHATA";
+  const toKhata = Math.max(tab.total - (+paidNow || 0), 0);
 
   const settle = async () => {
     setBusy(true);
@@ -1007,7 +1048,7 @@ function SettleModal({
       const r = await fetch(`/api/admin/counter/tabs/${tab.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentMethod }),
+        body: JSON.stringify({ paymentMethod, ...(khata ? { paidNow: +paidNow || 0, paidNowMethod } : {}) }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
@@ -1060,23 +1101,176 @@ function SettleModal({
 
         <div>
           <span className="label">Paid by</span>
-          <div className="flex gap-2">
-            {(["CASH", "ONLINE"] as const).map((m) => (
+          <div className="flex flex-wrap gap-2">
+            {(["CASH", "ONLINE", "KHATA"] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => setPaymentMethod(m)}
                 className={`chip ${paymentMethod === m ? "chip-active" : ""}`}
               >
-                {m === "CASH" ? "💵 Cash" : "📱 UPI / Card"}
+                {m === "CASH" ? "💵 Cash" : m === "ONLINE" ? "📱 UPI / Card" : "📒 Khata (pay later)"}
               </button>
             ))}
           </div>
+          {khata && (
+            <KhataPaidNow
+              who={tab.customer.name}
+              due={null}
+              paidNow={paidNow}
+              setPaidNow={setPaidNow}
+              method={paidNowMethod}
+              setMethod={setPaidNowMethod}
+              max={tab.total}
+            />
+          )}
         </div>
 
         <ErrorBox message={error} />
-        <button onClick={settle} disabled={busy} className="btn-primary w-full !py-4 !text-lg">
-          {busy ? "Settling…" : `Settle ${inr(tab.total)}`}
+        <button onClick={settle} disabled={busy || (khata && +paidNow > tab.total)} className="btn-primary w-full !py-4 !text-lg">
+          {busy
+            ? "Settling…"
+            : khata
+              ? +paidNow > 0
+                ? `Take ${inr(+paidNow)} · ${inr(toKhata)} on khata`
+                : `Put ${inr(tab.total)} on khata`
+              : `Settle ${inr(tab.total)}`}
         </button>
+      </div>
+    </Modal>
+  );
+}
+
+type PayMethod = "CASH" | "UPI" | "CARD";
+
+/**
+ * Under "Khata": whose account the bill goes on, what they already owe, and
+ * anything they pay towards it now — the rest waits on the khata.
+ */
+function KhataPaidNow({
+  who, due, paidNow, setPaidNow, method, setMethod, max,
+}: {
+  who: string | null;
+  due: number | null;
+  paidNow: string;
+  setPaidNow: (v: string) => void;
+  method: PayMethod;
+  setMethod: (m: PayMethod) => void;
+  max?: number;
+}) {
+  return (
+    <div className="mt-3 rounded-xl border border-mustard-400 bg-mustard-100 p-3 space-y-2 text-sm">
+      <p>
+        The bill goes on <strong>{who ?? "this customer"}</strong>&apos;s khata — they pay later.
+        {due != null && due > 0 && <> Already due: <strong className="text-red-700">{inr(due)}</strong>.</>}
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <label htmlFor="k-now" className="font-semibold">Paying some now?</label>
+        <span className="font-bold">₹</span>
+        <input
+          id="k-now"
+          className="input !w-28 !min-h-[36px]"
+          type="number"
+          inputMode="decimal"
+          min={0}
+          max={max}
+          placeholder="0"
+          value={paidNow}
+          onChange={(e) => setPaidNow(e.target.value)}
+        />
+        {+paidNow > 0 &&
+          (["CASH", "UPI", "CARD"] as const).map((m) => (
+            <button key={m} onClick={() => setMethod(m)} className={`chip ${method === m ? "chip-active" : ""}`}>
+              {m === "CASH" ? "💵 Cash" : m === "UPI" ? "📱 UPI" : "💳 Card"}
+            </button>
+          ))}
+      </div>
+      {max != null && +paidNow > max && <p className="text-red-700">That is more than the bill ({inr(max)}).</p>}
+    </div>
+  );
+}
+
+/**
+ * The counter's way into the khata: everyone who owes, most first, and the
+ * total outstanding. Pick a customer to take their payment.
+ */
+function KhataFinder({ onClose }: { onClose: () => void }) {
+  const [q, setQ] = useState("");
+  const [data, setData] = useState<{
+    customers: { id: string; name: string | null; phone: string | null; due: number; band: "green" | "yellow" | "red" }[];
+    totalDue: number;
+    count: number;
+    limits: { yellowAbove: number; redAbove: number };
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    fetch(`/api/admin/khata?q=${encodeURIComponent(q.trim())}`)
+      .then(async (r) => {
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error);
+        setData(d);
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "Could not load khata"));
+  }, [q]);
+  useEffect(() => {
+    const t = setTimeout(load, 250);
+    return () => clearTimeout(t);
+  }, [load]);
+
+  if (open) return <KhataModal userId={open} onClose={() => { setOpen(null); load(); }} onChanged={load} />;
+
+  return (
+    <Modal open onClose={onClose} title="📒 Khata" wide>
+      <div className="space-y-3">
+        {data && (
+          <p className="text-sm">
+            {data.count > 0 ? (
+              <>
+                <strong className="text-red-700 text-lg">{inr(data.totalDue)}</strong> due from{" "}
+                <strong>{data.count}</strong> customer{data.count === 1 ? "" : "s"}
+              </>
+            ) : (
+              "Nobody owes anything right now ✓"
+            )}
+          </p>
+        )}
+        <input
+          className="input"
+          autoFocus
+          type="search"
+          placeholder="Search by name or mobile"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          aria-label="Search khata"
+        />
+        <ErrorBox message={error} />
+        {!data ? (
+          <Spinner label="Loading…" />
+        ) : data.customers.length === 0 ? (
+          <p className="text-sm text-maroon-800/50">{q ? "No one with dues matches that." : ""}</p>
+        ) : (
+          <ul className="divide-y divide-cream-200 border border-cream-300 rounded-xl overflow-hidden">
+            {data.customers.map((c) => (
+              <li key={c.id}>
+                <button
+                  onClick={() => setOpen(c.id)}
+                  className={`w-full flex items-center justify-between gap-3 px-3 py-3 text-left border-l-4 hover:brightness-95 ${
+                    c.band === "red" ? "bg-red-50 border-l-red-500" : c.band === "yellow" ? "bg-mustard-100/60 border-l-mustard-400" : "bg-leaf-50/60 border-l-leaf-500"
+                  }`}
+                >
+                  <span>
+                    <span className="font-semibold">{c.name ?? "No name"}</span>
+                    <span className="block text-xs text-maroon-800/60">{c.phone}</span>
+                  </span>
+                  <span className={`font-bold ${c.band === "red" ? "text-red-700" : c.band === "yellow" ? "text-mustard-600" : "text-leaf-600"}`}>
+                    {c.band === "red" ? "🔴" : c.band === "yellow" ? "🟡" : "🟢"} {inr(c.due)} ›
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </Modal>
   );

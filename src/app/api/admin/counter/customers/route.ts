@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { handler, requireStaff } from "@/lib/guard";
+import { khataDues } from "@/lib/khata";
 
 /**
  * Customer lookup for the counter screen — type a phone or name and pick the
@@ -36,12 +37,15 @@ export const GET = handler(async (req: Request) => {
     take: 8,
   });
 
+  // What each owes on khata, so the cashier sees it before adding to it.
+  const dues = await khataDues(users.map((u) => u.id));
   return NextResponse.json({
     customers: users.map((u) => ({
       id: u.id,
       name: u.name,
       phone: u.phone,
       completedOrders: u.metrics?.completedOrders ?? 0,
+      khataDue: dues.get(u.id) ?? 0,
     })),
   });
 });

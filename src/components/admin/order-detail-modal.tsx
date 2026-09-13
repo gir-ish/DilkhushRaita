@@ -192,7 +192,16 @@ export function OrderDetailModal({
         {/* An unpaid dine-in tab is still open even after it is marked served,
             so billing and adding another round must be reachable from here —
             not only from the Counter screen. */}
-        {!kitchenMode && order.type === "DINE_IN" && order.paymentStatus !== "PAID" && (
+        {/* Billed to khata is not open: what is owed lives on the khata now. */}
+        {!kitchenMode &&
+          order.paymentMethod === "KHATA" &&
+          order.paymentStatus !== "PAID" &&
+          !["CANCELLED", "REJECTED", "REFUND_INITIATED", "REFUNDED"].includes(order.status) && (
+          <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm no-print">
+            📒 On the customer&apos;s khata — collect it from <strong>Counter → Khata</strong> or <strong>Customers</strong>.
+          </p>
+        )}
+        {!kitchenMode && order.type === "DINE_IN" && order.paymentStatus === "PENDING" && (
           <div className="rounded-xl border border-mustard-400 bg-mustard-100 p-3 no-print">
             <p className="text-sm font-bold text-maroon-700">
               🍽️ Open tab{order.tableNo ? ` · Table ${order.tableNo}` : ""} — {inr(order.total)} unpaid
