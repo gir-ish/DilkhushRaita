@@ -647,6 +647,15 @@ model PaymentSettings {
   updatedAt        DateTime @updatedAt
 }
 
+/// Messages the shop sends by itself, and when. One row, owner-set.
+model SmsSettings {
+  id                String   @id @default("singleton")
+  /// After an order above pointsSmsMinOrder, text the customer the points it earned.
+  pointsSmsEnabled  Boolean  @default(true)
+  pointsSmsMinOrder Float    @default(1000)
+  updatedAt         DateTime @updatedAt
+}
+
 model OtpCode {
   id         String    @id @default(cuid())
   phone      String

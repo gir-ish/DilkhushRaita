@@ -57,63 +57,73 @@ export interface SmsTemplate {
 
 export const SMS_TEMPLATES = {
   /**
-   * The "Hello" confirmation — the one added on the STPL panel. DLT also has a
-   * "Hi" version (1777178765679680261, ref 11-14P1NMT8KP8CJ); it is not on the
-   * panel, so it cannot be sent.
+   * "Order Confirmation Last" on the STPL panel (added 19-Sep-2026) — the
+   * confirmation now sent. "Hi", and "Visit:" where the older ones said
+   * "Track:". The panel shows no DLT reference.
    */
   orderConfirmed: {
     name: "Order Confirmation",
-    id: "1777178765626391293",
-    reference: "11-14PDAMT8KDT61",
+    id: "1777178980273698516",
+    reference: "",
     category: "transactional",
-    text: "Hello {#var#}, your order {#var#} is confirmed by Dilkhush Raita Wala Dhaba. We are preparing it fresh. Track: https://dilkhushraita.com/",
+    text: "Hi {#var#}, your order {#var#} is confirmed by Dilkhush Raita Wala Dhaba. We are preparing it fresh. Visit: https://dilkhushraita.com/",
     slots: ["first name", "order number"],
   },
+  // "Order Dispatch One" on the STPL panel (added 19-Sep-2026): "Visit:" where
+  // the older one said "Track:". No DLT reference on the panel.
   orderDispatched: {
     name: "Order Dispatch",
-    id: "1777178765631197871",
-    reference: "11-14P1NMT8KEU96",
+    id: "1777178980269575871",
+    reference: "",
     category: "transactional",
-    text: "Hello {#var#}, your order {#var#} is on the way from Dilkhush Raita Wala Dhaba. Get ready to enjoy! Track: https://dilkhushraita.com/",
+    text: "Hello {#var#}, your order {#var#} is on the way from Dilkhush Raita Wala Dhaba. Get ready to enjoy! Visit: https://dilkhushraita.com/",
     slots: ["first name", "order number"],
   },
+  // "Order Delivery One" on the STPL panel (added 19-Sep-2026): same wording,
+  // new ID. No DLT reference on the panel.
   orderDelivered: {
     name: "Order Delivery",
-    id: "1777178765635892877",
-    reference: "11-14P1NMT8KFUHC",
+    id: "1777178964812942753",
+    reference: "",
     category: "transactional",
     text: "Hello {#var#}, your order {#var#} has been delivered. Thank you for choosing Dilkhush Raita Wala Dhaba. Visit: https://dilkhushraita.com/",
     slots: ["first name", "order number"],
   },
+  // "Customer Offer One" on the STPL panel (added 19-Sep-2026): the same
+  // wording under a new ID. Sent by the Points Reminder campaign, and by itself
+  // after a big order (src/lib/points-sms.ts). No DLT reference on the panel.
   customerOffer: {
     name: "Points Reminder",
-    id: "1777178765640634307",
-    reference: "11-14P1NMT8KGV2F",
+    id: "1777178964821207154",
+    reference: "",
     category: "promotional",
     text: "Hi {#var#}, you earned {#var#} Dilkhush Points on your order! Use your points to save on your next order: https://dilkhushraita.com/",
     slots: ["first name", "points earned"],
   },
+  // "Special Offer One" on the STPL panel (added 14-Sep-2026): the same
+  // wording as before, under a new ID. The panel shows no DLT reference.
   specialOffer: {
     name: "Special Offer",
-    id: "1777178765644561700",
-    reference: "11-14OFUMT8KHPDE",
+    id: "1777178980277440628",
+    reference: "",
     category: "promotional",
     text: "{#var#} is live at Dilkhush Raita Wala Dhaba! Use coupon {#var#} to get a special discount. Order now: https://dilkhushraita.com/",
     slots: ["offer name", "coupon code"],
   },
   /**
-   * No blanks: the same text goes to everyone. This is the wording on the STPL
-   * panel. A "Hi! {#var#}, craving… is live!" version appeared in a DLT export
-   * under this same ID; if the DLT portal ever shows that wording instead, the
-   * panel entry and this one must both change to it, together.
+   * "Website Promotion One" on the STPL panel (added 19-Sep-2026): greets each
+   * customer by first name. The fixed text is 143 characters, so a first name
+   * of up to 17 letters keeps it to one credit — see planCampaign, which uses
+   * "Friend" rather than let a long name double the cost. The panel shows no
+   * DLT reference.
    */
   websitePromotion: {
     name: "Website Promotion",
-    id: "1777178765648170151",
-    reference: "11-14OFUMT8KIH7Q",
+    id: "1777178980598948711",
+    reference: "",
     category: "promotional",
-    text: "Craving real dhaba flavours? Dilkhush Raita Wala Dhaba is now online! Explore our tasty menu & order fresh food now: https://dilkhushraita.com/",
-    slots: [],
+    text: "Hi! {#var#}, craving real dhaba flavours? Dilkhush Raita Wala Dhaba is live! Explore our tasty menu & order fresh food now: https://dilkhushraita.com/",
+    slots: ["first name"],
   },
 } as const satisfies Record<string, SmsTemplate>;
 
@@ -153,9 +163,11 @@ export function cleanSlot(value: string, max = MAX_SLOT): string {
  * The first name, and only the first name: "Rahul Kumar Sharma" is "Rahul".
  *
  * Cased so it reads like a greeting — "RAHUL" and "rahul" both become "Rahul" —
- * and held to twenty characters, which keeps every greeting template inside one
- * credit. A name with nothing usable in it (written in Devanagari, say)
- * returns null so the caller can fall back rather than send "Hi , you…".
+ * and held to twenty characters. That keeps the order and points templates in one
+ * credit; the Website Promotion has room for seventeen, and its campaign falls
+ * back to "Friend" for a longer one. A name with nothing usable in it (written
+ * in Devanagari, say) returns null so the caller can fall back rather than
+ * send "Hi! , craving…".
  */
 export function firstName(name: string | null | undefined): string | null {
   const first = cleanSlot(name ?? "")

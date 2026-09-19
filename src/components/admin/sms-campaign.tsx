@@ -13,7 +13,7 @@ const TEMPLATES: { key: Template; label: string; blurb: string }[] = [
   {
     key: "websitePromotion",
     label: "Website Promotion",
-    blurb: "Invites people to order online. The same message goes to everyone.",
+    blurb: "Invites people to order online. Greets each customer by first name.",
   },
   {
     key: "specialOffer",
@@ -24,7 +24,7 @@ const TEMPLATES: { key: Template; label: string; blurb: string }[] = [
     key: "customerOffer",
     label: "Points Reminder",
     blurb:
-      "Tells customers the points they earned on their last order and nudges them to spend them. Only goes to customers who have earned points.",
+      "Tells each customer, by first name, how many Dilkhush Points they have and nudges them to spend them. Choose the fewest points worth reminding someone about.",
   },
 ];
 
@@ -68,6 +68,8 @@ export function SmsCampaign() {
   const [template, setTemplate] = useState<Template>("websitePromotion");
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [couponId, setCouponId] = useState("");
+  // Points Reminder: only customers with at least this many points.
+  const [minPoints, setMinPoints] = useState("1");
   const [source, setSource] = useState<"paste" | "customers">("customers");
   const [recipients, setRecipients] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -98,6 +100,7 @@ export function SmsCampaign() {
       body: JSON.stringify({
         template,
         couponId: template === "specialOffer" ? couponId : undefined,
+        minPoints: template === "customerOffer" ? Math.max(1, Math.floor(+minPoints || 1)) : undefined,
         recipients: source === "customers" ? "" : recipients,
         source,
         dryRun,
@@ -219,6 +222,33 @@ export function SmsCampaign() {
           )}
         </div>
       )}
+
+      {template === "customerOffer" && (
+        <div className="mt-3">
+          <label className="label" htmlFor="campaign-min-points">
+            Only customers with at least
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              id="campaign-min-points"
+              className="input !w-32"
+              type="number"
+              min={1}
+              value={minPoints}
+              onChange={(e) => {
+                setMinPoints(e.target.value);
+                invalidate();
+              }}
+            />
+            <span className="text-sm">points</span>
+          </div>
+          <p className="mt-1 text-xs text-maroon-800/60">
+            Each message carries that customer&apos;s own name and points. Customers with fewer are left out.
+          </p>
+        </div>
+      )}
+
+      <PointsSmsSettings />
 
       <p className="mt-4 mb-1 text-xs font-bold uppercase tracking-wide text-maroon-800/50">
         Send to
@@ -410,5 +440,72 @@ export function SmsCampaign() {
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * The points SMS the shop sends by itself: after an order above the amount set
+ * here, the customer is told the points it earned — by name, once the order
+ * is complete. Promotional, so never to someone who opted out, and only
+ * 9am–9pm.
+ */
+function PointsSmsSettings() {
+  const [s, setS] = useState<{ pointsSmsEnabled: boolean; pointsSmsMinOrder: number } | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/admin/sms-settings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setS(d))
+      .catch(() => {});
+  }, []);
+  if (!s) return null;
+
+  const save = async (next: typeof s) => {
+    setS(next);
+    setSaved(false);
+    setError(null);
+    const r = await fetch("/api/admin/sms-settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(next),
+    });
+    if (!r.ok) setError((await r.json()).error ?? "Could not save");
+    else setSaved(true);
+  };
+
+  return (
+    <div className="mt-4 rounded-xl border border-cream-300 bg-cream-100/60 p-3 text-sm">
+      <p className="font-semibold">Automatic points SMS</p>
+      <div className="flex flex-wrap items-center gap-2 mt-1">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-maroon-600"
+            checked={s.pointsSmsEnabled}
+            onChange={(e) => save({ ...s, pointsSmsEnabled: e.target.checked })}
+          />
+          After an order above ₹
+        </label>
+        <input
+          className="input !w-28 !min-h-[36px]"
+          type="number"
+          min={0}
+          value={s.pointsSmsMinOrder}
+          disabled={!s.pointsSmsEnabled}
+          onChange={(e) => setS({ ...s, pointsSmsMinOrder: +e.target.value })}
+          onBlur={() => save(s)}
+          aria-label="Minimum order for the points SMS"
+        />
+        <span>text the customer the points it earned.</span>
+        {saved && <span className="text-leaf-600 font-semibold">Saved ✓</span>}
+      </div>
+      <p className="text-xs text-maroon-800/60 mt-1">
+        Website, parcel and dine-in alike — sent when the order completes. 1 credit each. Never to someone who turned
+        promotions off, and not between 9pm and 9am.
+      </p>
+      {error && <p className="text-xs text-red-700 mt-1">{error}</p>}
+    </div>
   );
 }

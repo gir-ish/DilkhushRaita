@@ -29,6 +29,8 @@ const Body = z.object({
   template: z.enum(CAMPAIGN_TEMPLATES),
   /** The coupon a Special Offer announces. */
   couponId: z.string().optional(),
+  /** Points Reminder: only customers holding at least this many points. */
+  minPoints: z.number().int().min(1).max(10_000_000).default(1),
   /** Whatever was pasted or uploaded. Parsed and validated server-side. */
   recipients: z.string().max(200_000).default(""),
   /** "customers" builds the list from the shop's own customers instead. */
@@ -40,23 +42,6 @@ const Body = z.object({
 
 /** A hard ceiling per campaign, so one paste cannot empty the balance. */
 const MAX_PER_CAMPAIGN = 5000;
-
-/**
- * Points earned on each customer's most recent order that earned any — the
- * Points Reminder says "you earned N points on your order", so it has to be a
- * real figure from a real order, not a running balance.
- */
-async function latestPointsFor(userIds: string[]): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
-  if (userIds.length === 0) return out;
-  const orders = await db.order.findMany({
-    where: { userId: { in: userIds }, pointsEarned: { gt: 0 } },
-    orderBy: { placedAt: "desc" },
-    select: { userId: true, pointsEarned: true },
-  });
-  for (const o of orders) if (!out.has(o.userId)) out.set(o.userId, o.pointsEarned);
-  return out;
-}
 
 export const POST = handler(async (req: Request) => {
   const session = await requireStaff("MARKETING");
@@ -90,7 +75,8 @@ export const POST = handler(async (req: Request) => {
     id: true,
     name: true,
     phone: true,
-    profile: { select: { notifyPromos: true } },
+    // The Points Reminder tells each customer the points they hold now.
+    profile: { select: { notifyPromos: true, loyaltyPoints: true } },
   } as const;
 
   if (body.source === "customers") {
@@ -99,12 +85,10 @@ export const POST = handler(async (req: Request) => {
       select: customerSelect,
       take: MAX_PER_CAMPAIGN,
     });
-    const points =
-      body.template === "customerOffer" ? await latestPointsFor(customers.map((c) => c.id)) : null;
     recipients = customers.map((c) => ({
       phone: c.phone!,
       name: c.name,
-      points: points?.get(c.id) ?? null,
+      points: c.profile?.loyaltyPoints ?? null,
       optedOut: c.profile?.notifyPromos === false,
     }));
   } else {
@@ -119,15 +103,13 @@ export const POST = handler(async (req: Request) => {
       select: customerSelect,
     });
     const byPhone = new Map(known.map((u) => [u.phone!, u]));
-    const points =
-      body.template === "customerOffer" ? await latestPointsFor(known.map((u) => u.id)) : null;
 
     recipients = list.numbers.map((phone) => {
       const u = byPhone.get(phone);
       return {
         phone,
         name: u?.name ?? null,
-        points: u ? points?.get(u.id) ?? null : null,
+        points: u?.profile?.loyaltyPoints ?? null,
         optedOut: u?.profile?.notifyPromos === false,
       };
     });
@@ -135,7 +117,7 @@ export const POST = handler(async (req: Request) => {
 
   let plan;
   try {
-    plan = planCampaign(body.template, recipients, offer);
+    plan = planCampaign(body.template, recipients, offer, body.minPoints);
   } catch (e) {
     throw new HttpError(400, e instanceof Error ? e.message : "Could not build the campaign.");
   }

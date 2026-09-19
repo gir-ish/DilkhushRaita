@@ -50,18 +50,34 @@ describe("reading a list of numbers", () => {
 });
 
 describe("Website Promotion", () => {
-  it("sends the panel's wording, the same to everyone, in one batch", () => {
+  it("greets each customer by their own first name", () => {
     const plan = planCampaign("websitePromotion", [
       { phone: "+919000000001", name: "Rahul Kumar" },
       { phone: "+919000000002", name: "PRIYA SINGH" },
-      { phone: "+919000000003", name: null },
     ]);
-    expect(plan.groups).toHaveLength(1);
-    expect(plan.groups[0].numbers).toHaveLength(3);
-    expect(plan.groups[0].message).toBe(
-      "Craving real dhaba flavours? Dilkhush Raita Wala Dhaba is now online! Explore our tasty menu & order fresh food now: https://dilkhushraita.com/"
+    const messages = plan.groups.map((g) => g.message);
+    expect(messages[0]).toBe(
+      "Hi! Rahul, craving real dhaba flavours? Dilkhush Raita Wala Dhaba is live! Explore our tasty menu & order fresh food now: https://dilkhushraita.com/"
     );
-    expect(plan.credits).toBe(3); // 143 characters: one credit each
+    expect(messages[1]).toMatch(/^Hi! Priya, craving/);
+  });
+
+  it("uses 'Friend', never 'Customer', when there is no name", () => {
+    const plan = planCampaign("websitePromotion", [{ phone: "+919000000001", name: null }]);
+    expect(plan.groups[0].message).toMatch(/^Hi! Friend, craving/);
+    expect(plan.groups[0].message).not.toContain("Customer");
+  });
+
+  it("uses 'Friend' rather than let a long name cost a second credit", () => {
+    const plan = planCampaign("websitePromotion", [
+      { phone: "+919000000001", name: "Abcdefghijklmnopq" }, // 17 letters: fits
+      { phone: "+919000000002", name: "Abcdefghijklmnopqrst" }, // 20: would be 2 credits
+    ]);
+    expect(plan.groups.map((g) => g.message.slice(0, 22))).toEqual([
+      "Hi! Abcdefghijklmnopq,",
+      "Hi! Friend, craving re",
+    ]);
+    expect(plan.credits).toBe(2); // one each
   });
 });
 
@@ -132,6 +148,24 @@ describe("Points Reminder", () => {
       "Hi Rahul, you earned 45 Dilkhush Points on your order! Use your points to save on your next order: https://dilkhushraita.com/",
       "Hi Priya, you earned 120 Dilkhush Points on your order! Use your points to save on your next order: https://dilkhushraita.com/",
     ]);
+  });
+
+  it("sends only to customers holding at least the chosen number of points", () => {
+    const plan = planCampaign(
+      "customerOffer",
+      [
+        { phone: "+919000000001", name: "Rahul", points: 450 },
+        { phone: "+919000000002", name: "Priya", points: 80 },
+        { phone: "+919000000003", name: "Aman", points: 100 },
+      ],
+      undefined,
+      100
+    );
+    expect(plan.groups.map((g) => g.message.slice(0, 26))).toEqual([
+      "Hi Rahul, you earned 450 D",
+      "Hi Aman, you earned 100 Di",
+    ]);
+    expect(plan.skipped).toEqual([{ phone: "+919000000002", why: "has fewer than 100 points" }]);
   });
 
   it("skips anyone with no points rather than telling them they earned none", () => {

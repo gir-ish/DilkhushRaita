@@ -123,12 +123,11 @@ export interface CampaignPlan {
 /**
  * Works out exactly what each recipient will receive, and what it costs.
  *
- * With a first name in the greeting (the Points Reminder), messages differ
+ * With a first name in the greeting (Website Promotion, Points Reminder), messages differ
  * from person to person, so a campaign cannot always be one text sent fifty
  * numbers at a time. Recipients are grouped by the message they get instead —
  * everyone called Rahul shares a batch — so batching still does the heavy
- * lifting. The Website Promotion and Special Offer are the same for everyone:
- * one group.
+ * lifting. The Special Offer is the same for everyone: one group.
  *
  * Nobody who turned promotions off is included, however they came to be on the
  * list. That switch is in their account page and it has to mean something.
@@ -136,7 +135,9 @@ export interface CampaignPlan {
 export function planCampaign(
   template: CampaignTemplate,
   recipients: CampaignRecipient[],
-  offer?: CampaignOffer
+  offer?: CampaignOffer,
+  /** Points Reminder: only customers holding at least this many points. */
+  minPoints = 1
 ): CampaignPlan {
   const byMessage = new Map<string, CampaignGroup>();
   const skipped: { phone: string; why: string }[] = [];
@@ -165,10 +166,18 @@ export function planCampaign(
         skipped.push({ phone: r.phone, why: "has not earned any points" });
         continue;
       }
+      if (r.points < minPoints) {
+        skipped.push({ phone: r.phone, why: `has fewer than ${minPoints} points` });
+        continue;
+      }
       message = fillTemplate("customerOffer", [firstName(r.name) ?? NAME_FALLBACK, String(r.points)]);
     } else {
-      // No blanks in this one: the same text for everyone.
-      message = fillTemplate("websitePromotion", []);
+      // Greeted by first name — unless the name would push the message into a
+      // second credit, when "Friend" says the same thing for half the price.
+      const plain = fillTemplate("websitePromotion", [NAME_FALLBACK]);
+      const first = firstName(r.name);
+      const named = first ? fillTemplate("websitePromotion", [first]) : plain;
+      message = creditsFor(named) > creditsFor(plain) ? plain : named;
     }
 
     const g = byMessage.get(message) ?? { message, numbers: [], creditsEach: creditsFor(message) };

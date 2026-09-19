@@ -2,6 +2,7 @@ import { db } from "./db";
 import { pointsEarned, tierFor } from "./loyalty";
 import { loyaltyRates } from "./loyalty-settings";
 import { notifyUser } from "./notify";
+import { sendPointsSms } from "./points-sms";
 import { round2 } from "./utils";
 
 /** Applied when an order reaches DELIVERED: metrics, points, tier. */
@@ -77,6 +78,11 @@ export async function onOrderDelivered(orderId: string) {
     "Order delivered 🎉",
     `Order ${order.orderNumber} was delivered. You earned ${earned} DilKhush points!`
   );
+
+  // The points are on their account now, so this is the moment to say so —
+  // for a big enough order (the owner's setting). Not awaited: the SMS must
+  // never hold up handing over the food.
+  void sendPointsSms(order.id, earned);
 }
 
 /** Applied on REJECTED / CANCELLED: return redeemed points, count cancellation. */

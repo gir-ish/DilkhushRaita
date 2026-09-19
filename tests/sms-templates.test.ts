@@ -8,6 +8,7 @@ import {
   firstName,
   type TemplateKey,
 } from "@/lib/sms-templates";
+import { OTP_TEMPLATE_ID } from "@/lib/otp";
 
 /**
  * Every template the app sends, checked character for character against the
@@ -22,34 +23,34 @@ import {
 /** Copied from the STPL panel's template list; references from the DLT export. */
 const REGISTERED: Record<TemplateKey, { id: string; reference: string; text: string }> = {
   orderConfirmed: {
-    id: "1777178765626391293",
-    reference: "11-14PDAMT8KDT61",
-    text: "Hello {#var#}, your order {#var#} is confirmed by Dilkhush Raita Wala Dhaba. We are preparing it fresh. Track: https://dilkhushraita.com/",
+    id: "1777178980273698516",
+    reference: "",
+    text: "Hi {#var#}, your order {#var#} is confirmed by Dilkhush Raita Wala Dhaba. We are preparing it fresh. Visit: https://dilkhushraita.com/",
   },
   orderDispatched: {
-    id: "1777178765631197871",
-    reference: "11-14P1NMT8KEU96",
-    text: "Hello {#var#}, your order {#var#} is on the way from Dilkhush Raita Wala Dhaba. Get ready to enjoy! Track: https://dilkhushraita.com/",
+    id: "1777178980269575871",
+    reference: "",
+    text: "Hello {#var#}, your order {#var#} is on the way from Dilkhush Raita Wala Dhaba. Get ready to enjoy! Visit: https://dilkhushraita.com/",
   },
   orderDelivered: {
-    id: "1777178765635892877",
-    reference: "11-14P1NMT8KFUHC",
+    id: "1777178964812942753",
+    reference: "",
     text: "Hello {#var#}, your order {#var#} has been delivered. Thank you for choosing Dilkhush Raita Wala Dhaba. Visit: https://dilkhushraita.com/",
   },
   customerOffer: {
-    id: "1777178765640634307",
-    reference: "11-14P1NMT8KGV2F",
+    id: "1777178964821207154",
+    reference: "",
     text: "Hi {#var#}, you earned {#var#} Dilkhush Points on your order! Use your points to save on your next order: https://dilkhushraita.com/",
   },
   specialOffer: {
-    id: "1777178765644561700",
-    reference: "11-14OFUMT8KHPDE",
+    id: "1777178980277440628",
+    reference: "",
     text: "{#var#} is live at Dilkhush Raita Wala Dhaba! Use coupon {#var#} to get a special discount. Order now: https://dilkhushraita.com/",
   },
   websitePromotion: {
-    id: "1777178765648170151",
-    reference: "11-14OFUMT8KIH7Q",
-    text: "Craving real dhaba flavours? Dilkhush Raita Wala Dhaba is now online! Explore our tasty menu & order fresh food now: https://dilkhushraita.com/",
+    id: "1777178980598948711",
+    reference: "",
+    text: "Hi! {#var#}, craving real dhaba flavours? Dilkhush Raita Wala Dhaba is live! Explore our tasty menu & order fresh food now: https://dilkhushraita.com/",
   },
 };
 
@@ -61,14 +62,21 @@ describe("the catalog matches what is registered", () => {
     expect(t.text).toBe(REGISTERED[key].text);
   });
 
+  it("gives every template its own ID, the OTP's included", () => {
+    // Two templates pasted with one ID happened once. The operator matches
+    // text to ID, so a shared ID means one of the two is always dropped.
+    const ids = [...Object.values(SMS_TEMPLATES).map((t) => t.id), OTP_TEMPLATE_ID];
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   it("holds every registration and nothing else", () => {
     expect(Object.keys(SMS_TEMPLATES).sort()).toEqual(Object.keys(REGISTERED).sort());
   });
 
   it("uses the confirmation that is on the STPL panel", () => {
-    // DLT has a "Hi" and a "Hello" confirmation; only "Hello" is on the panel.
-    expect(SMS_TEMPLATES.orderConfirmed.id).toBe("1777178765626391293");
-    expect(SMS_TEMPLATES.orderConfirmed.text.startsWith("Hello ")).toBe(true);
+    // "Order Confirmation Last", added 19-Sep-2026.
+    expect(SMS_TEMPLATES.orderConfirmed.id).toBe("1777178980273698516");
+    expect(SMS_TEMPLATES.orderConfirmed.text.startsWith("Hi ")).toBe(true);
   });
 
   it("describes one slot per {#var#}", () => {
@@ -96,19 +104,19 @@ describe("the catalog matches what is registered", () => {
 describe("filling a template", () => {
   it("fills the slots in order", () => {
     expect(fillTemplate("orderConfirmed", ["Rahul", "DKHEH0F0JJ"])).toBe(
-      "Hello Rahul, your order DKHEH0F0JJ is confirmed by Dilkhush Raita Wala Dhaba. We are preparing it fresh. Track: https://dilkhushraita.com/"
+      "Hi Rahul, your order DKHEH0F0JJ is confirmed by Dilkhush Raita Wala Dhaba. We are preparing it fresh. Visit: https://dilkhushraita.com/"
     );
     expect(fillTemplate("specialOffer", ["Diwali Dhamaka", "DIWALI50"])).toBe(
       "Diwali Dhamaka is live at Dilkhush Raita Wala Dhaba! Use coupon DIWALI50 to get a special discount. Order now: https://dilkhushraita.com/"
     );
-    expect(fillTemplate("websitePromotion", [])).toBe(
-      "Craving real dhaba flavours? Dilkhush Raita Wala Dhaba is now online! Explore our tasty menu & order fresh food now: https://dilkhushraita.com/"
+    expect(fillTemplate("websitePromotion", ["Priya"])).toBe(
+      "Hi! Priya, craving real dhaba flavours? Dilkhush Raita Wala Dhaba is live! Explore our tasty menu & order fresh food now: https://dilkhushraita.com/"
     );
   });
 
   it("refuses the wrong number of values", () => {
     expect(() => fillTemplate("orderConfirmed", ["Rahul"])).toThrow(/2 value/);
-    expect(() => fillTemplate("websitePromotion", ["Priya"])).toThrow(/0 value/);
+    expect(() => fillTemplate("websitePromotion", ["Priya", "extra"])).toThrow(/1 value/);
   });
 
   it("refuses a value that is empty once cleaned", () => {
@@ -172,12 +180,17 @@ describe("what each message costs", () => {
       orderDelivered: ["Rahul", "DKHEH0F0JJ"],
       customerOffer: ["Rahul", "120"],
       specialOffer: ["Rs.100 welcome-back treat", "COMEBACK100"],
-      websitePromotion: [],
+      websitePromotion: ["Rahul"],
     };
     for (const [k, v] of Object.entries(realistic)) {
       const m = fillTemplate(k as TemplateKey, v);
       expect(creditsFor(m), `${k}: ${m.length} chars`).toBe(1);
     }
+  });
+
+  it("has room for a seventeen-letter name on the Website Promotion", () => {
+    expect(creditsFor(fillTemplate("websitePromotion", ["Abcdefghijklmnopq"]))).toBe(1);
+    expect(creditsFor(fillTemplate("websitePromotion", ["Abcdefghijklmnopqr"]))).toBe(2);
   });
 
   it("keeps a greeting template in one credit with the longest first name", () => {

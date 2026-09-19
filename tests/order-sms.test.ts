@@ -19,10 +19,10 @@ describe("order confirmation", () => {
   it("goes out on the template on the STPL panel, with the first name and order number", () => {
     const r = orderSmsFor("confirmed", order());
     expect(r).toEqual({
-      templateId: "1777178765626391293",
+      templateId: "1777178980273698516",
       phone: "+919253171637",
       message:
-        "Hello Rahul, your order DKHEH0F0JJ is confirmed by Dilkhush Raita Wala Dhaba. We are preparing it fresh. Track: https://dilkhushraita.com/",
+        "Hi Rahul, your order DKHEH0F0JJ is confirmed by Dilkhush Raita Wala Dhaba. We are preparing it fresh. Visit: https://dilkhushraita.com/",
     });
   });
 
@@ -34,7 +34,7 @@ describe("order confirmation", () => {
 describe("order on its way", () => {
   it("uses the dispatch template", () => {
     const r = orderSmsFor("dispatched", order());
-    expect("templateId" in r && r.templateId).toBe("1777178765631197871");
+    expect("templateId" in r && r.templateId).toBe("1777178980269575871");
     expect("message" in r && r.message).toMatch(/^Hello Rahul, your order DKHEH0F0JJ is on the way/);
   });
 });
@@ -42,7 +42,7 @@ describe("order on its way", () => {
 describe("order delivered", () => {
   it("uses the delivery template", () => {
     const r = orderSmsFor("delivered", order());
-    expect("templateId" in r && r.templateId).toBe("1777178765635892877");
+    expect("templateId" in r && r.templateId).toBe("1777178964812942753");
     expect("message" in r && r.message).toMatch(/^Hello Rahul, your order DKHEH0F0JJ has been delivered/);
   });
 
@@ -59,10 +59,10 @@ describe("order delivered", () => {
 describe("names", () => {
   it("falls back to the delivery contact's name, then to 'Friend'", () => {
     const viaContact = orderSmsFor("confirmed", order({ userName: null, contactName: "Priya Singh" }));
-    expect("message" in viaContact && viaContact.message).toMatch(/^Hello Priya,/);
+    expect("message" in viaContact && viaContact.message).toMatch(/^Hi Priya,/);
 
     const none = orderSmsFor("confirmed", order({ userName: null, contactName: null }));
-    expect("message" in none && none.message).toMatch(/^Hello Friend,/);
+    expect("message" in none && none.message).toMatch(/^Hi Friend,/);
   });
 });
 
