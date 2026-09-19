@@ -32,6 +32,8 @@ interface QuoteDto {
   minPointsToRedeem: number;
   tierName: string | null;
   freeDelivery: boolean;
+  // What the shop is accepting right now, and why not — set by the owner.
+  payment: { cod: { allowed: boolean; reason?: string }; online: { allowed: boolean; reason?: string } };
   coupon: {
     applied: { code: string; name: string; savings: number } | null;
     rejectedReason: string | null;
@@ -55,11 +57,6 @@ interface PlaceOrderResponse {
     customerPhone: string;
   };
 }
-
-// Mirrors PAYMENT_PROVIDER on the server. The server is the one that actually
-// refuses ONLINE when it is not configured — this only controls whether the
-// option is offered.
-const ONLINE_ENABLED = process.env.NEXT_PUBLIC_PAYMENT_PROVIDER === "razorpay";
 
 interface RazorpayInstance {
   open(): void;
@@ -420,6 +417,24 @@ export default function CheckoutPage() {
     }
   };
 
+  /*
+   * Whatever the shop is accepting, chosen for them.
+   *
+   * The rules can change between loading the page and paying — a cart that
+   * grows past the "prepaid above this much" line, or nine o'clock passing —
+   * so the choice follows the quote rather than sitting on something the
+   * order would be refused for.
+   */
+  useEffect(() => {
+    if (!quote) return;
+    const chosen = paymentMethod === "ONLINE" ? quote.payment.online : quote.payment.cod;
+    if (chosen.allowed) return;
+    const other = paymentMethod === "ONLINE" ? quote.payment.cod : quote.payment.online;
+    if (other.allowed) setPaymentMethod(paymentMethod === "ONLINE" ? "COD" : "ONLINE");
+  }, [quote, paymentMethod]);
+
+  const noPaymentMethod = !!quote && !quote.payment.cod.allowed && !quote.payment.online.allowed;
+
   // `!cinematic` matters: the cart is emptied a beat before the router moves,
   // and without it the scene would be torn down mid-arrival.
   if (cart.lines.length === 0 && !cinematic)
@@ -436,6 +451,7 @@ export default function CheckoutPage() {
   const canPlace =
     !!quote &&
     quote.warnings.length === 0 &&
+    !noPaymentMethod &&
     quote.meetsMinOrder &&
     (orderType === "PICKUP" || (addressId && quote.serviceable));
 
@@ -445,8 +461,10 @@ export default function CheckoutPage() {
       ? "Choose a delivery address to continue."
       : orderType === "DELIVERY" && !quote.serviceable
         ? "That address is outside the delivery area."
-        : !quote.meetsMinOrder
-          ? `Minimum order for this branch is ${inr(quote.minOrderValue)}.`
+        : noPaymentMethod
+          ? "No payment method is available right now."
+          : !quote.meetsMinOrder
+            ? `Minimum order for this branch is ${inr(quote.minOrderValue)}.`
           : "Clear the warnings above to continue.";
 
   return (
@@ -632,13 +650,17 @@ export default function CheckoutPage() {
 
         <section className="card p-4 mb-4" aria-label="Payment method">
           <h2 className="font-semibold mb-2">Payment</h2>
-          {ONLINE_ENABLED ? (
+          {!quote ? (
+            <Spinner label="Checking payment options…" />
+          ) : (
             <div className="space-y-2" role="radiogroup" aria-label="Payment method">
               <label
-                className={`flex items-start gap-3 rounded-xl border p-3 text-sm cursor-pointer transition ${
-                  paymentMethod === "ONLINE"
-                    ? "border-maroon-400 bg-maroon-50"
-                    : "border-cream-200 hover:border-cream-400"
+                className={`flex items-start gap-3 rounded-xl border p-3 text-sm transition ${
+                  !quote.payment.online.allowed
+                    ? "border-cream-200 opacity-50 cursor-not-allowed"
+                    : paymentMethod === "ONLINE"
+                      ? "border-maroon-400 bg-maroon-50 cursor-pointer"
+                      : "border-cream-200 hover:border-cream-400 cursor-pointer"
                 }`}
               >
                 <input
@@ -646,20 +668,25 @@ export default function CheckoutPage() {
                   name="paymentMethod"
                   className="mt-0.5 h-4 w-4 accent-maroon-600"
                   checked={paymentMethod === "ONLINE"}
+                  disabled={!quote.payment.online.allowed}
                   onChange={() => setPaymentMethod("ONLINE")}
                 />
                 <span>
                   <span className="font-semibold">📱 Pay online</span>
                   <span className="block text-xs text-maroon-800/60 mt-0.5">
-                    UPI (GPay, PhonePe, Paytm), cards, netbanking &amp; wallets
+                    {quote.payment.online.allowed
+                      ? "UPI (GPay, PhonePe, Paytm), cards, netbanking & wallets"
+                      : quote.payment.online.reason}
                   </span>
                 </span>
               </label>
               <label
-                className={`flex items-start gap-3 rounded-xl border p-3 text-sm cursor-pointer transition ${
-                  paymentMethod === "COD"
-                    ? "border-maroon-400 bg-maroon-50"
-                    : "border-cream-200 hover:border-cream-400"
+                className={`flex items-start gap-3 rounded-xl border p-3 text-sm transition ${
+                  !quote.payment.cod.allowed
+                    ? "border-cream-200 opacity-50 cursor-not-allowed"
+                    : paymentMethod === "COD"
+                      ? "border-maroon-400 bg-maroon-50 cursor-pointer"
+                      : "border-cream-200 hover:border-cream-400 cursor-pointer"
                 }`}
               >
                 <input
@@ -667,26 +694,28 @@ export default function CheckoutPage() {
                   name="paymentMethod"
                   className="mt-0.5 h-4 w-4 accent-maroon-600"
                   checked={paymentMethod === "COD"}
+                  disabled={!quote.payment.cod.allowed}
                   onChange={() => setPaymentMethod("COD")}
                 />
                 <span>
-                  <span className="font-semibold">💵 Cash on Delivery</span>
+                  <span className="font-semibold">
+                    💵 {orderType === "PICKUP" ? "Pay at the restaurant" : "Cash on Delivery"}
+                  </span>
                   <span className="block text-xs text-maroon-800/60 mt-0.5">
-                    Pay the delivery agent when your order arrives
+                    {quote.payment.cod.allowed
+                      ? orderType === "PICKUP"
+                        ? "Pay when you collect your order"
+                        : "Pay the delivery agent when your order arrives"
+                      : quote.payment.cod.reason}
                   </span>
                 </span>
               </label>
+              {!quote.payment.cod.allowed && !quote.payment.online.allowed && (
+                <p className="text-sm text-red-700">
+                  No payment method is available right now — please call the restaurant to order.
+                </p>
+              )}
             </div>
-          ) : (
-            <>
-              <label className="flex items-center gap-3 rounded-xl border border-maroon-200 bg-maroon-50 p-3 text-sm">
-                <input type="radio" checked readOnly className="h-4 w-4 accent-maroon-600" />
-                💵 Cash on Delivery
-              </label>
-              <p className="text-xs text-maroon-800/50 mt-2">
-                UPI &amp; card payments are coming soon.
-              </p>
-            </>
           )}
         </section>
 

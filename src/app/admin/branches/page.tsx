@@ -36,6 +36,7 @@ export default function AdminBranchesPage() {
   return (
     <div>
       <h1 className="font-display text-2xl font-bold text-maroon-700 mb-4">Branches</h1>
+      <PaymentSettingsCard />
       <ErrorBox message={error} />
       {!branches ? (
         <Spinner label="Loading branches…" />
@@ -239,6 +240,137 @@ function BranchEditor({ branch, onSaved }: { branch: BranchFull; onSaved: () => 
       <button onClick={save} disabled={busy} className="btn-primary w-full">
         {busy ? "Saving…" : saved ? "Saved ✓" : "Save branch settings"}
       </button>
+    </section>
+  );
+}
+
+interface PaymentSettingsDto {
+  codEnabled: boolean;
+  onlineEnabled: boolean;
+  codMaxOrderValue: number | null;
+  codFrom: string | null;
+  codTo: string | null;
+  onlineConfigured: boolean;
+}
+
+/**
+ * How customers may pay on the website: cash on or off, online on or off, a
+ * ceiling above which cash is not offered, and the hours cash is taken at all
+ * ("after nine, online only"). Shop-wide, and nothing to do with the counter.
+ */
+function PaymentSettingsCard() {
+  const [p, setP] = useState<PaymentSettingsDto | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/admin/payment-settings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setP(d))
+      .catch(() => {});
+  }, []);
+
+  if (!p) return null;
+  const set = (patch: Partial<PaymentSettingsDto>) => {
+    setP({ ...p, ...patch });
+    setSaved(false);
+  };
+  const hasWindow = p.codFrom != null && p.codTo != null;
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch("/api/admin/payment-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          codEnabled: p.codEnabled,
+          onlineEnabled: p.onlineEnabled,
+          codMaxOrderValue: p.codMaxOrderValue,
+          codFrom: p.codFrom,
+          codTo: p.codTo,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      setSaved(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card p-4 mb-4" aria-label="Website payment methods">
+      <h2 className="font-semibold mb-1">How customers pay on the website</h2>
+      <p className="text-xs text-maroon-800/50 mb-3">
+        The counter is not affected — staff always take cash, UPI, card or khata.
+      </p>
+
+      <div className="flex flex-wrap gap-4 text-sm mb-3">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" className="h-4 w-4 accent-maroon-600" checked={p.codEnabled} onChange={(e) => set({ codEnabled: e.target.checked })} />
+          💵 Accept cash
+        </label>
+        <label className={`flex items-center gap-2 ${p.onlineConfigured ? "cursor-pointer" : "opacity-50"}`}>
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-maroon-600"
+            checked={p.onlineEnabled && p.onlineConfigured}
+            disabled={!p.onlineConfigured}
+            onChange={(e) => set({ onlineEnabled: e.target.checked })}
+          />
+          📱 Accept online payment
+          {!p.onlineConfigured && <span className="text-xs">(no gateway set up yet)</span>}
+        </label>
+      </div>
+
+      <div className="space-y-2 text-sm">
+        <label className="flex flex-wrap items-center gap-2">
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-maroon-600"
+            checked={p.codMaxOrderValue != null}
+            onChange={(e) => set({ codMaxOrderValue: e.target.checked ? 2000 : null })}
+          />
+          Above ₹
+          <input
+            className="input !w-28 !min-h-[36px]"
+            type="number"
+            min={1}
+            value={p.codMaxOrderValue ?? ""}
+            disabled={p.codMaxOrderValue == null}
+            onChange={(e) => set({ codMaxOrderValue: e.target.value === "" ? null : +e.target.value })}
+            aria-label="Cash ceiling"
+          />
+          the order must be paid online
+        </label>
+
+        <label className="flex flex-wrap items-center gap-2">
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-maroon-600"
+            checked={hasWindow}
+            onChange={(e) => set(e.target.checked ? { codFrom: "06:00", codTo: "21:00" } : { codFrom: null, codTo: null })}
+          />
+          Take cash only between
+          <input className="input !w-28 !min-h-[36px]" type="time" value={p.codFrom ?? ""} disabled={!hasWindow} onChange={(e) => set({ codFrom: e.target.value })} aria-label="Cash from" />
+          and
+          <input className="input !w-28 !min-h-[36px]" type="time" value={p.codTo ?? ""} disabled={!hasWindow} onChange={(e) => set({ codTo: e.target.value })} aria-label="Cash until" />
+          <span className="text-xs text-maroon-800/50">(outside these hours the website takes online payment only)</span>
+        </label>
+      </div>
+
+      <ErrorBox message={error} />
+      <div className="flex items-center gap-3 mt-3">
+        <button onClick={save} disabled={busy} className="btn-primary !min-h-[38px] !px-5">
+          {busy ? "Saving…" : "Save payment settings"}
+        </button>
+        {saved && <span className="text-sm text-leaf-600 font-semibold">Saved ✓</span>}
+      </div>
     </section>
   );
 }

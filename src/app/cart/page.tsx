@@ -20,6 +20,7 @@ export default function CartPage() {
     coupon: { applied: { code: string; savings: number } | null; autoSuggestion: { code: string; savings: number } | null };
     minOrderValue: number;
     meetsMinOrder: boolean;
+    limits: { maxQtyPerItem: number; maxItemsPerOrder: number };
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -104,7 +105,15 @@ export default function CartPage() {
                   <div className="flex items-center border border-cream-300 rounded-lg" role="group" aria-label={`Quantity for ${l.name}`}>
                     <button className="px-3 py-1 text-lg" onClick={() => cart.setQty(l.key, l.qty - 1)} aria-label="Decrease">−</button>
                     <span className="w-6 text-center text-sm font-bold">{l.qty}</span>
-                    <button className="px-3 py-1 text-lg" onClick={() => cart.setQty(l.key, l.qty + 1)} aria-label="Increase">+</button>
+                    <button
+                      className="px-3 py-1 text-lg disabled:opacity-30"
+                      onClick={() => cart.setQty(l.key, l.qty + 1)}
+                      disabled={!!quote && l.qty >= quote.limits.maxQtyPerItem}
+                      title={quote && l.qty >= quote.limits.maxQtyPerItem ? `Up to ${quote.limits.maxQtyPerItem} per dish online — call us for a larger order` : undefined}
+                      aria-label="Increase"
+                    >
+                      +
+                    </button>
                   </div>
                   <span className="font-semibold">{inr(l.displayPrice * l.qty)}</span>
                 </div>

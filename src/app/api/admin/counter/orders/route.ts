@@ -6,6 +6,7 @@ import { audit } from "@/lib/audit";
 import { buildQuote } from "@/lib/quote";
 import { genOrderNumber, normalizePhone } from "@/lib/utils";
 import { KHATA_METHODS, ON_KHATA, chargeToKhata } from "@/lib/khata";
+import { COUNTER_LIMITS } from "@/lib/order-limits";
 
 const Body = z.object({
   branchId: z.string(),
@@ -15,12 +16,12 @@ const Body = z.object({
         menuItemId: z.string(),
         variantId: z.string().nullish(),
         addOnIds: z.array(z.string()).max(10).optional(),
-        qty: z.number().int().min(1).max(50),
+        qty: z.number().int().min(1).max(999),
         instructions: z.string().max(300).nullish(),
       })
     )
     .min(1)
-    .max(60),
+    .max(200),
   // Either an existing customer, or a name+phone to create/reuse one.
   userId: z.string().nullish(),
   name: z.string().max(60).nullish(),
@@ -36,6 +37,14 @@ const Body = z.object({
   paidNow: z.number().min(0).max(10_000_000).optional(),
   paidNowMethod: z.enum(KHATA_METHODS).optional(),
   instructions: z.string().max(500).nullish(),
+  // A discount given at the counter: a flat amount off, or a percentage.
+  discount: z
+    .object({
+      type: z.enum(["FLAT", "PERCENT"]),
+      value: z.number().min(0).max(100000),
+      reason: z.string().max(120).nullish(),
+    })
+    .nullish(),
 });
 
 /**
@@ -109,9 +118,17 @@ export const POST = handler(async (req: Request) => {
   // capability checks — the customer is eating here, so neither is relevant.
   // Neither carries a delivery fee.
   const quote = await buildQuote(
-    { branchId: body.branchId, orderType: dineIn ? "DINE_IN" : "PICKUP", items: body.items },
+    {
+      branchId: body.branchId,
+      orderType: dineIn ? "DINE_IN" : "PICKUP",
+      items: body.items,
+      manualDiscount: body.discount ?? null,
+      // No coupon or tier discount applies itself to a counter bill.
+      autoOffers: false,
+    },
     userId,
-    false // non-strict: staff is standing with the customer
+    false, // non-strict: staff is standing with the customer
+    COUNTER_LIMITS // …who may well want fifty rotis
   );
 
   // A dine-in tab is settled when the customer leaves, so it must not be
@@ -207,6 +224,7 @@ export const POST = handler(async (req: Request) => {
     paid,
     orderType: body.orderType,
     ...(khata ? { khata: true, paidNow: body.paidNow ?? 0 } : {}),
+    ...(quote.manualDiscount ? { discount: quote.manualDiscount } : {}),
   });
 
   return NextResponse.json({
@@ -214,6 +232,7 @@ export const POST = handler(async (req: Request) => {
     orderId: order.id,
     orderNumber: order.orderNumber,
     total: quote.totals.total,
+    discount: quote.manualDiscount?.amount ?? 0,
     warnings: quote.warnings,
   });
 });

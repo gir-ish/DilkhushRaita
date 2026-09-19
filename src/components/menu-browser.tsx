@@ -22,6 +22,7 @@ interface MenuDto {
     open: boolean; openReason: string | null; busyMode: boolean;
     minOrderValue: number; prepTimeMins: number;
     deliveryEnabled: boolean; pickupEnabled: boolean;
+    maxQtyPerItem: number; maxItemsPerOrder: number;
   };
   categories: { id: string; name: string; slug: string; items: MenuItemDto[] }[];
 }
@@ -464,7 +465,14 @@ function ItemModal({
           <div className="flex items-center gap-1 border border-cream-300 rounded-xl" role="group" aria-label="Quantity">
             <button className="btn-ghost !min-h-[44px] !px-4 text-xl" onClick={() => setQty(Math.max(1, qty - 1))} aria-label="Decrease quantity">−</button>
             <span className="w-8 text-center font-bold" aria-live="polite">{qty}</span>
-            <button className="btn-ghost !min-h-[44px] !px-4 text-xl" onClick={() => setQty(Math.min(20, qty + 1))} aria-label="Increase quantity">+</button>
+            <button
+              className="btn-ghost !min-h-[44px] !px-4 text-xl disabled:opacity-30"
+              onClick={() => setQty(Math.min(branch.maxQtyPerItem, qty + 1))}
+              disabled={qty >= branch.maxQtyPerItem}
+              aria-label="Increase quantity"
+            >
+              +
+            </button>
           </div>
           <button onClick={addToCart} className="btn-primary flex-1">
             Add · {inr(price * qty)}

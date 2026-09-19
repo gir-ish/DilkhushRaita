@@ -2,6 +2,9 @@ import { db } from "./db";
 import { HttpError } from "./guard";
 import { computeTotals, deliveryFeeFor, subtotalOf } from "./pricing";
 import { branchBase, portionPrice } from "./menu-pricing";
+import { orderLimits, type OrderLimits } from "./order-limits";
+import { paymentOptions, paymentRules, type PaymentOptions } from "./payment-rules";
+import { onlinePaymentsEnabled } from "./payments";
 import { evaluateCoupon, type CouponEvaluation } from "./coupons";
 import { tierFor } from "./loyalty";
 import { pointsValue, redeemablePoints } from "./loyalty";
@@ -27,6 +30,18 @@ export interface QuoteRequest {
   redeemPoints?: boolean;
   paymentMethod?: "COD" | "ONLINE";
   scheduledFor?: string | null;
+  /**
+   * A discount the counter is giving by hand — off a bill, not a coupon.
+   * Never accepted from the website: only staff routes pass it.
+   */
+  manualDiscount?: { type: "FLAT" | "PERCENT"; value: number; reason?: string | null } | null;
+  /**
+   * Whether the shop's standing offers apply by themselves — auto-apply
+   * coupons and a customer's loyalty-tier discount. True for the website,
+   * where they are the point. False at the counter: a bill there is what the
+   * menu says unless the owner takes something off it deliberately.
+   */
+  autoOffers?: boolean;
 }
 
 export interface QuotedLine {
@@ -43,6 +58,12 @@ export interface QuotedLine {
 
 export interface QuoteResult {
   branch: { id: string; name: string; slug: string };
+  /** What this order may hold — the owner's setting, or the counter's. */
+  limits: OrderLimits;
+  /** How the customer may pay for this cart, right now, and why not. */
+  payment: PaymentOptions;
+  /** A discount staff applied by hand, once worked out in rupees. */
+  manualDiscount: { type: "FLAT" | "PERCENT"; value: number; amount: number; reason?: string | null } | null;
   open: boolean;
   openReason?: string;
   orderType: "DELIVERY" | "PICKUP" | "DINE_IN";
@@ -89,8 +110,11 @@ export interface QuoteResult {
 export async function buildQuote(
   req: QuoteRequest,
   userId: string | null,
-  strict: boolean
+  strict: boolean,
+  /** The counter passes COUNTER_LIMITS; the website uses the owner's setting. */
+  limits?: OrderLimits
 ): Promise<QuoteResult> {
+  const lim = limits ?? (await orderLimits());
   const warnings: string[] = [];
   const fail = (msg: string) => {
     if (strict) throw new HttpError(400, msg);
@@ -101,7 +125,8 @@ export async function buildQuote(
   const rates = await loyaltyRates();
 
   if (!req.items?.length) throw new HttpError(400, "Your cart is empty");
-  if (req.items.length > 50) throw new HttpError(400, "Too many items in cart");
+  if (req.items.length > lim.maxItemsPerOrder)
+    throw new HttpError(400, `An order can have up to ${lim.maxItemsPerOrder} different dishes`);
 
   const branch = await db.branch.findUnique({
     where: { id: req.branchId },
@@ -154,8 +179,8 @@ export async function buildQuote(
   const lines: QuotedLine[] = [];
   for (const input of req.items) {
     const qty = Math.floor(input.qty);
-    if (qty < 1 || qty > 20) {
-      fail("Invalid quantity");
+    if (qty < 1 || qty > lim.maxQtyPerItem) {
+      fail(qty > lim.maxQtyPerItem ? `Up to ${lim.maxQtyPerItem} of one dish per order` : "Invalid quantity");
       continue;
     }
     const item = byId.get(input.menuItemId);
@@ -265,16 +290,21 @@ export async function buildQuote(
     lastOrderAt: null as Date | null,
   };
   let pointsBalance = 0;
+  // Set for a customer who has been put on prepaid-only after too many
+  // refused cash deliveries.
+  let codBlocked = false;
   let tierFreeDelivery = false;
   let tierDiscountPercent = 0;
   let tierName: string | null = null;
 
   if (userId) {
-    const [metrics, profile, tiers] = await Promise.all([
+    const [metrics, profile, tiers, user] = await Promise.all([
       db.customerMetrics.findUnique({ where: { userId } }),
       db.customerProfile.findUnique({ where: { userId } }),
       db.loyaltyTier.findMany(),
+      db.user.findUnique({ where: { id: userId }, select: { codOnlyBlock: true } }),
     ]);
+    codBlocked = user?.codOnlyBlock ?? false;
     customerCtx = {
       completedOrders: metrics?.completedOrders ?? 0,
       lifetimeSpend: metrics?.lifetimeSpend ?? 0,
@@ -295,6 +325,13 @@ export async function buildQuote(
   }
 
   // ---------------- coupons
+  // The counter switches these off: nothing comes off a bill there unless
+  // someone at the till decides it does.
+  const autoOffers = req.autoOffers !== false;
+  if (!autoOffers) {
+    tierFreeDelivery = false;
+    tierDiscountPercent = 0;
+  }
   const paymentMethod = req.paymentMethod ?? "COD";
   const dayOfWeek = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })).getDay();
   const feeBeforeCoupon = deliveryFeeFor(branch, distanceKm, subtotal, tierFreeDelivery);
@@ -351,7 +388,7 @@ export async function buildQuote(
       }
     }
   }
-  if (!applied) {
+  if (!applied && autoOffers) {
     const autoEvals = activeCoupons
       .filter((c) => c.autoApply)
       .map((c) => evaluateCoupon(c, ctxFor(c.id)))
@@ -374,6 +411,19 @@ export async function buildQuote(
   let discount = applied?.discount ?? 0;
   const freeDelivery = tierFreeDelivery || (applied?.freeDelivery ?? false);
   if (tierDiscountPercent > 0) discount = round2(discount + (subtotal * tierDiscountPercent) / 100);
+
+  // A discount the cashier gave by hand: a flat amount off, or a percentage of
+  // the food. Never more than the food itself — a bill cannot go negative.
+  let manual: QuoteResult["manualDiscount"] = null;
+  if (req.manualDiscount && req.manualDiscount.value > 0) {
+    const { type, value, reason } = req.manualDiscount;
+    const raw = type === "PERCENT" ? (subtotal * Math.min(value, 100)) / 100 : value;
+    const amount = round2(Math.min(raw, Math.max(subtotal - discount, 0)));
+    if (amount > 0) {
+      manual = { type, value, amount, reason: reason ?? null };
+      discount = round2(discount + amount);
+    }
+  }
 
   // ---------------- loyalty redemption
   let pointsRedeemed = 0;
@@ -410,8 +460,18 @@ export async function buildQuote(
   const eta =
     orderType === "DELIVERY" && distanceKm != null ? etaMins(distanceKm, prep) : prep;
 
+  const payment = paymentOptions(await paymentRules(), {
+    total: totals.total,
+    nowHHmm,
+    onlineConfigured: onlinePaymentsEnabled(),
+    codBlockedForCustomer: codBlocked,
+  });
+
   return {
     branch: { id: branch.id, name: branch.name, slug: branch.slug },
+    limits: lim,
+    payment,
+    manualDiscount: manual,
     open: openState.open,
     openReason: openState.reason,
     orderType,

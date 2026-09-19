@@ -27,6 +27,13 @@ interface Item {
   }[];
 }
 
+interface OrderLimitsView {
+  maxQtyPerItem: number;
+  maxItemsPerOrder: number;
+  counter: { maxQtyPerItem: number; maxItemsPerOrder: number };
+  bounds: { qty: { min: number; max: number }; items: { min: number; max: number } };
+}
+
 const shortBranch = (name: string) => name.replace(/^DilKhush Dhaba\s*[–-]\s*/, "");
 
 /**
@@ -59,6 +66,9 @@ export default function AdminMenuPage() {
   // Dishes taken off the menu stay in the database for order history, but
   // are out of the way here unless asked for.
   const [showHidden, setShowHidden] = useState(false);
+  // How much a customer may order on the website. The counter has no such cap.
+  const [limits, setLimits] = useState<OrderLimitsView | null>(null);
+  const [limitsDraft, setLimitsDraft] = useState<{ qty: string; items: string } | null>(null);
   const hiddenCount = items?.filter((i) => !i.active).length ?? 0;
   // Counted separately: a hidden category with nothing else hidden must still
   // be findable, or there is no way back to it from this page.
@@ -96,6 +106,7 @@ export default function AdminMenuPage() {
     fetch("/api/admin/menu/categories").then((r) => r.json()).then((d) => setCategories(d.categories ?? []));
     fetch("/api/admin/menu/items").then((r) => r.json()).then((d) => setItems(d.items ?? []));
     fetch("/api/admin/branches").then((r) => r.json()).then((d) => setBranches(d.branches ?? []));
+    fetch("/api/admin/order-limits").then((r) => (r.ok ? r.json() : null)).then((d) => d && setLimits(d)).catch(() => {});
   }, []);
   useEffect(load, [load]);
 
@@ -203,6 +214,20 @@ export default function AdminMenuPage() {
     }
   };
 
+  const saveLimits = async () => {
+    if (!limitsDraft) return;
+    setError(null);
+    const r = await fetch("/api/admin/order-limits", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ maxQtyPerItem: +limitsDraft.qty || 0, maxItemsPerOrder: +limitsDraft.items || 0 }),
+    });
+    const d = await r.json();
+    if (!r.ok) return setError(d.error ?? "Could not save the limits");
+    setLimits({ ...limits!, maxQtyPerItem: d.maxQtyPerItem, maxItemsPerOrder: d.maxItemsPerOrder });
+    setLimitsDraft(null);
+  };
+
   const previewImport = async (file: File) => {
     setError(null);
     const text = await file.text();
@@ -287,6 +312,40 @@ export default function AdminMenuPage() {
           </span>
         </div>
       </section>
+
+      {limits && (
+        <section className="card p-4 mb-4 text-sm" aria-label="Ordering limits">
+          <h2 className="font-semibold mb-1">How much a customer can order online</h2>
+          {!limitsDraft ? (
+            <p className="text-maroon-800/70">
+              Up to <strong>{limits.maxQtyPerItem}</strong> of one dish and{" "}
+              <strong>{limits.maxItemsPerOrder}</strong> different dishes per order on the website.{" "}
+              <button className="underline" onClick={() => setLimitsDraft({ qty: String(limits.maxQtyPerItem), items: String(limits.maxItemsPerOrder) })}>
+                ⚙️ Change
+              </button>
+              <span className="block text-xs text-maroon-800/50 mt-1">
+                The Counter has no such limit — staff can bill any quantity.
+              </span>
+            </p>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-1">
+                Most of one dish
+                <input className="input !w-24 !min-h-[36px]" type="number" min={limits.bounds.qty.min} max={limits.bounds.qty.max} value={limitsDraft.qty} onChange={(e) => setLimitsDraft({ ...limitsDraft, qty: e.target.value })} />
+              </label>
+              <label className="flex items-center gap-1">
+                Most different dishes
+                <input className="input !w-24 !min-h-[36px]" type="number" min={limits.bounds.items.min} max={limits.bounds.items.max} value={limitsDraft.items} onChange={(e) => setLimitsDraft({ ...limitsDraft, items: e.target.value })} />
+              </label>
+              <button onClick={saveLimits} className="btn-primary !min-h-[36px] !px-4">Save</button>
+              <button onClick={() => setLimitsDraft(null)} className="btn-outline !min-h-[36px] !px-3">Cancel</button>
+              <span className="text-xs text-maroon-800/50">
+                Up to {limits.bounds.qty.max} and {limits.bounds.items.max}. Applies to the website only.
+              </span>
+            </div>
+          )}
+        </section>
+      )}
 
       <p className="text-sm text-maroon-800/60 mb-2">
         {priceMode ? (

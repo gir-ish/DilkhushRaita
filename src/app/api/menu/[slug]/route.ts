@@ -4,6 +4,7 @@ import { handler, HttpError } from "@/lib/guard";
 import { isBranchOpen } from "@/lib/geo";
 import { hhmm, withinTimeWindow } from "@/lib/utils";
 import { menuPricing } from "@/lib/menu-pricing";
+import { orderLimits } from "@/lib/order-limits";
 
 /** Full menu for a branch, with branch-specific price/availability applied. */
 export const GET = handler(
@@ -16,6 +17,7 @@ export const GET = handler(
     if (!branch) throw new HttpError(404, "Branch not found");
 
     const open = isBranchOpen(branch, branch.hours);
+    const limits = await orderLimits();
     const nowHHmm = hhmm(new Date());
 
     const categories = await db.category.findMany({
@@ -101,6 +103,9 @@ export const GET = handler(
         deliveryEnabled: branch.deliveryEnabled && !(branch.busyMode && branch.busyPauseDelivery),
         pickupEnabled: branch.pickupEnabled,
         prepTimeMins: branch.prepTimeMins + (branch.busyMode ? branch.busyExtraMins : 0),
+        // The counter is not held to these; see src/lib/order-limits.ts.
+        maxQtyPerItem: limits.maxQtyPerItem,
+        maxItemsPerOrder: limits.maxItemsPerOrder,
       },
       categories: out,
     });

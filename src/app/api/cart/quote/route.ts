@@ -13,12 +13,14 @@ const Body = z.object({
         menuItemId: z.string(),
         variantId: z.string().nullish(),
         addOnIds: z.array(z.string()).max(10).optional(),
-        qty: z.number().int().min(1).max(20),
+        // The owner's own limit is applied in buildQuote; this is the ceiling
+        // they can raise it to.
+        qty: z.number().int().min(1).max(999),
         instructions: z.string().max(300).nullish(),
       })
     )
     .min(1)
-    .max(50),
+    .max(200),
   addressId: z.string().nullish(),
   couponCode: z.string().max(30).nullish(),
   redeemPoints: z.boolean().optional(),

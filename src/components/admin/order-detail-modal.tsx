@@ -75,6 +75,43 @@ export function OrderDetailModal({
   // not offered at all rather than shown and then rejected by the server.
   const next = nextStatusesFor(order.status, order.type);
 
+  /*
+   * A parcel the customer pays for when they collect it.
+   *
+   * "Delivered" on such an order used to settle it as cash on its own, which
+   * is a guess: they may have paid by UPI, or asked for it on their khata. So
+   * the hand-over asks how it was paid instead of assuming.
+   */
+  const unpaidPickup =
+    order.type === "PICKUP" &&
+    order.paymentMethod === "COD" &&
+    order.paymentStatus === "PENDING" &&
+    ["ACCEPTED", "PREPARING", "READY"].includes(order.status);
+
+  const collect = async (paymentMethod: "CASH" | "ONLINE" | "KHATA") => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/admin/counter/pickups/${order.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentMethod, handOver: true }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      onChanged({
+        ...order,
+        status: "DELIVERED",
+        paymentMethod: paymentMethod === "KHATA" ? "KHATA" : paymentMethod === "CASH" ? "COD" : "ONLINE",
+        paymentStatus: paymentMethod === "KHATA" ? "CREDIT" : "PAID",
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not record the payment");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Modal open onClose={onClose} title={`${order.orderNumber} · ${order.status.replace(/_/g, " ")}`} wide>
       <div className="space-y-4">
@@ -162,6 +199,8 @@ export function OrderDetailModal({
           {next
             .filter((s) => !["REJECTED", "CANCELLED", "ACCEPTED", "REFUND_INITIATED", "REFUNDED"].includes(s))
             .filter((s) => (kitchenMode ? ["PREPARING", "READY"].includes(s) : true))
+            // Handing this parcel over means taking the money; the panel below does both.
+            .filter((s) => !(unpaidPickup && s === "DELIVERED"))
             .map((s) => (
               <button
                 key={s}
@@ -195,17 +234,33 @@ export function OrderDetailModal({
         {/* A parcel paid for when it is collected: take the money at the
             counter, where the method (cash, UPI, khata) is recorded. Marking
             it delivered here instead records it as cash. */}
-        {!kitchenMode &&
-          order.type === "PICKUP" &&
-          order.paymentMethod === "COD" &&
-          order.paymentStatus === "PENDING" &&
-          ["ACCEPTED", "PREPARING", "READY"].includes(order.status) && (
-            <p className="rounded-xl border border-mustard-400 bg-mustard-100 p-3 text-sm no-print">
-              💰 {inr(order.total)} to collect when the customer takes the parcel —{" "}
-              <a href="/admin/counter" className="underline font-semibold">Counter → Parcels waiting</a> to take cash,
-              UPI / card or khata.
+        {!kitchenMode && unpaidPickup && (
+          <div className="rounded-xl border border-mustard-400 bg-mustard-100 p-3 no-print">
+            <p className="text-sm font-bold text-maroon-700">
+              💰 {inr(order.total)} to collect — has the customer paid?
             </p>
-          )}
+            <p className="text-xs text-maroon-800/60 mt-0.5">
+              Choose how they paid; the parcel is handed over at the same time.
+            </p>
+            <div className="grid grid-cols-3 gap-2 mt-2">
+              {(
+                [
+                  ["CASH", "💵 Cash"],
+                  ["ONLINE", "📱 UPI / Card"],
+                  ["KHATA", "📒 On khata"],
+                ] as const
+              ).map(([m, label]) => (
+                <button key={m} disabled={busy} onClick={() => collect(m)} className="btn-primary !min-h-[44px] !px-2 text-sm">
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-maroon-800/50 mt-2">
+              Not collecting it yet? Leave this — the parcel also waits under{" "}
+              <a href="/admin/counter" className="underline">Counter → Parcels waiting</a>.
+            </p>
+          </div>
+        )}
         {/* Billed to khata is not open: what is owed lives on the khata now. */}
         {!kitchenMode &&
           order.paymentMethod === "KHATA" &&

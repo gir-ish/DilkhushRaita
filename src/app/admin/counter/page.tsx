@@ -781,6 +781,10 @@ function CheckoutModal({
   const [paidNowMethod, setPaidNowMethod] = useState<PayMethod>("CASH");
   const [instructions, setInstructions] = useState("");
   const [tableNo, setTableNo] = useState("");
+  // A discount the counter gives by hand, off the food before tax.
+  const [discountType, setDiscountType] = useState<DiscountType>("FLAT");
+  const [discountValue, setDiscountValue] = useState("");
+  const [discountReason, setDiscountReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -829,6 +833,9 @@ function CheckoutModal({
           paymentMethod: payLater ? "CASH" : paymentMethod,
           paid: !payLater,
           ...(paymentMethod === "KHATA" ? { paidNow: +paidNow || 0, paidNowMethod } : {}),
+          ...(mode === "PARCEL" && +discountValue > 0
+            ? { discount: { type: discountType, value: +discountValue, reason: discountReason.trim() || null } }
+            : {}),
           instructions: instructions.trim() || null,
         }),
       });
@@ -840,6 +847,8 @@ function CheckoutModal({
       alert(
         mode === "DINE_IN"
           ? `Tab opened · ${d.orderNumber} · ${inr(d.total)} so far`
+          : +discountValue > 0 && d.discount > 0
+            ? `Order ${d.orderNumber} placed · ${inr(d.total)} after ${inr(d.discount)} off`
           : paymentMethod === "KHATA"
             ? `Order ${d.orderNumber} placed · ${inr(Math.max(d.total - (+paidNow || 0), 0))} added to khata`
             : payLater
@@ -996,6 +1005,21 @@ function CheckoutModal({
           )}
         </div>
 
+        {/* A table's discount is given when it is billed, not when the tab
+            opens — otherwise it would be entered twice and only the later one
+            would count. */}
+        {mode === "PARCEL" && (
+        <DiscountBox
+          subtotal={lines.reduce((n, l) => n + l.unitPrice * l.qty, 0)}
+          type={discountType}
+          setType={setDiscountType}
+          value={discountValue}
+          setValue={setDiscountValue}
+          reason={discountReason}
+          setReason={setDiscountReason}
+        />
+        )}
+
         <div>
           <label className="label" htmlFor="c-notes">Note for the kitchen (optional)</label>
           <input id="c-notes" className="input" maxLength={500} value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="e.g. table 4, less spicy" />
@@ -1088,10 +1112,18 @@ function SettleModal({
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "ONLINE" | "KHATA">("CASH");
   const [paidNow, setPaidNow] = useState("");
   const [paidNowMethod, setPaidNowMethod] = useState<PayMethod>("CASH");
+  const [discountType, setDiscountType] = useState<DiscountType>("FLAT");
+  const [discountValue, setDiscountValue] = useState("");
+  const [discountReason, setDiscountReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const khata = paymentMethod === "KHATA";
-  const toKhata = Math.max(tab.total - (+paidNow || 0), 0);
+  // The bill on screen, less any discount being given: the tax on it is
+  // recomputed by the server, so this is what is shown, not what is charged.
+  const itemsTotal = tab.items.reduce((n, i) => n + i.lineTotal, 0);
+  const off = discountAmount(discountType, discountValue, itemsTotal);
+  const payable = Math.max(tab.total - off, 0);
+  const toKhata = Math.max(payable - (+paidNow || 0), 0);
 
   const settle = async () => {
     setBusy(true);
@@ -1100,7 +1132,11 @@ function SettleModal({
       const r = await fetch(`/api/admin/counter/tabs/${tab.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentMethod, ...(khata ? { paidNow: +paidNow || 0, paidNowMethod } : {}) }),
+        body: JSON.stringify({
+          paymentMethod,
+          ...(khata ? { paidNow: +paidNow || 0, paidNowMethod } : {}),
+          ...(off > 0 ? { discount: { type: discountType, value: +discountValue, reason: discountReason.trim() || null } } : {}),
+        }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
@@ -1147,9 +1183,24 @@ function SettleModal({
 
         <div className="flex justify-between items-baseline border-t-2 border-cream-200 pt-3">
           <span className="font-bold text-lg">Total to pay</span>
-          <span className="font-bold text-3xl text-maroon-700">{inr(tab.total)}</span>
+          <span className="font-bold text-3xl text-maroon-700">
+            {off > 0 && <span className="text-base font-normal text-maroon-800/40 line-through mr-2">{inr(tab.total)}</span>}
+            {inr(payable)}
+          </span>
         </div>
-        <p className="text-xs text-maroon-800/50 -mt-2">Includes taxes and packaging.</p>
+        <p className="text-xs text-maroon-800/50 -mt-2">
+          Includes taxes and packaging.{off > 0 && ` Discount ${inr(off)} applied — tax is recalculated on saving.`}
+        </p>
+
+        <DiscountBox
+          subtotal={itemsTotal}
+          type={discountType}
+          setType={setDiscountType}
+          value={discountValue}
+          setValue={setDiscountValue}
+          reason={discountReason}
+          setReason={setDiscountReason}
+        />
 
         <div>
           <span className="label">Paid by</span>
@@ -1172,20 +1223,20 @@ function SettleModal({
               setPaidNow={setPaidNow}
               method={paidNowMethod}
               setMethod={setPaidNowMethod}
-              max={tab.total}
+              max={payable}
             />
           )}
         </div>
 
         <ErrorBox message={error} />
-        <button onClick={settle} disabled={busy || (khata && +paidNow > tab.total)} className="btn-primary w-full !py-4 !text-lg">
+        <button onClick={settle} disabled={busy || (khata && +paidNow > payable)} className="btn-primary w-full !py-4 !text-lg">
           {busy
             ? "Settling…"
             : khata
               ? +paidNow > 0
                 ? `Take ${inr(+paidNow)} · ${inr(toKhata)} on khata`
-                : `Put ${inr(tab.total)} on khata`
-              : `Settle ${inr(tab.total)}`}
+                : `Put ${inr(payable)} on khata`
+              : `Settle ${inr(payable)}`}
         </button>
       </div>
     </Modal>
@@ -1498,5 +1549,71 @@ function CollectModal({ parcel, onClose, onDone }: { parcel: Pickup; onClose: ()
         </button>
       </div>
     </Modal>
+  );
+}
+
+type DiscountType = "FLAT" | "PERCENT";
+
+/** What a discount takes off a bill of this size — for showing before it is given. */
+function discountAmount(type: DiscountType, value: string, subtotal: number): number {
+  const v = +value || 0;
+  if (v <= 0) return 0;
+  return Math.min(type === "PERCENT" ? (subtotal * Math.min(v, 100)) / 100 : v, subtotal);
+}
+
+/**
+ * A discount given at the counter — ₹50 off, or 10% — with the reason it was
+ * given. Shown with the money it takes off, so nobody has to do the sum in
+ * their head with a queue waiting.
+ */
+function DiscountBox({
+  subtotal, type, setType, value, setValue, reason, setReason,
+}: {
+  subtotal: number;
+  type: DiscountType;
+  setType: (t: DiscountType) => void;
+  value: string;
+  setValue: (v: string) => void;
+  reason: string;
+  setReason: (v: string) => void;
+}) {
+  const off = discountAmount(type, value, subtotal);
+  return (
+    <div className="border-t border-cream-200 pt-3">
+      <span className="label">Discount (optional)</span>
+      <div className="flex flex-wrap items-center gap-2">
+        {(["FLAT", "PERCENT"] as const).map((t) => (
+          <button key={t} onClick={() => setType(t)} className={`chip ${type === t ? "chip-active" : ""}`}>
+            {t === "FLAT" ? "₹ off" : "% off"}
+          </button>
+        ))}
+        <input
+          className="input !w-24 !min-h-[36px]"
+          type="number"
+          inputMode="decimal"
+          min={0}
+          max={type === "PERCENT" ? 100 : undefined}
+          placeholder="0"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          aria-label="Discount amount"
+        />
+        {off > 0 && (
+          <span className="text-sm font-semibold text-leaf-600">
+            −{inr(off)}{type === "PERCENT" && ` of ${inr(subtotal)}`}
+          </span>
+        )}
+      </div>
+      {off > 0 && (
+        <input
+          className="input !min-h-[36px] mt-2"
+          maxLength={120}
+          placeholder="Reason (optional) — e.g. regular customer, late order"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          aria-label="Discount reason"
+        />
+      )}
+    </div>
   );
 }

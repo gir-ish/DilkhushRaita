@@ -9,6 +9,7 @@ import { TAB_CLOSED_STATUSES } from "@/lib/constants";
 import type { SessionPayload } from "@/lib/session";
 import { onOrderDelivered } from "@/lib/order-effects";
 import { KHATA_METHODS, ON_KHATA, chargeToKhata } from "@/lib/khata";
+import { COUNTER_LIMITS } from "@/lib/order-limits";
 
 /** Loads an open tab and checks the caller is allowed to touch it. */
 async function loadOpenTab(id: string, session: SessionPayload) {
@@ -35,12 +36,12 @@ const AddBody = z.object({
         menuItemId: z.string(),
         variantId: z.string().nullish(),
         addOnIds: z.array(z.string()).max(10).optional(),
-        qty: z.number().int().min(1).max(50),
+        qty: z.number().int().min(1).max(999),
         instructions: z.string().max(300).nullish(),
       })
     )
     .min(1)
-    .max(60),
+    .max(200),
 });
 
 /**
@@ -60,9 +61,10 @@ export const POST = handler(
     const order = await loadOpenTab(id, s);
 
     const quote = await buildQuote(
-      { branchId: order.branchId, orderType: "DINE_IN", items: body.items },
+      { branchId: order.branchId, orderType: "DINE_IN", items: body.items, autoOffers: false },
       order.userId,
-      false
+      false,
+      COUNTER_LIMITS
     );
 
     const nextRound = Math.max(...order.items.map((i) => i.round), 0) + 1;
@@ -151,6 +153,14 @@ const SettleBody = z.object({
   paymentMethod: z.enum(["CASH", "ONLINE", "KHATA"]).default("CASH"),
   paidNow: z.number().min(0).max(10_000_000).optional(),
   paidNowMethod: z.enum(KHATA_METHODS).optional(),
+  // A discount given while billing the table.
+  discount: z
+    .object({
+      type: z.enum(["FLAT", "PERCENT"]),
+      value: z.number().min(0).max(100000),
+      reason: z.string().max(120).nullish(),
+    })
+    .nullish(),
 });
 
 /** Settles the tab — the customer is leaving, and has paid or put it on khata. */
@@ -165,6 +175,30 @@ export const PATCH = handler(
     const khata = body.paymentMethod === "KHATA";
     const status = khata ? ON_KHATA : "PAID";
 
+    /*
+     * A discount given at the table, applied to the bill as it stands.
+     *
+     * Worked out from the items rather than the running total, so it cannot
+     * compound with a discount already on the tab, and never more than the
+     * food itself.
+     */
+    let total = order.total;
+    let totals: ReturnType<typeof computeTotals> | null = null;
+    if (body.discount && body.discount.value > 0) {
+      const subtotal = order.items.reduce((n, i) => n + i.lineTotal, 0);
+      const raw =
+        body.discount.type === "PERCENT" ? (subtotal * Math.min(body.discount.value, 100)) / 100 : body.discount.value;
+      const amount = Math.round(Math.min(raw, subtotal) * 100) / 100;
+      totals = computeTotals({
+        lines: order.items.map((i) => ({ unitPrice: i.unitPrice, qty: i.qty })),
+        cfg: order.branch,
+        orderType: "DINE_IN",
+        distanceKm: null,
+        discount: amount,
+      });
+      total = totals.total;
+    }
+
     await db.$transaction(async (tx) => {
       await tx.order.update({
         where: { id: order.id },
@@ -174,6 +208,9 @@ export const PATCH = handler(
           // Billing is the end of the meal: the food has been served.
           status: "DELIVERED",
           deliveredAt: new Date(),
+          ...(totals
+            ? { discount: totals.discount, subtotal: totals.subtotal, tax: totals.tax, total: totals.total }
+            : {}),
         },
       });
       await tx.payment.updateMany({
@@ -181,7 +218,7 @@ export const PATCH = handler(
         data: {
           status,
           method: khata ? "KHATA" : body.paymentMethod === "CASH" ? "CASH" : "ONLINE",
-          amount: order.total,
+          amount: total,
         },
       });
       if (khata)
@@ -189,7 +226,7 @@ export const PATCH = handler(
           userId: order.userId,
           orderId: order.id,
           branchId: order.branchId,
-          amount: order.total,
+          amount: total,
           paidNow: body.paidNow,
           paidNowMethod: body.paidNowMethod,
           staff: { uid: s.uid, name: s.name },
@@ -200,11 +237,12 @@ export const PATCH = handler(
     await onOrderDelivered(order.id);
 
     await audit({ uid: s.uid, name: s.name }, khata ? "TAB_TO_KHATA" : "TAB_SETTLED", "Order", order.id, {
-      total: order.total,
+      total,
       paymentMethod: body.paymentMethod,
       ...(khata ? { paidNow: body.paidNow ?? 0 } : {}),
+      ...(totals ? { discount: totals.discount, wasTotal: order.total, reason: body.discount?.reason ?? null } : {}),
     });
 
-    return NextResponse.json({ ok: true, orderNumber: order.orderNumber, total: order.total });
+    return NextResponse.json({ ok: true, orderNumber: order.orderNumber, total, discount: totals?.discount ?? 0 });
   }
 );

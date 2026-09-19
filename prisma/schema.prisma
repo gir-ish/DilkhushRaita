@@ -624,6 +624,29 @@ model KhataSettings {
   updatedAt   DateTime @updatedAt
 }
 
+/// How much a customer may order on the website in one go. The counter is not
+/// held to this: staff are standing with the customer and can see the order.
+model OrderSettings {
+  id               String   @id @default("singleton")
+  maxQtyPerItem    Int      @default(20)
+  maxItemsPerOrder Int      @default(50)
+  updatedAt        DateTime @updatedAt
+}
+
+/// Which ways a customer may pay on the website, and when. The counter is not
+/// affected: staff take whatever is handed to them.
+model PaymentSettings {
+  id               String   @id @default("singleton")
+  codEnabled       Boolean  @default(true)
+  onlineEnabled    Boolean  @default(true)
+  /// Above this cart total, cash is not offered. Null = no ceiling.
+  codMaxOrderValue Float?
+  /// Cash is offered only inside this daily window, IST. Null = all day.
+  codFrom          String?
+  codTo            String?
+  updatedAt        DateTime @updatedAt
+}
+
 model OtpCode {
   id         String    @id @default(cuid())
   phone      String

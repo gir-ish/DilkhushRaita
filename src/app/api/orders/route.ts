@@ -17,12 +17,14 @@ const Body = z.object({
         menuItemId: z.string(),
         variantId: z.string().nullish(),
         addOnIds: z.array(z.string()).max(10).optional(),
-        qty: z.number().int().min(1).max(20),
+        // The owner's own limit is applied in buildQuote; this is the ceiling
+        // they can raise it to.
+        qty: z.number().int().min(1).max(999),
         instructions: z.string().max(300).nullish(),
       })
     )
     .min(1)
-    .max(50),
+    .max(200),
   addressId: z.string().nullish(),
   couponCode: z.string().max(30).nullish(),
   redeemPoints: z.boolean().optional(),
@@ -41,18 +43,26 @@ export const POST = handler(async (req: Request) => {
 
   const body = Body.parse(await req.json());
 
-  if (body.paymentMethod === "ONLINE" && !onlinePaymentsEnabled())
-    throw new HttpError(400, "Online payment is not enabled yet — please use Cash on Delivery");
-
   const user = await db.user.findUnique({
     where: { id: session.uid },
     include: { profile: true },
   });
   if (!user) throw new HttpError(401, "Please sign in again");
-  if (body.paymentMethod === "COD" && user.codOnlyBlock)
-    throw new HttpError(403, "Cash on Delivery is unavailable for this account. Please contact the restaurant.");
 
-  const quote = await buildQuote(body, session.uid, true);
+  // A manual discount belongs to the counter; a posted one is ignored here.
+  const quote = await buildQuote({ ...body, manualDiscount: null }, session.uid, true);
+
+  /*
+   * The owner's payment rules, applied to the bill as priced here.
+   *
+   * The checkout screen greys out whatever is not on offer and says why, but
+   * the screen is not the authority: the same answer is worked out again from
+   * the server's own total, so a stale page or a hand-made request cannot get
+   * cash past a "prepaid above ₹2,000" rule or an online-only night.
+   */
+  const choice = body.paymentMethod === "ONLINE" ? quote.payment.online : quote.payment.cod;
+  if (!choice.allowed)
+    throw new HttpError(400, choice.reason ?? "That payment method is not available right now");
 
   const orderNumber = genOrderNumber();
 
