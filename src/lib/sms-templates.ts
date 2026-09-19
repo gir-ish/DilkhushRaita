@@ -1,5 +1,9 @@
 /**
- * Every DLT template the shop has registered, and how to fill one in.
+ * Every template the shop sends, and how to fill one in.
+ *
+ * These match the STPL panel's template list exactly (as it stood on
+ * 14-Sep-2026): the gateway sends only what is added there, under the ID it is
+ * added with.
  *
  * Each entry keeps three things together that must never drift apart: the
  * template ID the gateway is told, the DLT reference number, and the exact
@@ -53,24 +57,12 @@ export interface SmsTemplate {
 
 export const SMS_TEMPLATES = {
   /**
-   * The confirmation actually sent — chosen by the shop over the "Hello"
-   * version below.
+   * The "Hello" confirmation — the one added on the STPL panel. DLT also has a
+   * "Hi" version (1777178765679680261, ref 11-14P1NMT8KP8CJ); it is not on the
+   * panel, so it cannot be sent.
    */
   orderConfirmed: {
     name: "Order Confirmation",
-    id: "1777178765679680261",
-    reference: "11-14P1NMT8KP8CJ",
-    category: "transactional",
-    text: "Hi {#var#}, your order {#var#} is confirmed by Dilkhush Raita Wala Dhaba. We are preparing it fresh. Track: https://dilkhushraita.com/",
-    slots: ["first name", "order number"],
-  },
-  /**
-   * The other confirmation registered on DLT — "Hello" where the one in use
-   * says "Hi". Kept here so it stays documented and can be switched to by
-   * renaming, but nothing sends it.
-   */
-  orderConfirmedHello: {
-    name: "Order Confirmation (Hello)",
     id: "1777178765626391293",
     reference: "11-14PDAMT8KDT61",
     category: "transactional",
@@ -109,13 +101,19 @@ export const SMS_TEMPLATES = {
     text: "{#var#} is live at Dilkhush Raita Wala Dhaba! Use coupon {#var#} to get a special discount. Order now: https://dilkhushraita.com/",
     slots: ["offer name", "coupon code"],
   },
+  /**
+   * No blanks: the same text goes to everyone. This is the wording on the STPL
+   * panel. A "Hi! {#var#}, craving… is live!" version appeared in a DLT export
+   * under this same ID; if the DLT portal ever shows that wording instead, the
+   * panel entry and this one must both change to it, together.
+   */
   websitePromotion: {
     name: "Website Promotion",
     id: "1777178765648170151",
     reference: "11-14OFUMT8KIH7Q",
     category: "promotional",
-    text: "Hi! {#var#}, craving real dhaba flavours? Dilkhush Raita Wala Dhaba is live! Explore our tasty menu & order fresh food now: https://dilkhushraita.com/",
-    slots: ["first name"],
+    text: "Craving real dhaba flavours? Dilkhush Raita Wala Dhaba is now online! Explore our tasty menu & order fresh food now: https://dilkhushraita.com/",
+    slots: [],
   },
 } as const satisfies Record<string, SmsTemplate>;
 
@@ -155,11 +153,9 @@ export function cleanSlot(value: string, max = MAX_SLOT): string {
  * The first name, and only the first name: "Rahul Kumar Sharma" is "Rahul".
  *
  * Cased so it reads like a greeting — "RAHUL" and "rahul" both become "Rahul" —
- * and held to twenty characters. The Website Promotion has room for seventeen
- * inside one credit; a longer first name costs two, and the campaign preview
- * counts that per message rather than assuming. A name with nothing usable in
- * it (written in Devanagari, say) returns null so the caller can fall back
- * rather than send "Hi! , craving…".
+ * and held to twenty characters, which keeps every greeting template inside one
+ * credit. A name with nothing usable in it (written in Devanagari, say)
+ * returns null so the caller can fall back rather than send "Hi , you…".
  */
 export function firstName(name: string | null | undefined): string | null {
   const first = cleanSlot(name ?? "")

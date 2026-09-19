@@ -50,29 +50,35 @@ describe("reading a list of numbers", () => {
 });
 
 describe("Website Promotion", () => {
-  it("greets each customer by their own first name", () => {
+  it("sends the panel's wording, the same to everyone, in one batch", () => {
     const plan = planCampaign("websitePromotion", [
       { phone: "+919000000001", name: "Rahul Kumar" },
       { phone: "+919000000002", name: "PRIYA SINGH" },
+      { phone: "+919000000003", name: null },
     ]);
-    const messages = plan.groups.map((g) => g.message);
-    expect(messages[0]).toMatch(/^Hi! Rahul, craving/);
-    expect(messages[1]).toMatch(/^Hi! Priya, craving/);
+    expect(plan.groups).toHaveLength(1);
+    expect(plan.groups[0].numbers).toHaveLength(3);
+    expect(plan.groups[0].message).toBe(
+      "Craving real dhaba flavours? Dilkhush Raita Wala Dhaba is now online! Explore our tasty menu & order fresh food now: https://dilkhushraita.com/"
+    );
+    expect(plan.credits).toBe(3); // 143 characters: one credit each
   });
+});
 
+describe("greeting by name (Points Reminder)", () => {
   it("uses 'Friend', never 'Customer', when there is no name", () => {
-    const plan = planCampaign("websitePromotion", [{ phone: "+919000000001", name: null }]);
-    expect(plan.groups[0].message).toMatch(/^Hi! Friend, craving/);
+    const plan = planCampaign("customerOffer", [{ phone: "+919000000001", name: null, points: 40 }]);
+    expect(plan.groups[0].message).toMatch(/^Hi Friend, you earned 40/);
     expect(plan.groups[0].message).not.toContain("Customer");
   });
 
   it("groups people who get the same message, so it still goes out in batches", () => {
     // One gateway call per distinct message, not one per person.
-    const plan = planCampaign("websitePromotion", [
-      { phone: "+919000000001", name: "Rahul" },
-      { phone: "+919000000002", name: "rahul sharma" },
-      { phone: "+919000000003", name: null },
-      { phone: "+919000000004", name: null },
+    const plan = planCampaign("customerOffer", [
+      { phone: "+919000000001", name: "Rahul", points: 40 },
+      { phone: "+919000000002", name: "rahul sharma", points: 40 },
+      { phone: "+919000000003", name: null, points: 40 },
+      { phone: "+919000000004", name: null, points: 40 },
     ]);
     expect(plan.groups).toHaveLength(2);
     expect(plan.groups.map((g) => g.numbers.length)).toEqual([2, 2]);
@@ -143,12 +149,14 @@ describe("Points Reminder", () => {
 });
 
 describe("what it costs", () => {
-  it("adds up per message, since messages can differ in length", () => {
-    const plan = planCampaign("websitePromotion", [
-      { phone: "+919000000001", name: "Rahul" }, // 1 credit
-      { phone: "+919000000002", name: "Abcdefghijklmnopqrst" }, // 20 letters: 2 credits
+  it("adds up per message, since messages can differ", () => {
+    const plan = planCampaign("customerOffer", [
+      { phone: "+919000000001", name: "Rahul", points: 45 },
+      { phone: "+919000000002", name: "Abcdefghijklmnopqrst", points: 12345 },
     ]);
-    expect(plan.credits).toBe(3);
+    expect(plan.groups).toHaveLength(2);
+    expect(plan.credits).toBe(plan.groups.reduce((n, g) => n + g.creditsEach * g.numbers.length, 0));
+    expect(plan.credits).toBe(2);
   });
 });
 

@@ -13,7 +13,7 @@ const TEMPLATES: { key: Template; label: string; blurb: string }[] = [
   {
     key: "websitePromotion",
     label: "Website Promotion",
-    blurb: "Invites people to order online. Greets each customer by first name.",
+    blurb: "Invites people to order online. The same message goes to everyone.",
   },
   {
     key: "specialOffer",

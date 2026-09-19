@@ -123,12 +123,12 @@ export interface CampaignPlan {
 /**
  * Works out exactly what each recipient will receive, and what it costs.
  *
- * With a real first name in the greeting, messages differ from person to
- * person, so a campaign can no longer be one text sent fifty numbers at a time.
- * Recipients are grouped by the message they get instead — everyone called
- * Rahul shares a batch, as does everyone with no usable name — so batching
- * still does the heavy lifting and nothing is sent one-by-one that did not need
- * to be.
+ * With a first name in the greeting (the Points Reminder), messages differ
+ * from person to person, so a campaign cannot always be one text sent fifty
+ * numbers at a time. Recipients are grouped by the message they get instead —
+ * everyone called Rahul shares a batch — so batching still does the heavy
+ * lifting. The Website Promotion and Special Offer are the same for everyone:
+ * one group.
  *
  * Nobody who turned promotions off is included, however they came to be on the
  * list. That switch is in their account page and it has to mean something.
@@ -167,7 +167,8 @@ export function planCampaign(
       }
       message = fillTemplate("customerOffer", [firstName(r.name) ?? NAME_FALLBACK, String(r.points)]);
     } else {
-      message = fillTemplate("websitePromotion", [firstName(r.name) ?? NAME_FALLBACK]);
+      // No blanks in this one: the same text for everyone.
+      message = fillTemplate("websitePromotion", []);
     }
 
     const g = byMessage.get(message) ?? { message, numbers: [], creditsEach: creditsFor(message) };

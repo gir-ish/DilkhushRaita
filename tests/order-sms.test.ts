@@ -16,13 +16,13 @@ const order = (over: Partial<OrderForSms> = {}): OrderForSms => ({
 });
 
 describe("order confirmation", () => {
-  it("goes out on the template the shop chose, with the first name and order number", () => {
+  it("goes out on the template on the STPL panel, with the first name and order number", () => {
     const r = orderSmsFor("confirmed", order());
     expect(r).toEqual({
-      templateId: "1777178765679680261",
+      templateId: "1777178765626391293",
       phone: "+919253171637",
       message:
-        "Hi Rahul, your order DKHEH0F0JJ is confirmed by Dilkhush Raita Wala Dhaba. We are preparing it fresh. Track: https://dilkhushraita.com/",
+        "Hello Rahul, your order DKHEH0F0JJ is confirmed by Dilkhush Raita Wala Dhaba. We are preparing it fresh. Track: https://dilkhushraita.com/",
     });
   });
 
@@ -59,10 +59,10 @@ describe("order delivered", () => {
 describe("names", () => {
   it("falls back to the delivery contact's name, then to 'Friend'", () => {
     const viaContact = orderSmsFor("confirmed", order({ userName: null, contactName: "Priya Singh" }));
-    expect("message" in viaContact && viaContact.message).toMatch(/^Hi Priya,/);
+    expect("message" in viaContact && viaContact.message).toMatch(/^Hello Priya,/);
 
     const none = orderSmsFor("confirmed", order({ userName: null, contactName: null }));
-    expect("message" in none && none.message).toMatch(/^Hi Friend,/);
+    expect("message" in none && none.message).toMatch(/^Hello Friend,/);
   });
 });
 

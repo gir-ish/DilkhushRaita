@@ -10,8 +10,8 @@ import {
 } from "@/lib/sms-templates";
 
 /**
- * Every registered template, checked against the DLT registration file
- * character for character.
+ * Every template the app sends, checked character for character against the
+ * STPL panel's template list (14-Sep-2026).
  *
  * An operator drops a message whose fixed text differs from its registration —
  * after the credit is spent, while the gateway still reports success. So a
@@ -19,14 +19,9 @@ import {
  * silently never arrives. These tests are what stops a well-meant tidy-up.
  */
 
-/** Copied from dilkhush_dlt_templates.txt as registered. */
+/** Copied from the STPL panel's template list; references from the DLT export. */
 const REGISTERED: Record<TemplateKey, { id: string; reference: string; text: string }> = {
   orderConfirmed: {
-    id: "1777178765679680261",
-    reference: "11-14P1NMT8KP8CJ",
-    text: "Hi {#var#}, your order {#var#} is confirmed by Dilkhush Raita Wala Dhaba. We are preparing it fresh. Track: https://dilkhushraita.com/",
-  },
-  orderConfirmedHello: {
     id: "1777178765626391293",
     reference: "11-14PDAMT8KDT61",
     text: "Hello {#var#}, your order {#var#} is confirmed by Dilkhush Raita Wala Dhaba. We are preparing it fresh. Track: https://dilkhushraita.com/",
@@ -54,7 +49,7 @@ const REGISTERED: Record<TemplateKey, { id: string; reference: string; text: str
   websitePromotion: {
     id: "1777178765648170151",
     reference: "11-14OFUMT8KIH7Q",
-    text: "Hi! {#var#}, craving real dhaba flavours? Dilkhush Raita Wala Dhaba is live! Explore our tasty menu & order fresh food now: https://dilkhushraita.com/",
+    text: "Craving real dhaba flavours? Dilkhush Raita Wala Dhaba is now online! Explore our tasty menu & order fresh food now: https://dilkhushraita.com/",
   },
 };
 
@@ -70,9 +65,10 @@ describe("the catalog matches what is registered", () => {
     expect(Object.keys(SMS_TEMPLATES).sort()).toEqual(Object.keys(REGISTERED).sort());
   });
 
-  it("uses the confirmation the shop chose", () => {
-    // Two confirmations are registered; the "Hi" one was picked to send.
-    expect(SMS_TEMPLATES.orderConfirmed.id).toBe("1777178765679680261");
+  it("uses the confirmation that is on the STPL panel", () => {
+    // DLT has a "Hi" and a "Hello" confirmation; only "Hello" is on the panel.
+    expect(SMS_TEMPLATES.orderConfirmed.id).toBe("1777178765626391293");
+    expect(SMS_TEMPLATES.orderConfirmed.text.startsWith("Hello ")).toBe(true);
   });
 
   it("describes one slot per {#var#}", () => {
@@ -100,25 +96,25 @@ describe("the catalog matches what is registered", () => {
 describe("filling a template", () => {
   it("fills the slots in order", () => {
     expect(fillTemplate("orderConfirmed", ["Rahul", "DKHEH0F0JJ"])).toBe(
-      "Hi Rahul, your order DKHEH0F0JJ is confirmed by Dilkhush Raita Wala Dhaba. We are preparing it fresh. Track: https://dilkhushraita.com/"
+      "Hello Rahul, your order DKHEH0F0JJ is confirmed by Dilkhush Raita Wala Dhaba. We are preparing it fresh. Track: https://dilkhushraita.com/"
     );
     expect(fillTemplate("specialOffer", ["Diwali Dhamaka", "DIWALI50"])).toBe(
       "Diwali Dhamaka is live at Dilkhush Raita Wala Dhaba! Use coupon DIWALI50 to get a special discount. Order now: https://dilkhushraita.com/"
     );
-    expect(fillTemplate("websitePromotion", ["Priya"])).toBe(
-      "Hi! Priya, craving real dhaba flavours? Dilkhush Raita Wala Dhaba is live! Explore our tasty menu & order fresh food now: https://dilkhushraita.com/"
+    expect(fillTemplate("websitePromotion", [])).toBe(
+      "Craving real dhaba flavours? Dilkhush Raita Wala Dhaba is now online! Explore our tasty menu & order fresh food now: https://dilkhushraita.com/"
     );
   });
 
   it("refuses the wrong number of values", () => {
     expect(() => fillTemplate("orderConfirmed", ["Rahul"])).toThrow(/2 value/);
-    expect(() => fillTemplate("websitePromotion", ["Priya", "extra"])).toThrow(/1 value/);
+    expect(() => fillTemplate("websitePromotion", ["Priya"])).toThrow(/0 value/);
   });
 
   it("refuses a value that is empty once cleaned", () => {
     // An empty slot changes the fixed text around it, so the operator would
     // drop the message after it was paid for.
-    expect(() => fillTemplate("websitePromotion", ["🎉🎉"])).toThrow(/empty/);
+    expect(() => fillTemplate("customerOffer", ["🎉🎉", "45"])).toThrow(/empty/);
   });
 
   it("never leaves a slot unfilled", () => {
@@ -172,12 +168,11 @@ describe("what each message costs", () => {
   it("keeps every template in one credit with ordinary values", () => {
     const realistic: Record<TemplateKey, string[]> = {
       orderConfirmed: ["Rahul", "DKHEH0F0JJ"],
-      orderConfirmedHello: ["Rahul", "DKHEH0F0JJ"],
       orderDispatched: ["Rahul", "DKHEH0F0JJ"],
       orderDelivered: ["Rahul", "DKHEH0F0JJ"],
       customerOffer: ["Rahul", "120"],
       specialOffer: ["Rs.100 welcome-back treat", "COMEBACK100"],
-      websitePromotion: ["Rahul"],
+      websitePromotion: [],
     };
     for (const [k, v] of Object.entries(realistic)) {
       const m = fillTemplate(k as TemplateKey, v);
@@ -185,10 +180,11 @@ describe("what each message costs", () => {
     }
   });
 
-  it("goes to two credits for a long first name on the promotion, and says so", () => {
-    // The Website Promotion has seventeen characters of room. The preview
-    // counts this per message rather than assuming one credit each.
-    expect(creditsFor(fillTemplate("websitePromotion", ["Abcdefghijklmnopq"]))).toBe(1);
-    expect(creditsFor(fillTemplate("websitePromotion", ["Abcdefghijklmnopqr"]))).toBe(2);
+  it("keeps a greeting template in one credit with the longest first name", () => {
+    // firstName() caps a name at twenty characters.
+    const longest = "Abcdefghijklmnopqrst";
+    for (const k of ["orderConfirmed", "orderDispatched", "orderDelivered"] as const)
+      expect(creditsFor(fillTemplate(k, [longest, "DKHEH0F0JJ"])), k).toBe(1);
+    expect(creditsFor(fillTemplate("customerOffer", [longest, "12345"]))).toBe(1);
   });
 });
