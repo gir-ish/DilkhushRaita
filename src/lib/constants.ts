@@ -149,7 +149,9 @@ export const MIN_POINTS_TO_REDEEM = 100;
 // Ten, because the DLT-approved SMS tells the customer ten. The template is the
 // harder of the two to change, and a code that dies while the message still
 // says it is good reads as a broken site.
-export const OTP_EXPIRY_MINS = 10;
+export const OTP_EXPIRY_MINS = 5;
+/** Digits in a login code. The SMS says how long it lasts (OTP_EXPIRY_MINS). */
+export const OTP_LENGTH = 4;
 export const OTP_MAX_ATTEMPTS = 5;
 export const OTP_RESEND_COOLDOWN_SECS = 30;
 export const OTP_MAX_PER_HOUR = 5;

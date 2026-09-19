@@ -3,7 +3,7 @@
  * works before customers depend on it.
  *
  *   node scripts/test-sms.mjs 9876543210
- *   node scripts/test-sms.mjs 9876543210 --name Rahul --dry
+ *   node scripts/test-sms.mjs 9876543210 --dry
  *
  * Reads the same variables the app does, so run it on the machine whose .env
  * you mean to test — the live one is the server, not your laptop. It spends
@@ -71,38 +71,20 @@ if (digits.length !== 10) {
 const provider = process.env.OTP_PROVIDER ?? "console";
 const senderId = (process.env.STPL_SENDER_ID ?? "").trim();
 const apiKey = (process.env.STPL_API_KEY ?? "").trim();
-const templateId = (process.env.STPL_TEMPLATE_ID ?? "").trim();
 /*
- * Resolved exactly the way src/lib/otp.ts does it, and for the same reason
- * there is no fallback: a diagnostic that quietly substitutes wording the app
- * would never send reports on a configuration that does not exist. This script
- * did have one, and it duly announced a message nobody had configured.
+ * The approved OTP template — ID and wording — from the same file the site
+ * reads, config/otp-template.json. Nothing about it comes from .env, so this
+ * tests exactly what the site sends.
  */
-const template = (() => {
-  const inline = (process.env.STPL_MESSAGE ?? "").trim();
-  if (inline) return inline;
-  const file = (process.env.STPL_MESSAGE_FILE ?? "").trim();
-  if (!file) return "";
-  try {
-    return readFileSync(file, "utf8").trim();
-  } catch (e) {
-    console.error(`Could not read STPL_MESSAGE_FILE (${file}): ${e?.message ?? e}`);
-    process.exit(1);
-  }
-})();
-
-if (!template) {
-  console.error(
-    "No approved wording configured. Set STPL_MESSAGE, or STPL_MESSAGE_FILE\n" +
-      'pointing at a file holding it (e.g. "config/stpl-otp-template.txt").'
-  );
-  process.exit(1);
-}
+const tpl = JSON.parse(readFileSync("config/otp-template.json", "utf8"));
+const templateId = tpl.id;
+const template = tpl.text;
+const MINUTES = 5; // OTP_EXPIRY_MINS in src/lib/constants.ts
 
 console.log(`provider     : ${provider}${provider === "stpl" ? "" : "   ⚠️  not 'stpl' — the app will NOT use this gateway"}`);
 console.log(`sender id    : ${senderId || "(missing)"}${senderId && senderId.length !== 6 ? `   ⚠️  ${senderId.length} chars, gateway expects 6` : ""}`);
 console.log(`api key      : ${apiKey ? `set (${apiKey.length} chars)` : "(not set — sending without one)"}`);
-console.log(`template id  : ${templateId || "(not set — gateway will guess the template)"}`);
+console.log(`template id  : ${templateId}  (config/otp-template.json)`);
 
 if (!senderId) {
   console.error("\nSTPL_SENDER_ID is not set. Nothing to send with.");
@@ -111,26 +93,17 @@ if (!senderId) {
 
 // A fixed, obviously-fake code: this is a delivery test, and a real-looking
 // OTP in a log or a screenshot is a habit worth not starting.
-const code = "123456";
+const code = "1234";
 /*
- * --name Rahul greets the way the app would greet that customer: first word,
- * letters only, capitalised — and "Customer" when that is longer than
- * "Customer" or nothing usable is left. Kept in step with otpGreeting() in
- * src/lib/otp.ts by hand, since this script runs without a TypeScript build.
+ * Filled exactly as src/lib/otp.ts composeOtpMessage() does: the code in the
+ * first slot, the minutes in the second with a space either side — the
+ * registration reads "Valid for{#var#}minutes".
  */
-const nameAt = process.argv.indexOf("--name");
-const typed = nameAt === -1 ? "" : (process.argv[nameAt + 1] ?? "");
-const word = (typed.replace(/[^\x20-\x7E]/g, "").trim().split(/\s+/)[0] ?? "").replace(/[^A-Za-z'.-]/g, "");
-const cased = /[A-Za-z]/.test(word) ? word[0].toUpperCase() + word.slice(1).toLowerCase() : "";
-const greet = cased && cased.length <= "Customer".length ? cased : "Customer";
-let message = template.replace(/\{otp\}/gi, code).replace(/\{name\}/gi, greet);
-if ((message.match(/\{#var#\}/g) ?? []).length === 1) message = message.replace("{#var#}", code);
-if (message.includes("{#var#}") || /\{(otp|name)\}/i.test(message)) {
-  console.error(
-    "\nSTPL_MESSAGE still has an unfilled placeholder. Put {otp} where the code\n" +
-      "goes, {name} in the greeting, and a literal value in any other {#var#}\n" +
-      "slot — otherwise the customer reads \"{#var#}\" and the operator drops it."
-  );
+const values = [code, ` ${MINUTES} `];
+let slot = 0;
+const message = template.replace(/\{#var#\}/g, () => values[slot++] ?? "{#var#}");
+if (slot !== 2 || message.includes("{#var#}")) {
+  console.error(`\nconfig/otp-template.json has ${slot} slots; it should have 2 (code, minutes).`);
   process.exit(1);
 }
 console.log(`message      : ${message}`);
@@ -143,11 +116,8 @@ if (DRY) {
     message.length,
     message.length > 160 ? "(over 160 → 2 credits per send)" : "(1 credit per send)"
   );
-  // The registration's greeting slot filled with the same name.
-  const approved =
-    `Dear ${greet}, your OTP for registration on Dilkhush Raita is${code}. ` +
-    `This OTP is valid for 10 minutes. Please do not share it with anyone. ` +
-    `Visit https://dilkhushraita.com/`;
+  // The registration with the same values in its slots.
+  const approved = template.replace("{#var#}", code).replace("{#var#}", ` ${MINUTES} `);
   if (message === approved) {
     console.log("template match : YES — identical to the approved wording");
   } else {
@@ -226,7 +196,7 @@ try {
   console.log(`\n✅ Accepted by the gateway. Credits used: ${data.data?.totalcredit ?? "?"}`);
   console.log("Now check the handset. If nothing arrives within a minute or two, the");
   console.log("gateway took it but the operator dropped it — which almost always means");
-  console.log("STPL_MESSAGE does not match the DLT template registered for this sender.");
+  console.log("config/otp-template.json does not match the template registered for this sender.");
 } catch (e) {
   console.error(e?.name === "TimeoutError" ? "Timed out talking to the gateway." : `Network error: ${e?.message ?? e}`);
   process.exit(1);

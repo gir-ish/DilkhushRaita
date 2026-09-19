@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ErrorBox } from "@/components/ui";
 import { safeNextPath } from "@/lib/utils";
+import { OTP_LENGTH } from "@/lib/constants";
 
 // TEMPORARY: mirrors OTP_BYPASS on the server. Set NEXT_PUBLIC_OTP_BYPASS
 // (and OTP_BYPASS) to "false" together once real SMS delivery is live.
@@ -130,20 +131,20 @@ function LoginInner() {
               </p>
             )}
             <div>
-              <label htmlFor="otp" className="label">6-digit OTP</label>
+              <label htmlFor="otp" className="label">{OTP_LENGTH}-digit OTP</label>
               <input
                 id="otp"
                 className="input text-center tracking-[0.5em] font-bold text-lg"
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                maxLength={6}
+                maxLength={OTP_LENGTH}
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
                 required
               />
             </div>
             <ErrorBox message={error} />
-            <button type="submit" disabled={busy || code.length !== 6} className="btn-primary w-full">
+            <button type="submit" disabled={busy || code.length !== OTP_LENGTH} className="btn-primary w-full">
               {busy ? "Verifying…" : "Verify & continue"}
             </button>
             <button

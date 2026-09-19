@@ -1,6 +1,6 @@
-import { readFileSync } from "fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { composeOtpMessage, otpProvider } from "@/lib/otp";
+import { OTP_TEMPLATE_ID, OTP_TEMPLATE_TEXT, composeOtpMessage, generateOtp, otpProvider } from "@/lib/otp";
+import { OTP_EXPIRY_MINS, OTP_LENGTH } from "@/lib/constants";
 import { creditsFor } from "@/lib/sms-templates";
 
 /**
@@ -43,9 +43,7 @@ beforeEach(() => {
   process.env.STPL_SENDER_ID = "DKDHBA";
   delete process.env.STPL_TEMPLATE_ID;
   delete process.env.STPL_MESSAGE_FILE;
-  // Some wording has to be configured or the provider refuses to send at all —
-  // there is no invented fallback, because an unapproved message costs credit
-  // and is dropped. Tests that care about the text set their own.
+  // Left over from the old template setup; the provider must ignore it.
   process.env.STPL_MESSAGE = "Your code is {otp}. Do not share.";
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -112,198 +110,75 @@ describe("stpl provider", () => {
     expect(sent().get("number")).toBe("919876543210");
   });
 
-  it("puts the code into the message and encodes it", async () => {
-    reply({ status: true, code: "011" });
-    await otpProvider().send("+919876543210", "654321");
-    const msg = sent().get("message") ?? "";
-    expect(msg).toContain("654321");
-    // Spaces must survive as spaces once decoded — a raw space in the query
-    // string is what breaks these gateways.
-    expect(msg).toContain(" ");
-    expect(calls[0]).not.toContain(" ");
-  });
-
-  it("encodes spaces as %20, never as +", async () => {
+  it("puts the code into the message, spaces as %20 and never +", async () => {
     /*
-     * The bug that made every message from the site vanish while the same text
-     * pasted into a browser arrived. URLSearchParams writes a space as "+";
-     * the gateway does not decode it, so the operator saw
-     * "Dear+Customer,+your+OTP..." , found it different from the registered DLT
-     * template, and dropped it — behind a "submitted successfully" reply.
-     *
-     * %20 is also what the vendor's own example uses: message=Hello%20There.
+     * URLSearchParams writes a space as "+"; the gateway passed it through,
+     * the operator compared "Your+Dilkhush+Raita..." against the template,
+     * and dropped every message behind a "submitted successfully" reply.
      */
-    process.env.STPL_MESSAGE = "Dear Customer, your code is {otp}.";
     reply({ status: "Success", code: "011" });
-    await otpProvider().send("+919876543210", "654321");
-
+    await otpProvider().send("+919876543210", "4821");
     const raw = calls[0];
     const messageParam = raw.slice(raw.indexOf("&message=") + "&message=".length).split("&")[0];
     expect(messageParam).toContain("%20");
     expect(messageParam).not.toContain("+");
-    // And it still decodes back to the exact approved wording.
-    expect(decodeURIComponent(messageParam)).toBe("Dear Customer, your code is 654321.");
+    expect(decodeURIComponent(messageParam)).toContain("OTP is 4821.");
   });
 
-  it("uses the operator-approved wording when one is configured", async () => {
-    // Indian operators match every message against the registered DLT template
-    // and bin anything that differs, so this override is the normal case.
-    process.env.STPL_MESSAGE = "Your DilKhush code is {otp}. Do not share.";
-    reply({ status: true, code: "011" });
-    await otpProvider().send("+919876543210", "111222");
-    expect(sent().get("message")).toBe("Your DilKhush code is 111222. Do not share.");
-  });
-
-  it("sends DilKhush's real approved template with the code in place", async () => {
-    // The wording registered as template 1777178772255400845. Note "is{otp}"
-    // with no space — that is how it was approved, so that is how it must go
-    // out.
-    process.env.STPL_MESSAGE =
-      "Dear Customer, your OTP for registration on Dilkhush Raita is{otp}. " +
-      "This OTP is valid for 10 minutes. Please do not share it with anyone. " +
-      "Visit https://dilkhushraita.com/";
+  it("sends the approved template, word for word, under its own ID", async () => {
     reply({ status: "Success", code: "011" });
-    const r = await otpProvider().send("+919876543210", "482913");
-
+    const r = await otpProvider().send("+919876543210", "4821");
     expect(r.ok).toBe(true);
+    expect(sent().get("templateid")).toBe("1777178937435571947");
     expect(sent().get("message")).toBe(
-      "Dear Customer, your OTP for registration on Dilkhush Raita is482913. " +
-        "This OTP is valid for 10 minutes. Please do not share it with anyone. " +
-        "Visit https://dilkhushraita.com/"
+      "Your Dilkhush Raita verification OTP is 4821. Do not share this OTP with anyone. Valid for 5 minutes. Visit https://dilkhushraita.com/"
     );
   });
 
-  it("fills a lone DLT {#var#} slot with the code", async () => {
-    process.env.STPL_MESSAGE = "Your code is {#var#}. Do not share.";
-    reply({ status: true, code: "011" });
-    await otpProvider().send("+919876543210", "778899");
-    expect(sent().get("message")).toBe("Your code is 778899. Do not share.");
+  it("changes nothing but the two slots", () => {
+    // The operator compares the fixed text around each {#var#}. Put the slots
+    // back and what is left must be the registration, character for character.
+    const msg = composeOtpMessage("4821", 5);
+    expect(msg.replace("4821", "{#var#}").replace(" 5 ", "{#var#}")).toBe(OTP_TEMPLATE_TEXT);
   });
 
-  it("refuses to send when no approved wording is configured", async () => {
-    /*
-     * There is no fallback text on purpose. Anything invented here cannot be
-     * what DLT approved, so the operator drops it — while the gateway still
-     * charges. An unset STPL_MESSAGE would drain a paid balance one login at a
-     * time and deliver nothing.
-     */
-    delete process.env.STPL_MESSAGE;
-    reply({ status: "Success", code: "011" });
-    const r = await otpProvider().send("+919876543210", "123456");
-
-    expect(r.ok).toBe(false);
-    expect(calls).toHaveLength(0); // no credit spent
-  });
-
-  it("refuses a message that lost its {otp} to a bad paste", async () => {
-    /*
-     * Exactly what reached DilKhush's server: a terminal dropped the middle of
-     * the .env line, taking the placeholder with it. The text still read like a
-     * sentence, so nothing looked wrong — and every customer got an SMS with no
-     * code in it, two credits a time.
-     */
-    process.env.STPL_MESSAGE =
-      "Dear Customer, your OTP for registration os OTP is valid for 10 minutes.";
-    reply({ status: "Success", code: "011" });
-    const r = await otpProvider().send("+919876543210", "123456");
-
-    expect(r.ok).toBe(false);
-    expect(calls).toHaveLength(0); // no credit spent
-  });
-
-  it("reads the wording from STPL_MESSAGE_FILE when no inline text is set", async () => {
-    // How the server is configured: a file delivered by git cannot lose
-    // characters the way a pasted line can.
-    delete process.env.STPL_MESSAGE;
-    process.env.STPL_MESSAGE_FILE = "config/stpl-otp-template.txt";
-    reply({ status: "Success", code: "011" });
-    const r = await otpProvider().send("+919876543210", "482913", "Rahul Kumar");
-
-    expect(r.ok).toBe(true);
-    expect(sent().get("message")).toBe(
-      "Dear Rahul, your OTP for registration on Dilkhush Raita is482913. " +
-        "This OTP is valid for 10 minutes. Please do not share it with anyone. " +
-        "Visit https://dilkhushraita.com/"
+  it("matches the template on the STPL panel", () => {
+    // 14-Sep-2026, row 9 of the panel's list.
+    expect(OTP_TEMPLATE_ID).toBe("1777178937435571947");
+    expect(OTP_TEMPLATE_TEXT).toBe(
+      "Your Dilkhush Raita verification OTP is {#var#}. Do not share this OTP with anyone. Valid for{#var#}minutes. Visit https://dilkhushraita.com/"
     );
   });
 
-  it("greets by a first name no longer than 'Customer', and as 'Customer' otherwise", async () => {
-    delete process.env.STPL_MESSAGE;
-    process.env.STPL_MESSAGE_FILE = "config/stpl-otp-template.txt";
+  it("says the code lasts as long as it actually does", () => {
+    expect(OTP_EXPIRY_MINS).toBe(5);
+    expect(composeOtpMessage("4821")).toContain("Valid for 5 minutes.");
+  });
+
+  it("fits in one SMS credit", () => {
+    const msg = composeOtpMessage("9999");
+    expect(msg.length).toBeLessThanOrEqual(160);
+    expect(creditsFor(msg)).toBe(1);
+  });
+
+  it("ignores the old wording and ID an older server .env still carries", async () => {
+    // The previous template was configured through these. Left behind on a
+    // server they must not put the new message under the old ID — the one
+    // mismatch the operator drops.
+    process.env.STPL_MESSAGE = "Dear Customer, your OTP for registration on Dilkhush Raita is{otp}.";
+    process.env.STPL_TEMPLATE_ID = "1777178772255400845";
     reply({ status: "Success", code: "011" });
-
-    for (const [name, greeting] of [
-      ["PRIYA SINGH", "Dear Priya,"], // first name only
-      ["  aman  ", "Dear Aman,"],
-      ["Harpreet Kaur", "Dear Harpreet,"], // eight letters, as long as "Customer": kept
-      ["Abhimanyu Singh", "Dear Customer,"], // nine: longer than "Customer"
-      [null, "Dear Customer,"], // no name to be had
-      ["राहुल", "Dear Customer,"], // Devanagari would force the whole SMS into UCS-2
-      ["🎉", "Dear Customer,"],
-    ] as const) {
-      calls = [];
-      await otpProvider().send("+919876543210", "482913", name);
-      const msg = sent().get("message") ?? "";
-      expect(msg.startsWith(greeting), `${name} → ${msg.slice(0, 20)}`).toBe(true);
-    }
+    await otpProvider().send("+919876543210", "4821");
+    expect(sent().get("templateid")).toBe("1777178937435571947");
+    expect(sent().get("message")).toMatch(/^Your Dilkhush Raita verification OTP is 4821\./);
   });
 
-  it("never makes the message longer than 'Customer' would", () => {
-    // The greeting is capped at eight characters, so a template's longest
-    // message is known in advance whatever the customer is called.
-    const template = readFileSync("config/stpl-otp-template.txt", "utf8").trim();
-    const withCustomer = composeOtpMessage(template, "482913", null).length;
-    for (const name of ["Ram", "Harpreet", "Abhimanyu", "Abcdefghijklmnopqrstuvwxyz"])
-      expect(composeOtpMessage(template, "482913", name).length).toBeLessThanOrEqual(withCustomer);
-  });
-
-  it("keeps the current template at two credits, as it always was", () => {
-    // Its fixed words are 157 characters: over 160 with any code at all.
-    const template = readFileSync("config/stpl-otp-template.txt", "utf8").trim();
-    expect(creditsFor(composeOtpMessage(template, "482913", null))).toBe(2);
-    expect(creditsFor(composeOtpMessage(template, "482913", "Ram"))).toBe(2);
-  });
-
-  it("fits the replacement template in one SMS in the worst case, with a 4-digit code", () => {
-    // The shorter wording the shop is registering on DLT to halve the cost of
-    // every login. Worst case: the longest greeting and the longest code.
-    const replacement =
-      "Dear {name}, your OTP for registration on Dilkhush Raita is {otp}. " +
-      "Valid for 10 minutes. Do not share it with anyone. Visit https://dilkhushraita.com/";
-    for (const name of [null, "Ram", "Harpreet", "Abhimanyu", "Abcdefghijklmnopqrstuvwxyz"]) {
-      const msg = composeOtpMessage(replacement, "9999", name);
-      expect(msg.length, msg).toBeLessThanOrEqual(160);
-      expect(creditsFor(msg)).toBe(1);
-    }
-  });
-
-  it("refuses rather than mail an unfilled placeholder", async () => {
-    /*
-     * The DLT template carries two {#var#} slots — a greeting and the code —
-     * and only its author knows which is which. Sending it raw would put a
-     * literal "{#var#}" in front of a customer, and the operator would drop it
-     * for not matching the template regardless: a wasted credit and a confused
-     * reader.
-     */
-    process.env.STPL_MESSAGE =
-      "Dear {#var#}, your OTP for registration on Dilkhush Raita is{#var#}.";
-    reply({ status: true, code: "011" });
-    const r = await otpProvider().send("+919876543210", "123456");
-
-    expect(r.ok).toBe(false);
-    expect(calls).toHaveLength(0); // no credit spent
-  });
-
-  it("sends templateid only when one is set", async () => {
-    reply({ status: true, code: "011" });
-    await otpProvider().send("+919876543210", "123456");
-    expect(sent().has("templateid")).toBe(false);
-
-    calls = [];
-    process.env.STPL_TEMPLATE_ID = "1207161234567890";
-    reply({ status: true, code: "011" });
-    await otpProvider().send("+919876543210", "123456");
-    expect(sent().get("templateid")).toBe("1207161234567890");
+  it("makes four-digit codes, leading zeros and all", () => {
+    expect(OTP_LENGTH).toBe(4);
+    const codes = Array.from({ length: 3000 }, () => generateOtp());
+    expect(codes.every((c) => /^\d{4}$/.test(c))).toBe(true);
+    // Every value is possible, so some begin with 0 — and are kept that way.
+    expect(codes.some((c) => c.startsWith("0"))).toBe(true);
   });
 
   it("omits apikey entirely when the account does not use one", async () => {

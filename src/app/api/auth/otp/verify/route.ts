@@ -13,7 +13,7 @@ import {
 import { recordOtpVerified } from "@/lib/otp-abuse";
 import { normalizePhone } from "@/lib/utils";
 import { createSessionCookie } from "@/lib/session";
-import { OTP_MAX_ATTEMPTS } from "@/lib/constants";
+import { OTP_LENGTH, OTP_MAX_ATTEMPTS } from "@/lib/constants";
 
 const Body = z.object({
   phone: z.string().min(10).max(15),
@@ -52,8 +52,8 @@ export const POST = handler(async (req: Request) => {
     throw new HttpError(429, "Too many incorrect codes for this number. Try again in an hour.");
 
   if (!OTP_BYPASS) {
-    if (!body.code || !/^\d{6}$/.test(body.code))
-      throw new HttpError(400, "Enter the 6-digit OTP");
+    if (!body.code || !new RegExp(`^\\d{${OTP_LENGTH}}$`).test(body.code))
+      throw new HttpError(400, `Enter the ${OTP_LENGTH}-digit OTP`);
 
     const otp = await db.otpCode.findFirst({
       where: { phone, consumedAt: null },

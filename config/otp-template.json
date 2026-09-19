@@ -1,0 +1,5 @@
+{
+  "_about": "The DLT-approved OTP template, exactly as on the STPL panel. The ID and the wording live together so they cannot be deployed out of step: new wording under the old ID is dropped by the operator. Change both, here, only after the panel shows the new one Active.",
+  "id": "1777178937435571947",
+  "text": "Your Dilkhush Raita verification OTP is {#var#}. Do not share this OTP with anyone. Valid for{#var#}minutes. Visit https://dilkhushraita.com/"
+}

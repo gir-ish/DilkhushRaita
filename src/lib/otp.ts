@@ -1,7 +1,6 @@
 import { createHash, randomInt, timingSafeEqual } from "crypto";
-import { readFileSync } from "fs";
-import path from "path";
-import { firstName } from "@/lib/sms-templates";
+import otpTemplate from "../../config/otp-template.json";
+import { OTP_EXPIRY_MINS, OTP_LENGTH } from "./constants";
 
 /**
  * Modular OTP/SMS provider. Select with the OTP_PROVIDER env variable:
@@ -14,8 +13,8 @@ import { firstName } from "@/lib/sms-templates";
  *              than a dedicated OTP route, so WE write the message text — and
  *              it has to match a DLT-approved template word for word or the
  *              operator drops it.
- *              Env: STPL_API_KEY, STPL_SENDER_ID, STPL_TEMPLATE_ID,
- *                   STPL_MESSAGE
+ *              Env: STPL_API_KEY, STPL_SENDER_ID. The template — ID and
+ *              wording — is config/otp-template.json.
  *
  * Fast2SMS and MSG91 were carried here from before the shop had an account of
  * its own. Two unused gateways is two more ways for OTP_PROVIDER to name
@@ -29,40 +28,34 @@ import { firstName } from "@/lib/sms-templates";
 
 export interface OtpProvider {
   name: string;
-  /** `name` is who the message greets — see composeOtpMessage. */
-  send(phone: string, code: string, name?: string | null): Promise<{ ok: boolean; devCode?: string }>;
+  send(phone: string, code: string): Promise<{ ok: boolean; devCode?: string }>;
 }
 
 /**
- * What the OTP greets someone as when their first name will not do: there is
- * none, or it is longer than this word.
+ * The approved OTP template: its ID and wording, from config/otp-template.json.
+ *
+ * Both come from the one file on purpose. They used to be split — the ID in the
+ * server's .env, the wording in a text file — and a deploy that changes one
+ * without the other sends the new wording under the old ID, which the
+ * operator drops after the credit is spent, and nobody can sign in.
  */
-export const OTP_NAME_FALLBACK = "Customer";
+export const OTP_TEMPLATE_ID: string = otpTemplate.id;
+export const OTP_TEMPLATE_TEXT: string = otpTemplate.text;
 
 /**
- * The first name to greet with, or "Customer".
+ * The OTP SMS with the code and the minutes filled in.
  *
- * The shop's rule: a first name no longer than "Customer" is used; anything
- * longer is replaced by "Customer". That bounds the greeting at eight
- * characters, so the longest message is fixed by the template — which is what
- * lets a template be sized to stay inside one 160-character SMS every time.
+ * The registered text reads "Valid for{#var#}minutes" — no spaces around the
+ * slot — so the minutes go in with a space either side: " 5 ", and the
+ * customer reads "Valid for 5 minutes". A slot may hold spaces; the fixed text
+ * around it is unchanged, which is all the operator compares.
  */
-export function otpGreeting(name?: string | null): string {
-  const first = firstName(name);
-  return first && first.length <= OTP_NAME_FALLBACK.length ? first : OTP_NAME_FALLBACK;
-}
-
-/**
- * The approved wording with the code and the greeting filled in.
- *
- * {otp} is the code. {name} is the DLT greeting slot — "Dear {#var#}" on the
- * registration — and takes otpGreeting(). A lone {#var#} is unambiguous and
- * is taken to be the code.
- */
-export function composeOtpMessage(template: string, code: string, name?: string | null): string {
-  let message = template.replace(/\{otp\}/gi, code);
-  if ((message.match(/\{#var#\}/g) ?? []).length === 1) message = message.replace("{#var#}", code);
-  return message.replace(/\{name\}/gi, otpGreeting(name));
+export function composeOtpMessage(code: string, minutes: number = OTP_EXPIRY_MINS): string {
+  const slots = OTP_TEMPLATE_TEXT.match(/\{#var#\}/g)?.length ?? 0;
+  if (slots !== 2) throw new Error(`The OTP template has ${slots} slots; it should have 2 (code, minutes)`);
+  const values = [code, ` ${minutes} `];
+  let i = 0;
+  return OTP_TEMPLATE_TEXT.replace(/\{#var#\}/g, () => values[i++]);
 }
 
 /**
@@ -124,47 +117,9 @@ const STPL_ERRORS: Record<string, string> = {
   "010": "message campaign failed at the vendor",
 };
 
-/*
- * There is deliberately no fallback message.
- *
- * Any wording we could invent here is, by definition, not the wording DLT
- * approved — so the operator would drop every message while the gateway still
- * charged for it. Credits are bought, and this template costs two of them per
- * send, so an unset STPL_MESSAGE would quietly drain the account one login
- * attempt at a time and deliver nothing. Better to send none at all and say so.
- */
-
-/**
- * The DLT-approved wording, from the environment or from a file.
- *
- * The file exists because pasting this into a server .env is genuinely
- * dangerous: a terminal dropped characters out of the middle of the line on
- * DilKhush's host, leaving "…for registration os OTP is valid…" — no {otp} at
- * all. Every message went out without a code and was dropped by the operator
- * for not matching the template, and nothing about the .env looked obviously
- * wrong at a glance.
- *
- * A file that arrives over git is byte-exact, and the wording is not a secret.
- */
-function approvedTemplate(): string | null {
-  const inline = process.env.STPL_MESSAGE?.trim();
-  if (inline) return inline;
-
-  const file = process.env.STPL_MESSAGE_FILE?.trim();
-  if (!file) return null;
-  try {
-    // Relative paths resolve from the app root, which is where it is started.
-    const text = readFileSync(path.resolve(process.cwd(), file), "utf8").trim();
-    return text || null;
-  } catch (e) {
-    console.error(`[OTP][stpl] could not read STPL_MESSAGE_FILE (${file}):`, e);
-    return null;
-  }
-}
-
 const stplProvider: OtpProvider = {
   name: "stpl",
-  async send(phone, code, name) {
+  async send(phone, code) {
     const senderId = process.env.STPL_SENDER_ID?.trim();
     if (!senderId) {
       console.error("[OTP][stpl] STPL_SENDER_ID is not set — cannot send");
@@ -175,62 +130,9 @@ const stplProvider: OtpProvider = {
     if (senderId.length !== 6)
       console.error(`[OTP][stpl] STPL_SENDER_ID is ${senderId.length} characters; the gateway expects 6`);
 
-    /*
-     * The text is ours to write, which makes it ours to get wrong. Indian
-     * operators match every message against the DLT template registered for
-     * this sender and silently bin anything that differs, so STPL_MESSAGE must
-     * be the approved wording with {otp} where the code belongs.
-     *
-     * DLT writes its variable slots as {#var#}. A template carrying exactly one
-     * is unambiguous, so it is filled with the code; anything more has to say
-     * which slot is which, because only the author knows whether the first one
-     * is a name, an order number or the code itself.
-     */
-    const template = approvedTemplate();
-    if (!template) {
-      console.error(
-        "[OTP][stpl] no approved wording configured — refusing to send. Set " +
-          "STPL_MESSAGE, or STPL_MESSAGE_FILE pointing at a file holding it. Any " +
-          "other wording is dropped by the operator for not matching the approved " +
-          "template, and still costs credit."
-      );
-      return { ok: false };
-    }
-    /*
-     * A template with nowhere to put the code is not a template.
-     *
-     * This is not hypothetical: a terminal paste dropped the middle of the line
-     * out of the server's .env, taking "{otp}" with it, and the app then sent a
-     * perfectly well-formed message containing no code at all — to every
-     * customer, at two credits each. Checking before substitution rather than
-     * after is what catches it, because after substitution there is nothing
-     * left to notice.
-     */
-    if (!/\{otp\}/i.test(template) && !template.includes("{#var#}")) {
-      console.error(
-        "[OTP][stpl] the configured message has no {otp} placeholder, so the code " +
-          "would be missing from it — refusing to send. Check STPL_MESSAGE / " +
-          "STPL_MESSAGE_FILE has not been truncated."
-      );
-      return { ok: false };
-    }
-
-    const message = composeOtpMessage(template, code, name);
-
-    /*
-     * Never send a half-built message. A leftover slot means the customer gets
-     * literal "{#var#}" where their code should be — and the operator drops it
-     * for not matching the template anyway, so the only thing achieved would be
-     * spending a credit to confuse someone.
-     */
-    if (message.includes("{#var#}") || /\{(otp|name)\}/i.test(message)) {
-      console.error(
-        "[OTP][stpl] STPL_MESSAGE still has an unfilled placeholder — refusing to send. " +
-          "Put {otp} where the code goes, {name} where the greeting goes, and a " +
-          "literal value in every other {#var#} slot."
-      );
-      return { ok: false };
-    }
+    // The approved wording, filled in. Nothing about it comes from the
+    // environment, so nothing on the server can put it out of step with its ID.
+    const message = composeOtpMessage(code);
 
     // Documented as accepted with or without the country code; ours is
     // normalised to +91XXXXXXXXXX, and the leading + is not part of either form.
@@ -251,15 +153,15 @@ const stplProvider: OtpProvider = {
      * documented example uses: message=Hello%20There.
      */
     const apiKey = process.env.STPL_API_KEY?.trim();
-    const templateId = process.env.STPL_TEMPLATE_ID?.trim();
+    const templateId = OTP_TEMPLATE_ID;
     const query = [
       // Conditional per the docs: some accounts are keyed, others authenticate
       // by route, so it is sent only when configured.
       ...(apiKey ? [`apikey=${encodeURIComponent(apiKey)}`] : []),
       `senderid=${encodeURIComponent(senderId)}`,
-      // Optional per the docs, but without it the gateway guesses which
-      // template this message matches. Set it and the match is exact.
-      ...(templateId ? [`templateid=${encodeURIComponent(templateId)}`] : []),
+      // Always sent: without it the gateway guesses which template this
+      // message matches, and a wrong guess is a dropped message.
+      `templateid=${encodeURIComponent(templateId)}`,
       `number=${encodeURIComponent(number)}`,
       `message=${encodeURIComponent(message)}`,
       `format=JSON`,
@@ -355,7 +257,7 @@ export function otpProvider(): OtpProvider {
 }
 
 export function generateOtp(): string {
-  return randomInt(100000, 1000000).toString();
+  return randomInt(0, 10 ** OTP_LENGTH).toString().padStart(OTP_LENGTH, "0");
 }
 
 export function hashOtp(phone: string, code: string): string {
