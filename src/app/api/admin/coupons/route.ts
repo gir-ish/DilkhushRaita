@@ -5,6 +5,28 @@ import { CouponBody, couponToDb } from "@/lib/validation";
 import { audit } from "@/lib/audit";
 import { round2 } from "@/lib/utils";
 
+/**
+ * Clears out coupons nobody ever used — the pile that builds up from trying
+ * things out. Anything that was redeemed stays, whatever its state, because a
+ * bill that mentions it must keep making sense. ?unusedOnly=off also takes
+ * the ones that are switched off but were used… which is to say: never.
+ */
+export const DELETE = handler(async () => {
+  const s = await requireStaff("MARKETING");
+  const unused = await db.coupon.findMany({
+    where: { redemptions: { none: {} } },
+    select: { id: true, code: true },
+  });
+  if (unused.length === 0) return NextResponse.json({ ok: true, deleted: 0, codes: [] });
+
+  await db.coupon.deleteMany({ where: { id: { in: unused.map((c) => c.id) } } });
+  await audit({ uid: s.uid, name: s.name }, "COUPONS_DELETED", "Coupon", undefined, {
+    count: unused.length,
+    codes: unused.map((c) => c.code),
+  });
+  return NextResponse.json({ ok: true, deleted: unused.length, codes: unused.map((c) => c.code) });
+});
+
 export const GET = handler(async () => {
   await requireStaff("MARKETING", "BRANCH_MANAGER");
   const coupons = await db.coupon.findMany({

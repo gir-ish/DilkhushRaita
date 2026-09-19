@@ -47,14 +47,43 @@ export default function MarketingPage() {
       .catch((e) => setError(e.message));
     fetch("/api/admin/loyalty-tiers").then((r) => r.json()).then((d) => setTiers(d.tiers ?? []));
   }, []);
+  const unusedCount = coupons?.filter((c) => c.redemptionCount === 0).length ?? 0;
+
+  /** Removes one coupon for good — offered only where nobody used it. */
+  const deleteOne = async (c: CouponRow) => {
+    if (!confirm(`Delete ${c.code} for good? Nobody has used it, so nothing else changes.`)) return;
+    setError(null);
+    const r = await fetch(`/api/admin/coupons/${c.id}?permanent=1`, { method: "DELETE" });
+    if (!r.ok) setError((await r.json()).error ?? "Could not delete it");
+    load();
+  };
+
+  /** Clears out every coupon that was never redeemed. */
+  const deleteUnused = async () => {
+    if (!confirm(`Delete all ${unusedCount} coupons nobody has used? Coupons that were used are kept.`)) return;
+    setError(null);
+    const r = await fetch("/api/admin/coupons", { method: "DELETE" });
+    const d = await r.json();
+    if (!r.ok) setError(d.error ?? "Could not delete them");
+    else if (d.deleted === 0) setError("Nothing to delete — every coupon here has been used.");
+    load();
+  };
+
   useEffect(load, [load]);
 
   return (
     <div className="space-y-6">
       <section aria-label="Coupons">
         <div className="flex items-center justify-between mb-3">
-          <h1 className="font-display text-2xl font-bold text-maroon-700">Coupons & campaigns</h1>
-          <button onClick={() => setShowNew(true)} className="btn-primary !min-h-[38px]">+ New coupon</button>
+          <h1 className="font-display text-2xl font-bold text-maroon-700">Coupons &amp; campaigns</h1>
+          <div className="flex gap-2">
+            {unusedCount > 0 && (
+              <button onClick={deleteUnused} className="btn-outline !min-h-[38px] text-sm !text-red-700 !border-red-700">
+                🗑 Delete {unusedCount} unused
+              </button>
+            )}
+            <button onClick={() => setShowNew(true)} className="btn-primary !min-h-[38px]">+ New coupon</button>
+          </div>
         </div>
         <ErrorBox message={error} />
         {!coupons ? (
@@ -115,6 +144,16 @@ export default function MarketingPage() {
                       >
                         {c.active ? "Disable" : "Enable"}
                       </button>
+                      {/* Only ever offered for a coupon nobody used: one that
+                          was redeemed is part of those bills. */}
+                      {c.redemptionCount === 0 && (
+                        <>
+                          <span className="text-maroon-800/30 px-2">·</span>
+                          <button className="underline text-red-700" onClick={() => deleteOne(c)}>
+                            Delete
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}
