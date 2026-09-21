@@ -20,11 +20,6 @@ export function normalizePhone(input: string): string | null {
   return "+91" + ten;
 }
 
-export function genOrderNumber() {
-  const t = Date.now().toString(36).toUpperCase().slice(-6);
-  const r = Math.floor(Math.random() * 1296).toString(36).toUpperCase().padStart(2, "0");
-  return `DK${t}${r}`;
-}
 
 export function parseJson<T>(s: string | null | undefined, fallback: T): T {
   if (!s) return fallback;

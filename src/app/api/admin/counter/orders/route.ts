@@ -4,7 +4,8 @@ import { db } from "@/lib/db";
 import { allowedBranchIds, handler, HttpError, requireStaff } from "@/lib/guard";
 import { audit } from "@/lib/audit";
 import { buildQuote } from "@/lib/quote";
-import { genOrderNumber, normalizePhone } from "@/lib/utils";
+import { normalizePhone } from "@/lib/utils";
+import { nextOrderNumber } from "@/lib/order-number";
 import { KHATA_METHODS, ON_KHATA, chargeToKhata } from "@/lib/khata";
 import { COUNTER_LIMITS } from "@/lib/order-limits";
 
@@ -140,7 +141,7 @@ export const POST = handler(async (req: Request) => {
   const paid = dineIn || khata ? false : body.paid;
   const method = khata ? "KHATA" : body.paymentMethod === "CASH" ? "COD" : "ONLINE";
 
-  const orderNumber = genOrderNumber();
+  const orderNumber = await nextOrderNumber();
   const order = await db.$transaction(async (tx) => {
     for (const line of quote.lines) {
       const updated = await tx.branchMenuItem.updateMany({

@@ -21,6 +21,8 @@ export interface OrderLimits {
 
 export const DEFAULT_ORDER_LIMITS: OrderLimits = { maxQtyPerItem: 20, maxItemsPerOrder: 50 };
 export const COUNTER_LIMITS: OrderLimits = { maxQtyPerItem: 999, maxItemsPerOrder: 200 };
+/** The same ceiling, for the counter screen's own quantity box. */
+export const COUNTER_MAX_QTY = COUNTER_LIMITS.maxQtyPerItem;
 
 /** What the owner may set it to — the ceiling the request bodies also allow. */
 export const LIMIT_BOUNDS = { qty: { min: 1, max: 999 }, items: { min: 1, max: 200 } };

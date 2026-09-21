@@ -656,6 +656,14 @@ model SmsSettings {
   updatedAt         DateTime @updatedAt
 }
 
+/// One row per day, holding the last order number given out that day.
+/// Orders are numbered 210926-0001, 210926-0002 … starting again each morning.
+model OrderCounter {
+  day       String   @id // DDMMYY, Indian time
+  seq       Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
 model OtpCode {
   id         String    @id @default(cuid())
   phone      String

@@ -6,6 +6,7 @@ import { ErrorBox, Modal, Spinner, VegMark } from "@/components/ui";
 import { inr } from "@/lib/utils";
 import { playTone } from "@/lib/sound";
 import { KhataModal } from "@/components/admin/khata-modal";
+import { COUNTER_MAX_QTY } from "@/lib/order-limits";
 
 interface Variant { id: string; name: string; priceDelta: number; isDefault: boolean }
 interface AddOn { id: string; name: string; price: number; veg: boolean }
@@ -209,6 +210,20 @@ function CounterInner() {
     setLines((cur) =>
       cur
         .map((l) => (l.key === key ? { ...l, qty: l.qty + delta } : l))
+        .filter((l) => l.qty > 0)
+    );
+
+  /**
+   * A count typed straight in — 218 rotis is a lot of tapping.
+   *
+   * Zero (or an empty box) takes the line off the order, the same as tapping
+   * "−" down to nothing. The ceiling is the counter's own, which is not the
+   * website's: see src/lib/order-limits.ts.
+   */
+  const setQtyExact = (key: string, qty: number) =>
+    setLines((cur) =>
+      cur
+        .map((l) => (l.key === key ? { ...l, qty: Math.min(Math.max(Math.floor(qty), 0), COUNTER_MAX_QTY) } : l))
         .filter((l) => l.qty > 0)
     );
 
@@ -486,6 +501,7 @@ function CounterInner() {
               lines={lines}
               subtotal={subtotal}
               setQty={setQty}
+              setQtyExact={setQtyExact}
               onClear={() => setLines([])}
               onSubmit={submit}
               submitLabel={submitLabel}
@@ -531,6 +547,7 @@ function CounterInner() {
             lines={lines}
             subtotal={subtotal}
             setQty={setQty}
+            setQtyExact={setQtyExact}
             onClear={() => {
               setLines([]);
               setCartOpen(false);
@@ -605,6 +622,7 @@ function CartPanel({
   lines,
   subtotal,
   setQty,
+  setQtyExact,
   onClear,
   onSubmit,
   submitLabel,
@@ -612,6 +630,7 @@ function CartPanel({
   lines: Line[];
   subtotal: number;
   setQty: (key: string, delta: number) => void;
+  setQtyExact: (key: string, qty: number) => void;
   onClear: () => void;
   onSubmit: () => void;
   submitLabel: string;
@@ -642,9 +661,18 @@ function CartPanel({
                 >
                   −
                 </button>
-                <span className="w-10 sm:w-9 text-center text-lg font-bold" aria-live="polite">
-                  {l.qty}
-                </span>
+                {/* Typed in for a big number, tapped for one or two. */}
+                <input
+                  className="w-16 sm:w-14 h-10 sm:h-9 rounded-lg border border-cream-300 bg-white text-center text-lg font-bold text-maroon-700 focus:outline-none focus:ring-2 focus:ring-mustard-400"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={COUNTER_MAX_QTY}
+                  value={l.qty}
+                  onChange={(e) => setQtyExact(l.key, +e.target.value)}
+                  onFocus={(e) => e.currentTarget.select()}
+                  aria-label={`How many ${l.name}`}
+                />
                 <button
                   onClick={() => setQty(l.key, 1)}
                   className="grid h-10 w-10 sm:h-9 sm:w-9 place-items-center rounded-lg border border-cream-300 text-xl font-bold text-maroon-700 hover:bg-maroon-50 active:scale-95"

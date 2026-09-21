@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { handler, HttpError, requireCustomer } from "@/lib/guard";
 import { buildQuote } from "@/lib/quote";
-import { genOrderNumber } from "@/lib/utils";
+import { nextOrderNumber } from "@/lib/order-number";
 import { rateLimit } from "@/lib/rate-limit";
 import { notifyUser } from "@/lib/notify";
 import { createGatewayOrder, onlinePaymentsEnabled, paymentProvider } from "@/lib/payments";
@@ -64,7 +64,7 @@ export const POST = handler(async (req: Request) => {
   if (!choice.allowed)
     throw new HttpError(400, choice.reason ?? "That payment method is not available right now");
 
-  const orderNumber = genOrderNumber();
+  const orderNumber = await nextOrderNumber();
 
   // Open the gateway order BEFORE the transaction: if Razorpay is unreachable
   // we abort having written nothing, rather than leaving an unpayable order

@@ -53,14 +53,28 @@ export const GET = handler(async (req: Request) => {
   }
   if (and.length) where.AND = and;
   if (date) {
-    const d = new Date(date);
-    where.placedAt = { gte: d, lt: new Date(d.getTime() + 86400000) };
+    // An Indian day, not a UTC one: an order taken at half past midnight in
+    // Delhi belongs to that date, and a UTC window would file it under
+    // yesterday.
+    const start = new Date(`${date}T00:00:00+05:30`);
+    if (!Number.isNaN(start.getTime()))
+      where.placedAt = { gte: start, lt: new Date(start.getTime() + 86400000) };
   }
   if (q) {
+    /*
+     * Numbers read like 210926-0001, so "0001" on its own is how anyone
+     * searches: a plain "contains" finds it within that day's number, and the
+     * date filter beside it separates one day's 0001 from another's. Older
+     * orders still carry their old DK… number, which the same search finds.
+     */
+    const digits = q.replace(/\D/g, "");
     where.OR = [
-      { orderNumber: { contains: q.toUpperCase() } },
+      { orderNumber: { contains: q.toUpperCase().replace(/\s+/g, "") } },
       { user: { name: { contains: q } } },
-      { user: { phone: { contains: q.replace(/\D/g, "") } } },
+      // Four digits or fewer is somebody typing an order number; matching it
+      // against phone numbers too would bury 210926-0001 under every customer
+      // whose number happens to contain 0001.
+      ...(digits.length >= 5 ? [{ user: { phone: { contains: digits } } }] : []),
     ];
   }
 

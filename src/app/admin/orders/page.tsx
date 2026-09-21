@@ -13,6 +13,8 @@ export default function AdminOrdersPage() {
   const [branchId, setBranchId] = useState("all");
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
+  // One day at a time, so the same 0001 from different days stays apart.
+  const [date, setDate] = useState("");
   const [status, setStatus] = useState("all");
   const [activeOnly, setActiveOnly] = useState(true);
   const [selected, setSelected] = useState<AdminOrder | null>(null);
@@ -31,6 +33,7 @@ export default function AdminOrdersPage() {
     if (status === "__unpaid") params.set("unpaid", "1");
     else if (status !== "all") params.set("status", status);
     if (activeOnly && status === "all") params.set("active", "1");
+    if (date) params.set("date", date);
     fetch(`/api/admin/orders?${params}`)
       .then(async (r) => {
         const d = await r.json();
@@ -42,7 +45,7 @@ export default function AdminOrdersPage() {
         setError(null);
       })
       .catch((e) => setError(e.message));
-  }, [q, status, activeOnly]);
+  }, [q, status, activeOnly, date]);
 
   useEffect(() => {
     load();
@@ -76,7 +79,7 @@ export default function AdminOrdersPage() {
         <input
           type="search"
           className="input !w-full sm:!w-56"
-          placeholder="Order no / name / phone"
+          placeholder="0001 / name / phone"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           aria-label="Search orders"
@@ -97,6 +100,19 @@ export default function AdminOrdersPage() {
             <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
           ))}
         </select>
+        <input
+          type="date"
+          className="input !w-auto"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          aria-label="Orders on this date"
+          title="Show one day's orders"
+        />
+        {date && (
+          <button onClick={() => setDate("")} className="text-sm underline text-maroon-600">
+            Clear date
+          </button>
+        )}
         <label className="flex items-center gap-2 text-sm font-semibold whitespace-nowrap">
           <input type="checkbox" className="h-4 w-4 accent-maroon-600" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} />
           Active only
