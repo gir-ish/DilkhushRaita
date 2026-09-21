@@ -34,6 +34,7 @@ export const GET = handler(async (req: Request) => {
   return NextResponse.json({
     tabs: tabs.map((t) => ({
       id: t.id,
+      branchId: t.branchId,
       orderNumber: t.orderNumber,
       tableNo: t.tableNo,
       status: t.status,

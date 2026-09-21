@@ -23,6 +23,7 @@ interface BranchLite { id: string; name: string; slug: string }
 interface CustomerHit { id: string; name: string | null; phone: string | null; completedOrders: number; khataDue?: number }
 interface OpenTab {
   id: string;
+  branchId: string;
   orderNumber: string;
   tableNo: string | null;
   status: string;
@@ -35,6 +36,7 @@ interface OpenTab {
 
 interface Pickup {
   id: string;
+  branchId: string;
   orderNumber: string;
   status: string;
   total: number;
@@ -98,23 +100,23 @@ function CounterInner() {
 
   const branchId = menu?.branch.id ?? null;
 
+  // Every branch the user can see, so each branch's button can say what is
+  // waiting there; the screen itself shows the branch in front of them.
   const loadTabs = useCallback(() => {
-    if (!branchId) return;
-    fetch(`/api/admin/counter/tabs?branchId=${branchId}`)
+    fetch("/api/admin/counter/tabs")
       .then((r) => (r.ok ? r.json() : { tabs: [] }))
       .then((d) => setTabs(d.tabs ?? []))
       .catch(() => setTabs([]));
-  }, [branchId]);
+  }, []);
 
   useEffect(loadTabs, [loadTabs]);
 
   const loadPickups = useCallback(() => {
-    if (!branchId) return;
-    fetch(`/api/admin/counter/pickups?branchId=${branchId}`)
+    fetch("/api/admin/counter/pickups")
       .then((r) => (r.ok ? r.json() : { pickups: [] }))
       .then((d) => setPickups(d.pickups ?? []))
       .catch(() => setPickups([]));
-  }, [branchId]);
+  }, []);
   useEffect(() => {
     loadPickups();
     // The kitchen moves parcels along from its own screen; keep up with it.
@@ -230,6 +232,20 @@ function CounterInner() {
         .filter((l) => l.qty > 0)
     );
 
+  /**
+   * What is still open, counted per branch: tables mid-meal and parcels not
+   * yet handed over. On the buttons it answers "is anything waiting?" — at
+   * this branch, and at the other one — without switching screens.
+   */
+  const openByBranch = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const t of tabs ?? []) out[t.branchId] = (out[t.branchId] ?? 0) + 1;
+    for (const p of pickups ?? []) out[p.branchId] = (out[p.branchId] ?? 0) + 1;
+    return out;
+  }, [tabs, pickups]);
+  const branchTabs = useMemo(() => (tabs ?? []).filter((t) => t.branchId === branchId), [tabs, branchId]);
+  const branchPickups = useMemo(() => (pickups ?? []).filter((p) => p.branchId === branchId), [pickups, branchId]);
+
   const filtered = useMemo(() => {
     if (!menu) return [];
     const ql = q.trim().toLowerCase();
@@ -332,7 +348,18 @@ function CounterInner() {
                     : "bg-white text-maroon-700 border border-cream-300 hover:border-mustard-400 hover:bg-mustard-100"
                 }`}
               >
-                🏪 {b.name.replace(/^DilKhush Dhaba\s*[–-]\s*/, "")}
+                <span className="flex items-center justify-center gap-2">
+                  🏪 {b.name.replace(/^DilKhush Dhaba\s*[–-]\s*/, "")}
+                  {openByBranch[b.id] > 0 && (
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                        active ? "bg-cream-50/25 text-cream-50" : "bg-cream-200 text-maroon-700"
+                      }`}
+                    >
+                      {openByBranch[b.id]}
+                    </span>
+                  )}
+                </span>
               </button>
             );
           })}
@@ -367,7 +394,18 @@ function CounterInner() {
                 : "bg-white text-maroon-700 border border-cream-300 hover:border-mustard-400 hover:bg-mustard-100"
             }`}
           >
-            <span className="block text-sm sm:text-[15px] font-bold">{label}</span>
+            <span className="flex items-center gap-2 text-sm sm:text-[15px] font-bold">
+              {label}
+              {(m === "PARCEL" ? branchPickups.length : branchTabs.length) > 0 && (
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                    mode === m ? "bg-cream-50/25 text-cream-50" : "bg-cream-200 text-maroon-700"
+                  }`}
+                >
+                  {m === "PARCEL" ? branchPickups.length : branchTabs.length}
+                </span>
+              )}
+            </span>
             <span className={`block text-xs ${mode === m ? "text-cream-50/75" : "text-maroon-800/50"}`}>
               {hint}
             </span>
@@ -422,12 +460,12 @@ function CounterInner() {
       )}
 
       {mode === "PARCEL" && (
-        <WaitingParcels pickups={pickups} onCollect={(p) => setCollecting(p)} />
+        <WaitingParcels pickups={branchPickups} onCollect={(p) => setCollecting(p)} />
       )}
 
       {mode === "DINE_IN" && !addingTo && (
         <OpenTabs
-          tabs={tabs}
+          tabs={branchTabs}
           onAdd={(t) => {
             setAddingTo(t);
             setLines([]);
