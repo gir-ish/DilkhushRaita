@@ -91,6 +91,8 @@ model Address {
 model Branch {
   id                    String  @id @default(cuid())
   slug                  String  @unique
+  /// Short code in this branch's order numbers: RHN-210926-0001.
+  code                    String?
   name                  String
   address               String
   pincode               String
@@ -656,10 +658,12 @@ model SmsSettings {
   updatedAt         DateTime @updatedAt
 }
 
-/// One row per day, holding the last order number given out that day.
-/// Orders are numbered 210926-0001, 210926-0002 … starting again each morning.
+/// One row per branch per day, holding the last order number given out there.
+/// Orders are numbered RHN-210926-0001, RHN-210926-0002 … starting again each
+/// morning, and each branch counts on its own.
 model OrderCounter {
-  day       String   @id // DDMMYY, Indian time
+  /// "<branch code>-<DDMMYY>", Indian time — e.g. "RHN-210926".
+  day       String   @id
   seq       Int      @default(0)
   updatedAt DateTime @updatedAt
 }

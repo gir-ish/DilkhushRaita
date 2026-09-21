@@ -64,7 +64,7 @@ export const POST = handler(async (req: Request) => {
   if (!choice.allowed)
     throw new HttpError(400, choice.reason ?? "That payment method is not available right now");
 
-  const orderNumber = await nextOrderNumber();
+  const orderNumber = await nextOrderNumber(quote.branch.id);
 
   // Open the gateway order BEFORE the transaction: if Razorpay is unreachable
   // we abort having written nothing, rather than leaving an unpayable order

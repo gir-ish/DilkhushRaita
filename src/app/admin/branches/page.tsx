@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ErrorBox, Spinner } from "@/components/ui";
 
 interface BranchFull {
-  id: string; slug: string; name: string; address: string; pincode: string;
+  id: string; slug: string; code: string | null; name: string; address: string; pincode: string;
   lat: number; lng: number; phone: string; email: string | null;
   isOpenOverride: string; onlineOrderingEnabled: boolean;
   deliveryEnabled: boolean; pickupEnabled: boolean;
@@ -71,7 +71,7 @@ function BranchEditor({ branch, onSaved }: { branch: BranchFull; onSaved: () => 
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: f.name, address: f.address, pincode: f.pincode,
+          name: f.name, code: f.code?.trim() || null, address: f.address, pincode: f.pincode,
           lat: +f.lat, lng: +f.lng, phone: f.phone,
           isOpenOverride: f.isOpenOverride,
           onlineOrderingEnabled: f.onlineOrderingEnabled,
@@ -116,6 +116,22 @@ function BranchEditor({ branch, onSaved }: { branch: BranchFull; onSaved: () => 
         <div className="col-span-2">
           <label className="label" htmlFor={id("name")}>Name</label>
           <input id={id("name")} className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
+        </div>
+        <div>
+          {/* Order numbers read RHN-210926-0001: this branch, today, its
+              first order of the day. */}
+          <label className="label" htmlFor={id("code")}>Order code</label>
+          <input
+            id={id("code")}
+            className="input"
+            maxLength={5}
+            placeholder="RHN"
+            value={f.code ?? ""}
+            onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase().replace(/[^A-Z]/g, "") })}
+          />
+          <p className="text-xs text-maroon-800/50 mt-1">
+            2–5 letters, in front of this branch&apos;s order numbers: {(f.code || "RHN").toUpperCase()}-210926-0001.
+          </p>
         </div>
         <div className="col-span-2">
           <label className="label" htmlFor={id("addr")}>Address</label>

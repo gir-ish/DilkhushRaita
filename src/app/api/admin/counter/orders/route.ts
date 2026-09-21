@@ -141,7 +141,7 @@ export const POST = handler(async (req: Request) => {
   const paid = dineIn || khata ? false : body.paid;
   const method = khata ? "KHATA" : body.paymentMethod === "CASH" ? "COD" : "ONLINE";
 
-  const orderNumber = await nextOrderNumber();
+  const orderNumber = await nextOrderNumber(quote.branch.id);
   const order = await db.$transaction(async (tx) => {
     for (const line of quote.lines) {
       const updated = await tx.branchMenuItem.updateMany({

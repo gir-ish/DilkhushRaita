@@ -46,6 +46,8 @@ export const ItemBody = z.object({
 
 export const BranchPatch = z.object({
   name: z.string().min(1).max(80).optional(),
+  /** Letters in front of this branch's order numbers: RHN-210926-0001. */
+  code: z.string().regex(/^[A-Za-z]{2,5}$/, "Two to five letters").nullish(),
   address: z.string().min(3).max(300).optional(),
   pincode: z.string().regex(/^\d{6}$/).optional(),
   lat: z.number().min(-90).max(90).optional(),
