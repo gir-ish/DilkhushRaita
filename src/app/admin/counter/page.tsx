@@ -87,6 +87,9 @@ function CounterInner() {
   const [settling, setSettling] = useState<OpenTab | null>(null);
   // "Khata" at the counter: someone has come in to pay what they owe.
   const [khataOpen, setKhataOpen] = useState(false);
+  // The number of the order just taken, kept in front of the cashier: it is
+  // what they call out, write on the bag, and read back on the phone.
+  const [lastPlaced, setLastPlaced] = useState<{ orderNumber: string; total: number; kind: string } | null>(null);
   // Phone only: the cart lives in a sheet behind the bottom bar.
   const [cartOpen, setCartOpen] = useState(false);
   // Brief flash on the bottom bar so a tap is visibly acknowledged when the
@@ -386,6 +389,9 @@ function CounterInner() {
             ➕ Adding round {addingTo.rounds + 1} to{" "}
             {addingTo.tableNo ? `Table ${addingTo.tableNo}` : addingTo.orderNumber}
           </span>
+          <span className="rounded-lg bg-white/70 px-2 py-0.5 font-mono text-sm font-bold text-maroon-700">
+            {addingTo.orderNumber}
+          </span>
           <span className="text-sm text-maroon-800/70">
             ({addingTo.customer.name ?? "Guest"} · running {inr(addingTo.total)})
           </span>
@@ -402,6 +408,18 @@ function CounterInner() {
       )}
 
       <ErrorBox message={error} />
+
+      {/* Right at the top: the number just given out. The cashier reads it
+          back to the customer and writes it on the bag. */}
+      {lastPlaced && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border-2 border-leaf-500/40 bg-leaf-50 px-4 py-3">
+          <span className="font-mono text-2xl font-bold text-maroon-700">{lastPlaced.orderNumber}</span>
+          <span className="text-sm font-semibold text-leaf-600">{lastPlaced.kind} · {inr(lastPlaced.total)}</span>
+          <button className="ml-auto underline text-sm font-semibold" onClick={() => setLastPlaced(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {mode === "PARCEL" && (
         <WaitingParcels pickups={pickups} onCollect={(p) => setCollecting(p)} />
@@ -575,9 +593,10 @@ function CounterInner() {
           lines={lines}
           mode={mode}
           onClose={() => setCheckout(false)}
-          onDone={(orderId, payLater) => {
+          onDone={(orderId, payLater, placed) => {
             setCheckout(false);
             setLines([]);
+            if (placed) setLastPlaced(placed);
             if (mode === "DINE_IN") loadTabs();
             // Paying at pickup: the customer is waiting here, so the parcel
             // stays on this screen until they collect it.
@@ -795,7 +814,7 @@ function CheckoutModal({
   lines: Line[];
   mode: "PARCEL" | "DINE_IN";
   onClose: () => void;
-  onDone: (orderId: string, payLater: boolean) => void;
+  onDone: (orderId: string, payLater: boolean, placed?: { orderNumber: string; total: number; kind: string }) => void;
 }) {
   const [search, setSearch] = useState("");
   const [hits, setHits] = useState<CustomerHit[]>([]);
@@ -883,7 +902,11 @@ function CheckoutModal({
               ? `Order ${d.orderNumber} placed · collect ${inr(d.total)} when they take the parcel`
               : `Order ${d.orderNumber} placed · ${inr(d.total)}`
       );
-      onDone(d.orderId, mode !== "DINE_IN" && payLater);
+      onDone(d.orderId, mode !== "DINE_IN" && payLater, {
+        orderNumber: d.orderNumber,
+        total: d.total,
+        kind: mode === "DINE_IN" ? "Table open" : payLater ? "To collect" : "Paid",
+      });
     } catch (e) {
       playTone("error");
       setError(e instanceof Error ? e.message : "Could not place the order");
@@ -1099,7 +1122,8 @@ function OpenTabs({
           <div key={t.id} className="card p-3 sm:p-4 border-l-4 border-l-mustard-400">
             <div className="flex items-start justify-between gap-2">
               <span className="font-bold text-lg">
-                {t.tableNo ? `🪑 Table ${t.tableNo}` : `🍽️ ${t.orderNumber}`}
+                {t.tableNo ? `🪑 Table ${t.tableNo}` : "🍽️"}
+                <span className="block font-mono text-xs font-bold text-maroon-800/60">{t.orderNumber}</span>
               </span>
               <span className="rounded-full bg-cream-200 px-2 py-0.5 text-xs font-bold whitespace-nowrap">
                 {t.rounds} round{t.rounds > 1 ? "s" : ""}
@@ -1442,7 +1466,7 @@ function WaitingParcels({ pickups, onCollect }: { pickups: Pickup[] | null; onCo
               className={`card p-3 sm:p-4 border-l-4 ${p.status === "READY" ? "border-l-leaf-500" : "border-l-mustard-400"}`}
             >
               <div className="flex items-start justify-between gap-2">
-                <span className="font-bold text-lg">🛍️ {p.orderNumber}</span>
+                <span className="font-mono font-bold text-lg">🛍️ {p.orderNumber}</span>
                 <span className={`rounded-full px-2 py-0.5 text-xs font-bold whitespace-nowrap ${stage.tone}`}>{stage.label}</span>
               </div>
               <p className="text-sm text-maroon-800/70 mt-0.5">
