@@ -86,6 +86,16 @@ export function istTime(iso: string | Date) {
     .toUpperCase();
 }
 
+/** "2026-08-05" — what a <input type="date"> wants, in Indian time. */
+export function istInputDate(d: Date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: IST,
+  }).format(d);
+}
+
 /** "05 Aug 2026, 02:48 AM" */
 export function istDateTime(iso: string | Date) {
   return `${istDate(iso)}, ${istTime(iso)}`;

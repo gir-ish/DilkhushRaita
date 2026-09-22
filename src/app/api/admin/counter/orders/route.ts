@@ -8,6 +8,7 @@ import { normalizePhone } from "@/lib/utils";
 import { nextOrderNumber } from "@/lib/order-number";
 import { KHATA_METHODS, ON_KHATA, chargeToKhata } from "@/lib/khata";
 import { COUNTER_LIMITS } from "@/lib/order-limits";
+import { guestUserId } from "@/lib/guest";
 
 const Body = z.object({
   branchId: z.string(),
@@ -23,7 +24,9 @@ const Body = z.object({
     )
     .min(1)
     .max(200),
-  // Either an existing customer, or a name+phone to create/reuse one.
+  // Either an existing customer, a name+phone to create/reuse one, or a
+  // guest: a walk-in who would rather not give a number at all.
+  guest: z.boolean().default(false),
   userId: z.string().nullish(),
   name: z.string().max(60).nullish(),
   phone: z.string().max(15).nullish(),
@@ -74,7 +77,9 @@ export const POST = handler(async (req: Request) => {
     throw new HttpError(403, "You cannot take orders for that branch");
 
   // ---- resolve the customer -------------------------------------------
-  let userId = body.userId ?? null;
+  let userId = body.guest ? await guestUserId() : body.userId ?? null;
+  if (body.guest && body.paymentMethod === "KHATA")
+    throw new HttpError(400, "A guest bill cannot go on khata — take their number first");
   if (userId) {
     const u = await db.user.findUnique({ where: { id: userId } });
     if (!u || u.role !== "CUSTOMER") throw new HttpError(400, "That customer no longer exists");
@@ -167,6 +172,10 @@ export const POST = handler(async (req: Request) => {
         orderNumber,
         userId: userId!,
         branchId: quote.branch.id,
+        // Taken at the till, not on the website — this is what keeps the two
+        // queues apart, since a counter parcel and a website self-pickup are
+        // otherwise the same kind of order.
+        channel: "COUNTER",
         type: dineIn ? "DINE_IN" : "PICKUP",
         tableNo: dineIn ? (body.tableNo?.trim() || null) : null,
         status: "ACCEPTED",

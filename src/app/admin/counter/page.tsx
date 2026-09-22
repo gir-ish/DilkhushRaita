@@ -1,12 +1,13 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { ErrorBox, Modal, Spinner, VegMark } from "@/components/ui";
 import { inr } from "@/lib/utils";
 import { playTone } from "@/lib/sound";
 import { KhataModal } from "@/components/admin/khata-modal";
 import { COUNTER_MAX_QTY } from "@/lib/order-limits";
+import { PrintSheet, type PrintableOrder } from "@/components/admin/print-sheet";
 
 interface Variant { id: string; name: string; priceDelta: number; isDefault: boolean }
 interface AddOn { id: string; name: string; price: number; veg: boolean }
@@ -67,7 +68,6 @@ interface Line {
  * the only thing that catches it).
  */
 function CounterInner() {
-  const router = useRouter();
   const params = useSearchParams();
   const [branches, setBranches] = useState<BranchLite[]>([]);
   const [slug, setSlug] = useState<string | null>(null);
@@ -91,7 +91,10 @@ function CounterInner() {
   const [khataOpen, setKhataOpen] = useState(false);
   // The number of the order just taken, kept in front of the cashier: it is
   // what they call out, write on the bag, and read back on the phone.
-  const [lastPlaced, setLastPlaced] = useState<{ orderNumber: string; total: number; kind: string } | null>(null);
+  const [lastPlaced, setLastPlaced] = useState<{ orderId: string; orderNumber: string; total: number; kind: string } | null>(null);
+  // The bill being looked at or printed. Fetched one order at a time: the
+  // counter knows the id of what it just took and nothing else.
+  const [billing, setBilling] = useState<PrintableOrder | null>(null);
   // Phone only: the cart lives in a sheet behind the bottom bar.
   const [cartOpen, setCartOpen] = useState(false);
   // Brief flash on the bottom bar so a tap is visibly acknowledged when the
@@ -245,6 +248,17 @@ function CounterInner() {
   }, [tabs, pickups]);
   const branchTabs = useMemo(() => (tabs ?? []).filter((t) => t.branchId === branchId), [tabs, branchId]);
   const branchPickups = useMemo(() => (pickups ?? []).filter((p) => p.branchId === branchId), [pickups, branchId]);
+
+  const openBill = useCallback(async (orderId: string) => {
+    try {
+      const r = await fetch(`/api/admin/orders/${orderId}`);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      setBilling(d.order);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not open the bill");
+    }
+  }, []);
 
   const filtered = useMemo(() => {
     if (!menu) return [];
@@ -453,19 +467,23 @@ function CounterInner() {
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border-2 border-leaf-500/40 bg-leaf-50 px-4 py-3">
           <span className="font-mono text-2xl font-bold text-maroon-700">{lastPlaced.orderNumber}</span>
           <span className="text-sm font-semibold text-leaf-600">{lastPlaced.kind} · {inr(lastPlaced.total)}</span>
-          <button className="ml-auto underline text-sm font-semibold" onClick={() => setLastPlaced(null)}>
+          <button onClick={() => openBill(lastPlaced.orderId)} className="btn-secondary !min-h-[40px] !px-3 ml-auto">
+            🧾 Bill / print
+          </button>
+          <button className="underline text-sm font-semibold" onClick={() => setLastPlaced(null)}>
             Dismiss
           </button>
         </div>
       )}
 
       {mode === "PARCEL" && (
-        <WaitingParcels pickups={branchPickups} onCollect={(p) => setCollecting(p)} />
+        <WaitingParcels pickups={branchPickups} onCollect={(p) => setCollecting(p)} onBill={openBill} />
       )}
 
       {mode === "DINE_IN" && !addingTo && (
         <OpenTabs
           tabs={branchTabs}
+          onBill={openBill}
           onAdd={(t) => {
             setAddingTo(t);
             setLines([]);
@@ -635,11 +653,13 @@ function CounterInner() {
             setCheckout(false);
             setLines([]);
             if (placed) setLastPlaced(placed);
+            // Nobody leaves the counter: the next customer is already
+            // waiting, and a counter order is accepted the moment it is
+            // taken, so there is nothing to go and approve on the queue. The
+            // parcel stays on this screen either way — paid, or to be paid
+            // when they collect it.
             if (mode === "DINE_IN") loadTabs();
-            // Paying at pickup: the customer is waiting here, so the parcel
-            // stays on this screen until they collect it.
-            else if (payLater) loadPickups();
-            else router.push(`/admin/orders?highlight=${orderId}`);
+            else loadPickups();
           }}
         />
       )}
@@ -650,9 +670,10 @@ function CounterInner() {
         <CollectModal
           parcel={collecting}
           onClose={() => setCollecting(null)}
-          onDone={() => {
+          onDone={(settled) => {
             setCollecting(null);
             loadPickups();
+            setLastPlaced({ ...settled, kind: "Handed over" });
           }}
         />
       )}
@@ -661,12 +682,17 @@ function CounterInner() {
         <SettleModal
           tab={settling}
           onClose={() => setSettling(null)}
-          onDone={() => {
+          onDone={(settled) => {
             setSettling(null);
             loadTabs();
+            setLastPlaced({ ...settled, kind: "Table settled" });
           }}
         />
       )}
+
+      {/* The bill and the kitchen ticket, both printable — the same sheet the
+          order queue prints, so one order cannot come out two ways. */}
+      {billing && <PrintSheet order={billing} onClose={() => setBilling(null)} />}
     </>
   );
 }
@@ -852,12 +878,15 @@ function CheckoutModal({
   lines: Line[];
   mode: "PARCEL" | "DINE_IN";
   onClose: () => void;
-  onDone: (orderId: string, payLater: boolean, placed?: { orderNumber: string; total: number; kind: string }) => void;
+  onDone: (orderId: string, payLater: boolean, placed?: { orderId: string; orderNumber: string; total: number; kind: string }) => void;
 }) {
   const [search, setSearch] = useState("");
   const [hits, setHits] = useState<CustomerHit[]>([]);
   const [picked, setPicked] = useState<CustomerHit | null>(null);
   const [name, setName] = useState("");
+  // The walk-in who does not want to give a number. Billing them is the whole
+  // transaction: no account, no points, no SMS, and nothing to chase later.
+  const [guest, setGuest] = useState(false);
   // LATER: the customer waits for the parcel and pays when they collect it.
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "ONLINE" | "KHATA" | "LATER">("CASH");
   const payLater = paymentMethod === "LATER";
@@ -910,9 +939,11 @@ function CheckoutModal({
             addOnIds: l.addOnIds,
             qty: l.qty,
           })),
-          ...(picked
-            ? { userId: picked.id }
-            : { name: name.trim() || null, phone: search }),
+          ...(guest
+            ? { guest: true }
+            : picked
+              ? { userId: picked.id }
+              : { name: name.trim() || null, phone: search }),
           orderType: mode,
           tableNo: mode === "DINE_IN" ? tableNo.trim() || null : null,
           paymentMethod: payLater ? "CASH" : paymentMethod,
@@ -941,6 +972,7 @@ function CheckoutModal({
               : `Order ${d.orderNumber} placed · ${inr(d.total)}`
       );
       onDone(d.orderId, mode !== "DINE_IN" && payLater, {
+        orderId: d.orderId,
         orderNumber: d.orderNumber,
         total: d.total,
         kind: mode === "DINE_IN" ? "Table open" : payLater ? "To collect" : "Paid",
@@ -952,8 +984,9 @@ function CheckoutModal({
     }
   };
 
-  // The number alone is enough to bill: a name is optional.
-  const ready = picked !== null || search.length === 10;
+  // The number alone is enough to bill: a name is optional. A guest needs
+  // neither — that is the point of them.
+  const ready = guest || picked !== null || search.length === 10;
 
   return (
     <Modal open onClose={onClose} title="Customer & payment" wide>
@@ -962,8 +995,36 @@ function CheckoutModal({
             it the customer appears to be tapped, and if we do not, that same
             number is the new customer. Nothing else is required to bill. */}
         <div>
-          <label className="label" htmlFor="c-search">Customer mobile</label>
-          <div className="flex">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <label className="label !mb-0" htmlFor="c-search">Customer mobile</label>
+            {/* The queue behind them is the reason this exists: a walk-in who
+                will not give a number must not be able to hold up the till. */}
+            <button
+              type="button"
+              aria-pressed={guest}
+              onClick={() => {
+                setGuest((g) => !g);
+                setPicked(null);
+                setSearch("");
+                setName("");
+                setHits([]);
+                setPaymentMethod((m) => (m === "KHATA" ? "CASH" : m));
+              }}
+              className={`chip ${guest ? "chip-active" : ""}`}
+            >
+              🚶 Guest — no number
+            </button>
+          </div>
+          {guest ? (
+            <p className="mt-2 rounded-xl border border-cream-300 bg-cream-100 px-3 py-2 text-sm">
+              Billing as <strong>Guest</strong>. No points, no SMS, and it cannot go on khata —
+              everything else works as usual.{" "}
+              <button type="button" className="underline font-semibold" onClick={() => setGuest(false)}>
+                take their number instead
+              </button>
+            </p>
+          ) : (
+          <div className="flex mt-1.5">
             <span className="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-cream-300 bg-cream-100 text-sm font-semibold">
               +91
             </span>
@@ -981,7 +1042,8 @@ function CheckoutModal({
               }}
             />
           </div>
-          {hits.length > 0 && !picked && (
+          )}
+          {!guest && hits.length > 0 && !picked && (
             <ul className="mt-2 border border-cream-300 rounded-xl divide-y divide-cream-200 overflow-hidden">
               {hits.map((h) => (
                 <li key={h.id}>
@@ -1028,7 +1090,7 @@ function CheckoutModal({
         {/* Only once the number is complete and unrecognised: a name is optional
             and never blocks the bill, but it is worth offering while they are
             standing there. */}
-        {!picked && search.length === 10 && (
+        {!guest && !picked && search.length === 10 && (
           <div className="border-t border-cream-200 pt-3">
             <label className="label" htmlFor="c-name">Name (optional)</label>
             <input
@@ -1066,7 +1128,9 @@ function CheckoutModal({
         <div className={mode === "DINE_IN" ? "hidden" : "border-t border-cream-200 pt-3"}>
           <span className="label">Payment</span>
           <div className="flex flex-wrap gap-2">
-            {(["CASH", "ONLINE", "KHATA", "LATER"] as const).map((m) => (
+            {(["CASH", "ONLINE", "KHATA", "LATER"] as const)
+              .filter((m) => !(guest && m === "KHATA"))
+              .map((m) => (
               <button
                 key={m}
                 onClick={() => setPaymentMethod(m)}
@@ -1137,10 +1201,13 @@ function OpenTabs({
   tabs,
   onAdd,
   onSettle,
+  onBill,
 }: {
   tabs: OpenTab[] | null;
   onAdd: (t: OpenTab) => void;
   onSettle: (t: OpenTab) => void;
+  /** Print what the table has run up so far — it is not settled by looking. */
+  onBill: (orderId: string) => void;
 }) {
   if (tabs === null) return <Spinner label="Loading open tables…" />;
   if (tabs.length === 0)
@@ -1179,9 +1246,12 @@ function OpenTabs({
                 ➕ Add items
               </button>
               <button onClick={() => onSettle(t)} className="btn-primary !min-h-[46px] !px-2">
-                💳 Bill
+                💳 Bill & settle
               </button>
             </div>
+            <button onClick={() => onBill(t.id)} className="btn-ghost w-full !min-h-[40px] mt-2 text-sm">
+              🧾 Print running bill
+            </button>
           </div>
         ))}
       </div>
@@ -1197,7 +1267,8 @@ function SettleModal({
 }: {
   tab: OpenTab;
   onClose: () => void;
-  onDone: () => void;
+  /** What was actually settled — the discount is applied by the server. */
+  onDone: (settled: { orderId: string; orderNumber: string; total: number }) => void;
 }) {
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "ONLINE" | "KHATA">("CASH");
   const [paidNow, setPaidNow] = useState("");
@@ -1231,7 +1302,7 @@ function SettleModal({
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       playTone("success");
-      onDone();
+      onDone({ orderId: tab.id, orderNumber: d.orderNumber ?? tab.orderNumber, total: d.total ?? tab.total });
     } catch (e) {
       playTone("error");
       setError(e instanceof Error ? e.message : "Could not settle the tab");
@@ -1486,7 +1557,15 @@ function pickupPayment(p: Pickup): { label: string; due: boolean } {
  * Parcels ordered and waiting to be collected. Ready ones first — someone is
  * standing at the counter for those.
  */
-function WaitingParcels({ pickups, onCollect }: { pickups: Pickup[] | null; onCollect: (p: Pickup) => void }) {
+function WaitingParcels({
+  pickups,
+  onCollect,
+  onBill,
+}: {
+  pickups: Pickup[] | null;
+  onCollect: (p: Pickup) => void;
+  onBill: (orderId: string) => void;
+}) {
   if (!pickups || pickups.length === 0) return null;
   const sorted = [...pickups].sort((a, b) => (a.status === "READY" ? 0 : 1) - (b.status === "READY" ? 0 : 1));
   return (
@@ -1518,6 +1597,9 @@ function WaitingParcels({ pickups, onCollect }: { pickups: Pickup[] | null; onCo
               <button onClick={() => onCollect(p)} className="btn-primary w-full !min-h-[46px] mt-3">
                 {pay.due ? "💰 Collect & hand over" : "📦 Hand over"}
               </button>
+              <button onClick={() => onBill(p.id)} className="btn-ghost w-full !min-h-[40px] mt-2 text-sm">
+                🧾 Bill / print
+              </button>
             </div>
           );
         })}
@@ -1531,7 +1613,15 @@ function WaitingParcels({ pickups, onCollect }: { pickups: Pickup[] | null; onCo
  * or khata — and hand it over. Payment can also be taken before the food is
  * ready, leaving the parcel on the list until it goes out.
  */
-function CollectModal({ parcel, onClose, onDone }: { parcel: Pickup; onClose: () => void; onDone: () => void }) {
+function CollectModal({
+  parcel,
+  onClose,
+  onDone,
+}: {
+  parcel: Pickup;
+  onClose: () => void;
+  onDone: (settled: { orderId: string; orderNumber: string; total: number }) => void;
+}) {
   const pay = pickupPayment(parcel);
   const [method, setMethod] = useState<"CASH" | "ONLINE" | "KHATA">("CASH");
   const [paidNow, setPaidNow] = useState("");
@@ -1555,7 +1645,7 @@ function CollectModal({ parcel, onClose, onDone }: { parcel: Pickup; onClose: ()
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       playTone("success");
-      onDone();
+      onDone({ orderId: parcel.id, orderNumber: d.orderNumber ?? parcel.orderNumber, total: d.total ?? parcel.total });
     } catch (e) {
       playTone("error");
       setError(e instanceof Error ? e.message : "Could not save");

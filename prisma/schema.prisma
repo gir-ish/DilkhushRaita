@@ -288,6 +288,9 @@ model Order {
   branchId        String
   branch          Branch    @relation(fields: [branchId], references: [id])
   type            String // DELIVERY | PICKUP | DINE_IN
+  // Where the order came from: the website, or somebody standing at the till.
+  // Both end up in the same queue, but only one of them needs accepting.
+  channel         String    @default("ONLINE") // ONLINE | COUNTER
   tableNo         String? // dine-in only, e.g. "4" or "Terrace 2"
   status          String    @default("PLACED") // see ORDER_STATUSES in constants.ts
   scheduledFor    DateTime?
@@ -346,6 +349,7 @@ model Order {
 
   @@index([branchId, status])
   @@index([userId, placedAt])
+  @@index([channel, placedAt])
 }
 
 model OrderItem {

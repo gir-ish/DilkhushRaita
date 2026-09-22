@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { HttpError } from "@/lib/guard";
 import { round2 } from "@/lib/utils";
 import { TAB_CLOSED_STATUSES } from "@/lib/constants";
+import { isGuest } from "@/lib/guest";
 
 /**
  * The khata — a customer's running account for bills they pay later.
@@ -195,6 +196,11 @@ export async function chargeToKhata(
     staff: Staff;
   }
 ) {
+  // Khata is a debt owed by someone we can find again. A guest is by
+  // definition nobody in particular, so the one thing that must not happen is
+  // a bill quietly parked against them.
+  if (isGuest(input.userId))
+    throw new HttpError(400, "A guest bill cannot go on khata — take their number first");
   const paidNow = round2(input.paidNow ?? 0);
   if (paidNow < 0) throw new HttpError(400, "The amount paid now cannot be negative");
   if (paidNow > input.amount + EPS)

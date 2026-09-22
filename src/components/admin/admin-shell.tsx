@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { SoundToggle } from "@/components/sound-toggle";
@@ -9,6 +10,7 @@ import { NewOrderWatcher } from "@/components/admin/new-order-alert";
 const NAV = [
   ["/admin", "📊 Overview", ["OWNER", "BRANCH_MANAGER", "CASHIER", "DELIVERY_MANAGER", "MARKETING"]],
   ["/admin/counter", "🛎️ Counter", ["OWNER", "BRANCH_MANAGER", "CASHIER"]],
+  ["/admin/online", "🌐 Online", ["OWNER", "BRANCH_MANAGER", "KITCHEN", "CASHIER", "DELIVERY_MANAGER"]],
   ["/admin/orders", "🧾 Orders", ["OWNER", "BRANCH_MANAGER", "KITCHEN", "CASHIER", "DELIVERY_MANAGER"]],
   ["/admin/kitchen", "👨‍🍳 Kitchen", ["OWNER", "BRANCH_MANAGER", "KITCHEN"]],
   ["/admin/menu", "🍛 Menu", ["OWNER", "BRANCH_MANAGER"]],
@@ -24,6 +26,31 @@ const NAV = [
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  // Website orders nobody has accepted yet, on the tab itself. Whatever screen
+  // the owner is on, the number they most need to know is how many customers
+  // are currently waiting to hear back.
+  const [waiting, setWaiting] = useState(0);
+
+  useEffect(() => {
+    if (pathname === "/admin/login") return;
+    let alive = true;
+    const poll = async () => {
+      try {
+        const r = await fetch("/api/admin/orders?channel=ONLINE&status=PLACED");
+        if (!r.ok) return; // 403 for roles with no order access — no badge, no fuss
+        const d = await r.json();
+        if (alive) setWaiting((d.orders ?? []).length);
+      } catch {
+        // A badge is never worth an error on screen.
+      }
+    };
+    poll();
+    const t = setInterval(poll, 15_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [pathname]);
 
   if (pathname === "/admin/login") return <>{children}</>;
 
@@ -78,6 +105,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         >
           {NAV.map(([href, label]) => {
             const active = pathname === href;
+            const badge = href === "/admin/online" ? waiting : 0;
             return (
               <Link
                 key={href}
@@ -92,6 +120,15 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 )}
               >
                 {label}
+                {badge > 0 && (
+                  <span
+                    className={`ml-1.5 rounded-full px-2 py-0.5 text-xs font-bold ${
+                      active ? "bg-red-600 text-white" : "bg-red-600 text-white animate-pulse"
+                    }`}
+                  >
+                    {badge}
+                  </span>
+                )}
               </Link>
             );
           })}

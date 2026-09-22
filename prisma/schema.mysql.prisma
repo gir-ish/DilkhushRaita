@@ -281,6 +281,7 @@ model Order {
   branchId        String
   branch          Branch    @relation(fields: [branchId], references: [id])
   type            String
+  channel         String    @default("ONLINE") // ONLINE | COUNTER
   tableNo         String?
   status          String    @default("PLACED")
   scheduledFor    DateTime?
@@ -336,6 +337,7 @@ model Order {
   khata       KhataEntry[]
 
   @@index([branchId, status])
+  @@index([channel, placedAt])
   @@index([userId, placedAt])
 }
 

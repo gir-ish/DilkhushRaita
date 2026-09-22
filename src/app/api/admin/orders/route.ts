@@ -5,7 +5,7 @@ import { ACTIVE_STATUSES } from "@/lib/constants";
 
 /**
  * Staff order queue. Filters: ?status= &branchId= &q= (order no / name / phone)
- * &paymentStatus= &active=1 &date=YYYY-MM-DD
+ * &paymentStatus= &active=1 &date=YYYY-MM-DD &channel=ONLINE|COUNTER
  */
 export const GET = handler(async (req: Request) => {
   const session = await requireStaff(
@@ -19,6 +19,9 @@ export const GET = handler(async (req: Request) => {
   const status = url.searchParams.get("status");
   const paymentStatus = url.searchParams.get("paymentStatus");
   const branchId = url.searchParams.get("branchId");
+  // Website orders or till orders. The online queue is the one that needs
+  // watching: those are the orders nobody has said yes to yet.
+  const channel = url.searchParams.get("channel");
   const active = url.searchParams.get("active");
   const date = url.searchParams.get("date");
   // Online orders whose payment never arrived, which the other views hide.
@@ -28,6 +31,7 @@ export const GET = handler(async (req: Request) => {
   const where: Record<string, unknown> = {};
   if (branchId && branchId !== "all") where.branchId = branchId;
   else if (scope) where.branchId = { in: scope };
+  if (channel === "ONLINE" || channel === "COUNTER") where.channel = channel;
   if (status && status !== "all") where.status = status;
   if (active === "1") where.status = { in: ACTIVE_STATUSES };
   if (paymentStatus && paymentStatus !== "all") where.paymentStatus = paymentStatus;

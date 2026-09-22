@@ -29,6 +29,48 @@ const CUSTOMER_MESSAGES: Record<string, [string, string]> = {
   OUT_FOR_DELIVERY: ["Out for delivery 🛵", "Your order is on the way."],
 };
 
+/**
+ * One order, with everything a bill or a kitchen ticket needs.
+ *
+ * The order queue already carries this shape for every row it lists, but the
+ * counter never loads that list — it has just taken the order and knows only
+ * its id. Rather than pull a hundred orders to print one, it asks for that one.
+ */
+export const GET = handler(
+  async (_req: Request, { params }: { params: Promise<{ id: string }> }) => {
+    const session = await requireStaff(
+      "BRANCH_MANAGER",
+      "KITCHEN",
+      "CASHIER",
+      "DELIVERY_MANAGER"
+    );
+    const { id } = await params;
+    const order = await db.order.findUnique({
+      where: { id },
+      include: {
+        items: true,
+        user: { select: { name: true, phone: true } },
+        branch: {
+          select: {
+            name: true,
+            slug: true,
+            address: true,
+            pincode: true,
+            phone: true,
+            taxPercent: true,
+          },
+        },
+        deliveryAgent: { include: { user: { select: { name: true } } } },
+      },
+    });
+    if (!order) throw new HttpError(404, "Order not found");
+    const scope = await allowedBranchIds(session);
+    if (scope && !scope.includes(order.branchId))
+      throw new HttpError(403, "This order belongs to a different branch");
+    return NextResponse.json({ order });
+  }
+);
+
 export const PATCH = handler(
   async (req: Request, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;

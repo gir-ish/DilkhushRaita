@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { isGuest } from "./guest";
 import { pointsEarned, tierFor } from "./loyalty";
 import { loyaltyRates } from "./loyalty-settings";
 import { notifyUser } from "./notify";
@@ -9,6 +10,21 @@ import { round2 } from "./utils";
 export async function onOrderDelivered(orderId: string) {
   const order = await db.order.findUnique({ where: { id: orderId } });
   if (!order) return;
+
+  /*
+   * A guest gave no number: there is no account to credit, nobody to text and
+   * no history worth keeping. Settle the money and stop. Letting every walk-in
+   * pile onto the one shared guest row would also make it the shop's biggest
+   * spender and its most loyal customer, which is nobody.
+   */
+  if (isGuest(order.userId)) {
+    if (order.paymentMethod === "COD" && order.type !== "DINE_IN")
+      await db.$transaction([
+        db.payment.update({ where: { orderId: order.id }, data: { status: "PAID" } }),
+        db.order.update({ where: { id: order.id }, data: { paymentStatus: "PAID" } }),
+      ]);
+    return;
+  }
 
   const tiers = await db.loyaltyTier.findMany();
   const profile = await db.customerProfile.findUnique({ where: { userId: order.userId } });
@@ -90,8 +106,12 @@ export async function onOrderCancelled(orderId: string, rejected: boolean) {
   const order = await db.order.findUnique({ where: { id: orderId } });
   if (!order) return;
 
+  // Nothing to give back and nothing to hold against them: a guest is not a
+  // customer with a cancellation record. The stock still goes back on the
+  // shelf below either way.
+  const guest = isGuest(order.userId);
   const ops = [];
-  if (order.pointsRedeemed > 0) {
+  if (!guest && order.pointsRedeemed > 0) {
     ops.push(
       db.customerProfile.update({
         where: { userId: order.userId },
@@ -108,19 +128,20 @@ export async function onOrderCancelled(orderId: string, rejected: boolean) {
       })
     );
   }
-  ops.push(
-    db.customerMetrics.upsert({
-      where: { userId: order.userId },
-      create: {
-        userId: order.userId,
-        cancelledOrders: rejected ? 0 : 1,
-        rejectedOrders: rejected ? 1 : 0,
-      },
-      update: rejected
-        ? { rejectedOrders: { increment: 1 } }
-        : { cancelledOrders: { increment: 1 } },
-    })
-  );
+  if (!guest)
+    ops.push(
+      db.customerMetrics.upsert({
+        where: { userId: order.userId },
+        create: {
+          userId: order.userId,
+          cancelledOrders: rejected ? 0 : 1,
+          rejectedOrders: rejected ? 1 : 0,
+        },
+        update: rejected
+          ? { rejectedOrders: { increment: 1 } }
+          : { cancelledOrders: { increment: 1 } },
+      })
+    );
   // Restore tracked stock.
   const items = await db.orderItem.findMany({ where: { orderId } });
   for (const it of items) {

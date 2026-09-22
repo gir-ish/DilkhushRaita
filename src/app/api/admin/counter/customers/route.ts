@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { handler, requireStaff } from "@/lib/guard";
 import { khataDues } from "@/lib/khata";
+import { GUEST_USER_ID } from "@/lib/guest";
 
 /**
  * Customer lookup for the counter screen — type a phone or name and pick the
@@ -22,6 +23,10 @@ export const GET = handler(async (req: Request) => {
     where: {
       role: "CUSTOMER",
       blocked: false,
+      // The shared walk-in account is a billing destination, not a person to
+      // look up — and picking it by accident would file a named customer's
+      // order under Guest.
+      id: { not: GUEST_USER_ID },
       OR: [
         { name: { contains: q } },
         ...(digits.length >= 3 ? [{ phone: { contains: digits } }] : []),
