@@ -462,3 +462,19 @@ Schema and hooks already exist for: online payments (Razorpay), delivery-agent a
 ---
 
 📚 **Full API reference:** [docs/API.md](docs/API.md)
+
+---
+
+## Deploy
+
+On the server, in the cPanel terminal. `npm run mysql:push` only when
+`prisma/schema.mysql.prisma` changed; Passenger restarts on `tmp/restart.txt`.
+
+``` bash
+cd ~/public_html && git pull origin main
+git log --oneline -3
+npm run mysql:push
+rm -rf .next && NODE_OPTIONS=--max-old-space-size=2048 npm run build
+touch tmp/restart.txt
+sleep 8
+```

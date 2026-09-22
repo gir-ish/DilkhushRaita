@@ -95,6 +95,35 @@ function CounterInner() {
   // The bill being looked at or printed. Fetched one order at a time: the
   // counter knows the id of what it just took and nothing else.
   const [billing, setBilling] = useState<PrintableOrder | null>(null);
+  /*
+   * Whether the waiting lists are open.
+   *
+   * On a busy evening a dozen parcels push the menu off the bottom of the
+   * screen, and the cashier scrolls past them to take every new order. Folding
+   * them away leaves one line, and the counts on the Parcel and Dine-in
+   * buttons still say what is waiting. The choice is remembered on this
+   * device, so it is made once and not once per order.
+   */
+  const [listsOpen, setListsOpen] = useState(true);
+
+  useEffect(() => {
+    try {
+      setListsOpen(localStorage.getItem("dk_counter_lists") !== "closed");
+    } catch {
+      // Private window, blocked storage: the lists just stay open.
+    }
+  }, []);
+
+  const toggleLists = useCallback(() => {
+    setListsOpen((open) => {
+      try {
+        localStorage.setItem("dk_counter_lists", open ? "closed" : "open");
+      } catch {
+        // Not worth an error; it simply will not be remembered.
+      }
+      return !open;
+    });
+  }, []);
   // Phone only: the cart lives in a sheet behind the bottom bar.
   const [cartOpen, setCartOpen] = useState(false);
   // Brief flash on the bottom bar so a tap is visibly acknowledged when the
@@ -477,13 +506,21 @@ function CounterInner() {
       )}
 
       {mode === "PARCEL" && (
-        <WaitingParcels pickups={branchPickups} onCollect={(p) => setCollecting(p)} onBill={openBill} />
+        <WaitingParcels
+          pickups={branchPickups}
+          onCollect={(p) => setCollecting(p)}
+          onBill={openBill}
+          open={listsOpen}
+          onToggle={toggleLists}
+        />
       )}
 
       {mode === "DINE_IN" && !addingTo && (
         <OpenTabs
           tabs={branchTabs}
           onBill={openBill}
+          open={listsOpen}
+          onToggle={toggleLists}
           onAdd={(t) => {
             setAddingTo(t);
             setLines([]);
@@ -1196,18 +1233,72 @@ export default function CounterPage() {
   );
 }
 
+/**
+ * The heading of a waiting list, with the control that folds it away.
+ *
+ * Closed, it is one line: ☰, what is waiting, and how many — enough to know
+ * there is something there, small enough to leave the menu on screen.
+ */
+function ListHead({
+  title,
+  count,
+  open,
+  onToggle,
+  closedLabel,
+}: {
+  title: string;
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+  closedLabel: string;
+}) {
+  if (!open)
+    return (
+      <button
+        onClick={onToggle}
+        aria-expanded={false}
+        className="mb-3 flex w-full items-center gap-2 rounded-xl border border-cream-300 bg-white px-3 py-2.5 text-left font-semibold text-maroon-700 hover:border-mustard-400 hover:bg-mustard-100"
+      >
+        <span aria-hidden className="text-lg leading-none">☰</span>
+        {closedLabel}
+        <span className="rounded-full bg-cream-200 px-2 py-0.5 text-xs font-bold">{count}</span>
+        <span className="ml-auto text-sm underline">Show</span>
+      </button>
+    );
+
+  return (
+    <div className="mb-2 flex items-center gap-2">
+      <h2 className="font-semibold text-maroon-700">
+        {title} <span className="text-maroon-800/50">· {count}</span>
+      </h2>
+      <button
+        onClick={onToggle}
+        aria-expanded
+        title="Hide this list"
+        className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-cream-300 bg-white px-3 py-1.5 text-sm font-semibold text-maroon-700 hover:border-mustard-400 hover:bg-mustard-100"
+      >
+        <span aria-hidden>✕</span> Close
+      </button>
+    </div>
+  );
+}
+
 /** Open dine-in tabs for this branch: add another round, or settle and bill. */
 function OpenTabs({
   tabs,
   onAdd,
   onSettle,
   onBill,
+  open,
+  onToggle,
 }: {
   tabs: OpenTab[] | null;
   onAdd: (t: OpenTab) => void;
   onSettle: (t: OpenTab) => void;
   /** Print what the table has run up so far — it is not settled by looking. */
   onBill: (orderId: string) => void;
+  open: boolean;
+  onToggle: () => void;
 }) {
   if (tabs === null) return <Spinner label="Loading open tables…" />;
   if (tabs.length === 0)
@@ -1219,9 +1310,14 @@ function OpenTabs({
 
   return (
     <section className="mb-4" aria-label="Open tables">
-      <h2 className="font-semibold text-maroon-700 mb-2">
-        Open tables <span className="text-maroon-800/50">· {tabs.length}</span>
-      </h2>
+      <ListHead
+        title="Open tables"
+        closedLabel="Open tables"
+        count={tabs.length}
+        open={open}
+        onToggle={onToggle}
+      />
+      {open && (
       <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
         {tabs.map((t) => (
           <div key={t.id} className="card p-3 sm:p-4 border-l-4 border-l-mustard-400">
@@ -1255,6 +1351,7 @@ function OpenTabs({
           </div>
         ))}
       </div>
+      )}
     </section>
   );
 }
@@ -1561,18 +1658,27 @@ function WaitingParcels({
   pickups,
   onCollect,
   onBill,
+  open,
+  onToggle,
 }: {
   pickups: Pickup[] | null;
   onCollect: (p: Pickup) => void;
   onBill: (orderId: string) => void;
+  open: boolean;
+  onToggle: () => void;
 }) {
   if (!pickups || pickups.length === 0) return null;
   const sorted = [...pickups].sort((a, b) => (a.status === "READY" ? 0 : 1) - (b.status === "READY" ? 0 : 1));
   return (
     <section className="mb-4" aria-label="Parcels waiting">
-      <h2 className="font-semibold text-maroon-700 mb-2">
-        Parcels waiting <span className="text-maroon-800/50">· {pickups.length}</span>
-      </h2>
+      <ListHead
+        title="Parcels waiting"
+        closedLabel="Parcels to hand over"
+        count={pickups.length}
+        open={open}
+        onToggle={onToggle}
+      />
+      {open && (
       <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
         {sorted.map((p) => {
           const stage = PICKUP_STAGE[p.status] ?? PICKUP_STAGE.ACCEPTED;
@@ -1604,6 +1710,7 @@ function WaitingParcels({
           );
         })}
       </div>
+      )}
     </section>
   );
 }
