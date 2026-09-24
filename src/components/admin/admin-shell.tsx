@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { SoundToggle } from "@/components/sound-toggle";
@@ -30,6 +30,24 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   // the owner is on, the number they most need to know is how many customers
   // are currently waiting to hear back.
   const [waiting, setWaiting] = useState(0);
+  const headerRef = useRef<HTMLElement>(null);
+
+  /*
+   * Publish the header's height so a page can fill exactly the rest of the
+   * window. The counter uses it to keep its own header and the menu's search
+   * box still while only the dishes scroll — and the header is not a fixed
+   * number: the nav wraps, the browser zooms, a scrollbar appears.
+   */
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const publish = () =>
+      document.documentElement.style.setProperty("--admin-chrome", `${el.offsetHeight}px`);
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [pathname]);
 
   useEffect(() => {
     if (pathname === "/admin/login") return;
@@ -62,7 +80,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-cream-100">
       {/* Sticky so the section tabs stay reachable on a long order queue. */}
-      <header className="sticky top-0 z-40 bg-gradient-to-b from-maroon-700 to-maroon-800 text-cream-50 shadow-lift no-print">
+      <header
+        ref={headerRef}
+        className="sticky top-0 z-40 bg-gradient-to-b from-maroon-700 to-maroon-800 text-cream-50 shadow-lift no-print"
+      >
         <div className="px-4 sm:px-6 h-16 flex items-center justify-between gap-3 max-w-7xl mx-auto">
           <Link href="/admin" className="flex items-center gap-3 min-w-0 group">
             <span

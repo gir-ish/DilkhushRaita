@@ -451,6 +451,42 @@ function CounterInner() {
     }
   };
 
+  /*
+   * Parcels to hand over, or tables still eating — whichever this screen is
+   * for. Built here rather than inline because it lives in two places: a
+   * column of its own down the left while it has something in it, and a
+   * single folded line above everything when it does not.
+   */
+  const waitingSection =
+    addingTo ? null : mode === "PARCEL" ? (
+      <WaitingParcels
+        pickups={branchPickups}
+        onCollect={(p) => setCollecting(p)}
+        onBill={openBill}
+        onAdd={(p) => {
+          setAddingTo(parcelTarget(p));
+          setLines([]);
+        }}
+        open={listsOpen}
+        onToggle={toggleLists}
+      />
+    ) : (
+      <OpenTabs
+        tabs={branchTabs}
+        onBill={openBill}
+        open={listsOpen}
+        onToggle={toggleLists}
+        onAdd={(t) => {
+          setAddingTo(tabTarget(t));
+          setLines([]);
+        }}
+        onSettle={(t) => setSettling(t)}
+      />
+    );
+  const waitingCount = mode === "PARCEL" ? branchPickups.length : branchTabs.length;
+  /** The left rail earns its 280px only when it has something to show. */
+  const leftColumn = !addingTo && listsOpen && waitingCount > 0;
+
   return (
     <>
       {/* Nothing in here may widen the page. The admin header is `sticky`,
@@ -460,10 +496,20 @@ function CounterInner() {
           The bottom padding clears that bar; without it the last row of dishes
           sits underneath it and cannot be tapped. */}
       <div className={lines.length > 0 ? "pb-28 lg:pb-0" : undefined}>
+      {/*
+        * Three columns on a laptop: what is waiting on the left, the menu in
+        * the middle, the order being taken on the right, filling exactly the
+        * window below the dashboard header. The menu is the only thing that
+        * scrolls — this row, the search box and the categories stay put, so a
+        * cashier halfway down the menu can still search, still switch branch,
+        * and still see the order they are building.
+        */}
+      <div className="lg:flex lg:flex-col lg:h-[calc(100dvh-var(--admin-chrome)-3rem)] lg:min-h-0">
+
       {/* Everything that steers an order on one line: which branch, parcel or
           table, and the khata. Each of these was its own row, which on a
           laptop pushed the menu itself below the fold. */}
-      <div className="flex flex-wrap items-center gap-2 mb-3">
+      <div className="flex flex-wrap items-center gap-2 mb-3 lg:shrink-0">
         <h1 className="font-display text-2xl sm:text-3xl font-bold text-maroon-700 mr-1">Counter</h1>
 
         {/* Which branch you are billing to must be impossible to misread. */}
@@ -560,7 +606,7 @@ function CounterInner() {
       </div>
 
       {addingTo && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-mustard-400 bg-mustard-100 px-4 py-3">
+        <div className="mb-3 lg:shrink-0 flex flex-wrap items-center gap-2 rounded-xl border border-mustard-400 bg-mustard-100 px-4 py-3">
           <span className="font-bold text-maroon-700">
             ➕ {addingTo.round ? `Adding round ${addingTo.round} to` : "Adding items to"}{" "}
             {addingTo.where}
@@ -606,7 +652,7 @@ function CounterInner() {
       {/* Right at the top: the number just given out. The cashier reads it
           back to the customer and writes it on the bag. */}
       {lastPlaced && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border-2 border-leaf-500/40 bg-leaf-50 px-4 py-3">
+        <div className="mb-3 lg:shrink-0 flex flex-wrap items-center gap-2 rounded-xl border-2 border-leaf-500/40 bg-leaf-50 px-4 py-3">
           <span className="font-mono text-2xl font-bold text-maroon-700">{lastPlaced.orderNumber}</span>
           <span className="text-sm font-semibold text-leaf-600">{lastPlaced.kind} · {inr(lastPlaced.total)}</span>
           <button onClick={() => openBill(lastPlaced.orderId)} className="btn-secondary !min-h-[40px] !px-3 ml-auto">
@@ -618,35 +664,24 @@ function CounterInner() {
         </div>
       )}
 
-      {mode === "PARCEL" && !addingTo && (
-        <WaitingParcels
-          pickups={branchPickups}
-          onCollect={(p) => setCollecting(p)}
-          onBill={openBill}
-          onAdd={(p) => {
-            setAddingTo(parcelTarget(p));
-            setLines([]);
-          }}
-          open={listsOpen}
-          onToggle={toggleLists}
-        />
-      )}
+      {/* Folded away, or nothing waiting: one line above everything rather
+          than a column of its own holding nothing. */}
+      {!leftColumn && waitingSection}
 
-      {mode === "DINE_IN" && !addingTo && (
-        <OpenTabs
-          tabs={branchTabs}
-          onBill={openBill}
-          open={listsOpen}
-          onToggle={toggleLists}
-          onAdd={(t) => {
-            setAddingTo(tabTarget(t));
-            setLines([]);
-          }}
-          onSettle={(t) => setSettling(t)}
-        />
-      )}
+      <div
+        className={`grid gap-4 mt-2 lg:flex-1 lg:min-h-0 ${
+          leftColumn
+            ? "lg:grid-cols-[280px_minmax(0,1fr)_340px]"
+            : "lg:grid-cols-[minmax(0,1fr)_340px]"
+        }`}
+      >
+        {/* ------------------------------------------- waiting (left, rail) */}
+        {leftColumn && (
+          <aside className="order-2 lg:order-1 min-w-0 lg:overflow-y-auto lg:pr-1">
+            {waitingSection}
+          </aside>
+        )}
 
-      <div className="grid lg:grid-cols-[minmax(0,1fr)_340px] gap-4 mt-2">
         {/* ---------------------------------------------------------- menu */}
         {/* min-w-0 is load-bearing. A grid item defaults to min-width:auto,
             i.e. it refuses to shrink below its min-content — and the category
@@ -654,16 +689,16 @@ function CounterInner() {
             (~1000px). Without this the column inflates to that width and drags
             the menu grid off the side of the screen. overflow-x-auto lets the
             chips scroll but does not shrink what they report as a minimum. */}
-        <div className="min-w-0">
+        <div className="order-1 lg:order-2 min-w-0 lg:flex lg:flex-col lg:min-h-0">
           <input
-            className="input"
+            className="input lg:shrink-0"
             placeholder="Search the menu…"
             aria-label="Search the menu"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
           {menu && (
-            <div className="flex gap-2 scroll-x pt-2 pb-1.5">
+            <div className="flex gap-2 scroll-x pt-2 pb-1.5 lg:shrink-0">
               <button
                 className={`chip shrink-0 ${cat === "all" ? "chip-active" : ""}`}
                 onClick={() => setCat("all")}
@@ -682,6 +717,8 @@ function CounterInner() {
             </div>
           )}
 
+          {/* The only scrolling region on the screen. */}
+          <div className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
           {!menu ? (
             <Spinner label="Loading menu…" />
           ) : (
@@ -720,10 +757,11 @@ function CounterInner() {
               </section>
             ))
           )}
+          </div>
         </div>
 
-        {/* ------------------------------------------------- cart (desktop) */}
-        <aside className="hidden lg:block lg:sticky lg:top-4 h-fit">
+        {/* ------------------------------------------- cart (right, desktop) */}
+        <aside className="order-3 hidden lg:flex lg:flex-col lg:min-h-0 lg:overflow-y-auto lg:pr-1">
           <div className="card p-4">
             <h2 className="font-semibold mb-2">
               Current order {count > 0 && <span className="text-maroon-800/50">· {count} item{count > 1 ? "s" : ""}</span>}
@@ -752,6 +790,7 @@ function CounterInner() {
             )}
           </div>
         </aside>
+      </div>
       </div>
       </div>
 
@@ -884,12 +923,15 @@ function CartPanel({
   submitLabel: string;
   showSubmit?: boolean;
 }) {
+  // The list is capped in the phone's sheet, which has nowhere else to put the
+  // overflow; on a laptop the sidebar itself scrolls, and a scrolling list
+  // inside a scrolling column is one scrollbar too many.
   return (
     <>
       {lines.length === 0 ? (
         <p className="text-sm text-maroon-800/50 py-6 text-center">Tap dishes to add them.</p>
       ) : (
-        <ul className="divide-y divide-cream-200 text-sm max-h-[45vh] overflow-y-auto">
+        <ul className="divide-y divide-cream-200 text-sm max-h-[45vh] overflow-y-auto lg:max-h-none lg:overflow-visible">
           {lines.map((l) => (
             <li key={l.key} className="py-2">
               <div className="flex justify-between gap-2">
@@ -1505,7 +1547,7 @@ function OpenTabs({
         onToggle={onToggle}
       />
       {open && (
-      <div className="grid sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-1 gap-3">
         {tabs.map((t) => (
           <div key={t.id} className="card p-3 sm:p-4 border-l-4 border-l-mustard-400">
             <div className="flex items-start justify-between gap-2">
@@ -1869,7 +1911,7 @@ function WaitingParcels({
         onToggle={onToggle}
       />
       {open && (
-      <div className="grid sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-1 gap-3">
         {sorted.map((p) => {
           const stage = PICKUP_STAGE[p.status] ?? PICKUP_STAGE.ACCEPTED;
           const pay = pickupPayment(p);
