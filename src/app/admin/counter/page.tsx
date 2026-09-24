@@ -991,9 +991,6 @@ function CartPanel({
         </span>
         <span className="font-bold text-2xl text-maroon-700">{inr(subtotal)}</span>
       </div>
-      <p className="text-xs text-maroon-800/50 mt-1">
-        Taxes and packaging are added by the server on the final bill.
-      </p>
 
       {showSubmit && (
         <button
@@ -1091,12 +1088,10 @@ function CheckoutForm({
   lines,
   mode,
   onDone,
-  autoFocusPhone = false,
 }: {
   branchId: string;
   lines: Line[];
   mode: "PARCEL" | "DINE_IN";
-  autoFocusPhone?: boolean;
   onDone: (
     orderId: string,
     payLater: boolean,
@@ -1109,14 +1104,15 @@ function CheckoutForm({
   const [picked, setPicked] = useState<CustomerHit | null>(null);
   const [name, setName] = useState("");
   /*
-   * A guest unless a number is typed.
+   * A guest until somebody is named.
    *
    * Most people at the counter want their food, not an account, and asking
-   * every one of them for a number is what actually slows the queue. The box
-   * is still right there: the first digit turns the bill into that customer's,
-   * and emptying it goes back to a guest.
+   * every one of them for a number is what actually slows the queue. So there
+   * is no box until it is asked for: "Add number" puts one there, and clearing
+   * it goes back to a guest.
    */
-  const [guest, setGuest] = useState(true);
+  const [showPhone, setShowPhone] = useState(false);
+  const guest = !picked && search.length === 0;
   // LATER: the customer waits for the parcel and pays when they collect it.
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "ONLINE" | "KHATA" | "LATER">("CASH");
   const payLater = paymentMethod === "LATER";
@@ -1153,6 +1149,10 @@ function CheckoutForm({
     const exact = hits.find((h) => (h.phone ?? "").replace(/\D/g, "").endsWith(search));
     if (exact) setPicked(exact);
   }, [hits, search, picked]);
+
+  useEffect(() => {
+    if (guest && paymentMethod === "KHATA") setPaymentMethod("CASH");
+  }, [guest, paymentMethod]);
 
   const place = async (print: boolean) => {
     setBusy(true);
@@ -1219,34 +1219,35 @@ function CheckoutForm({
 
   // The number alone is enough to bill: a name is optional. A guest needs
   // neither — that is the point of them.
-  const ready = guest || picked !== null || search.length === 10;
+  const ready = picked !== null || search.length === 0 || search.length === 10;
 
   return (
       <div className="space-y-4">
-        {/* One box, not two. The cashier types the number; if we already know
-            it the customer appears to be tapped, and if we do not, that same
-            number is the new customer. Nothing else is required to bill. */}
+        {/* One line while it is a guest, which is most of the time. The box
+            appears only when a number is actually being taken — and when it
+            does, one box does both jobs: it finds a customer we know, and it
+            is the new one if we do not. */}
         <div>
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <label className="label !mb-0" htmlFor="c-search">Customer mobile</label>
-            {/* The queue behind them is the reason this exists: a walk-in who
-                will not give a number must not be able to hold up the till. */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="label !mb-0">Customer</span>
+            {!showPhone && <span className="text-sm font-bold text-maroon-700">🚶 Guest</span>}
             <button
               type="button"
-              aria-pressed={guest}
               onClick={() => {
-                setGuest(true);
-                setPicked(null);
-                setSearch("");
-                setName("");
-                setHits([]);
-                setPaymentMethod((m) => (m === "KHATA" ? "CASH" : m));
+                if (showPhone) {
+                  setSearch("");
+                  setPicked(null);
+                  setName("");
+                  setHits([]);
+                }
+                setShowPhone((v) => !v);
               }}
-              className={`chip ${guest ? "chip-active" : ""}`}
+              className="chip ml-auto"
             >
-              🚶 Guest — no number
+              {showPhone ? "🚶 Guest" : "+ Add number"}
             </button>
           </div>
+          {showPhone && (
           <div className="flex mt-1.5">
             <span className="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-cream-300 bg-cream-100 text-sm font-semibold">
               +91
@@ -1254,28 +1255,19 @@ function CheckoutForm({
             <input
               id="c-search"
               className="input !rounded-l-none"
-              autoFocus={autoFocusPhone}
+              autoFocus
               inputMode="numeric"
               maxLength={10}
-              placeholder={guest ? "Guest — tap to add a number" : "98XXXXXXXX"}
+              placeholder="98XXXXXXXX"
               value={search}
               onChange={(e) => {
-                const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
-                setSearch(digits);
+                setSearch(e.target.value.replace(/\D/g, "").slice(0, 10));
                 setPicked(null);
-                // The box decides: a number in it is a customer, an empty one
-                // is a guest. Nothing else has to be tapped either way.
-                setGuest(digits.length === 0);
               }}
             />
           </div>
-          {guest && (
-            <p className="mt-1.5 text-xs text-maroon-800/60">
-              No number — billed as <strong>Guest</strong>. No points, no SMS, and it cannot go on
-              khata. Start typing a number to bill a customer instead.
-            </p>
           )}
-          {!guest && hits.length > 0 && !picked && (
+          {showPhone && hits.length > 0 && !picked && (
             <ul className="mt-2 border border-cream-300 rounded-xl divide-y divide-cream-200 overflow-hidden">
               {hits.map((h) => (
                 <li key={h.id}>
@@ -1322,7 +1314,7 @@ function CheckoutForm({
         {/* Only once the number is complete and unrecognised: a name is optional
             and never blocks the bill, but it is worth offering while they are
             standing there. */}
-        {!guest && !picked && search.length === 10 && (
+        {showPhone && !picked && search.length === 10 && (
           <div className="border-t border-cream-200 pt-3">
             <label className="label" htmlFor="c-name">Name (optional)</label>
             <input
@@ -1359,18 +1351,30 @@ function CheckoutForm({
 
         <div className={mode === "DINE_IN" ? "hidden" : "border-t border-cream-200 pt-3"}>
           <span className="label">Payment</span>
-          <div className="flex flex-wrap gap-2">
-            {(["CASH", "ONLINE", "KHATA", "LATER"] as const)
-              .filter((m) => !(guest && m === "KHATA"))
-              .map((m) => (
-              <button
-                key={m}
-                onClick={() => setPaymentMethod(m)}
-                className={`chip ${paymentMethod === m ? "chip-active" : ""}`}
-              >
-                {m === "CASH" ? "💵 Cash" : m === "ONLINE" ? "📱 UPI / Card" : m === "KHATA" ? "📒 Khata (pay later)" : "⏳ Pay at pickup"}
-              </button>
-            ))}
+          {/* One row, so the whole choice is one glance and one tap. */}
+          <div className="grid grid-cols-4 gap-1.5">
+            {(["CASH", "ONLINE", "KHATA", "LATER"] as const).map((m) => {
+              const off = guest && m === "KHATA";
+              return (
+                <button
+                  key={m}
+                  onClick={() => !off && setPaymentMethod(m)}
+                  disabled={off}
+                  title={
+                    off
+                      ? "A guest bill cannot go on khata — add their number first"
+                      : m === "LATER"
+                        ? "They pay when they collect the parcel"
+                        : undefined
+                  }
+                  className={`chip justify-center !px-1.5 text-xs ${
+                    paymentMethod === m ? "chip-active" : ""
+                  } ${off ? "opacity-40 cursor-not-allowed" : ""}`}
+                >
+                  {m === "CASH" ? "💵 Cash" : m === "ONLINE" ? "📱 UPI" : m === "KHATA" ? "📒 Khata" : "⏳ Pickup"}
+                </button>
+              );
+            })}
           </div>
           {payLater && (
             <p className="mt-2 text-xs text-maroon-800/60">
@@ -1448,7 +1452,7 @@ function CheckoutModal({
 }) {
   return (
     <Modal open onClose={onClose} title="Customer & payment" wide>
-      <CheckoutForm {...rest} autoFocusPhone />
+      <CheckoutForm {...rest} />
     </Modal>
   );
 }
