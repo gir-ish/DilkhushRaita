@@ -932,32 +932,33 @@ function CartPanel({
         </ul>
       )}
 
-      <div className="border-t-2 border-cream-200 mt-3 pt-3 flex justify-between items-baseline">
-        <span className="font-bold text-lg">Subtotal</span>
+      <div className="border-t-2 border-cream-200 mt-3 pt-3 flex justify-between items-baseline gap-2">
+        <span className="font-bold text-lg">
+          Subtotal
+          {lines.length > 0 && (
+            <button
+              onClick={onClear}
+              className="ml-2 align-middle text-xs font-semibold text-red-700 underline hover:no-underline"
+            >
+              Clear
+            </button>
+          )}
+        </span>
         <span className="font-bold text-2xl text-maroon-700">{inr(subtotal)}</span>
       </div>
       <p className="text-xs text-maroon-800/50 mt-1">
         Taxes and packaging are added by the server on the final bill.
       </p>
 
-      <div className={`grid gap-2 mt-4 ${showSubmit ? "grid-cols-3" : "grid-cols-1"}`}>
+      {showSubmit && (
         <button
-          onClick={onClear}
+          onClick={onSubmit}
           disabled={lines.length === 0}
-          className="btn-outline !text-red-700 !border-red-700"
+          className="btn-primary w-full !py-4 !text-lg mt-4"
         >
-          Clear
+          {submitLabel}
         </button>
-        {showSubmit && (
-          <button
-            onClick={onSubmit}
-            disabled={lines.length === 0}
-            className="btn-primary col-span-2 !py-4 !text-lg"
-          >
-            {submitLabel}
-          </button>
-        )}
-      </div>
+      )}
     </>
   );
 }
