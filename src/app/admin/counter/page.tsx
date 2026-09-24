@@ -627,6 +627,10 @@ function CounterInner() {
           pickups={branchPickups}
           onCollect={(p) => setCollecting(p)}
           onBill={openBill}
+          onAdd={(p) => {
+            setAddingTo(parcelTarget(p));
+            setLines([]);
+          }}
           open={listsOpen}
           onToggle={toggleLists}
         />
@@ -1842,12 +1846,15 @@ function WaitingParcels({
   pickups,
   onCollect,
   onBill,
+  onAdd,
   open,
   onToggle,
 }: {
   pickups: Pickup[] | null;
   onCollect: (p: Pickup) => void;
   onBill: (orderId: string) => void;
+  /** One more thing onto this parcel, without opening it first. */
+  onAdd: (p: Pickup) => void;
   open: boolean;
   onToggle: () => void;
 }) {
@@ -1887,9 +1894,17 @@ function WaitingParcels({
               <button onClick={() => onCollect(p)} className="btn-primary w-full !min-h-[46px] mt-3">
                 {pay.due ? "💰 Collect & hand over" : "📦 Hand over"}
               </button>
-              <button onClick={() => onBill(p.id)} className="btn-ghost w-full !min-h-[40px] mt-2 text-sm">
-                🧾 Bill / print
-              </button>
+              {/* Both on the card: a customer collecting who asks for one more
+                  thing is common enough that it should not need the parcel to
+                  be opened first. */}
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <button onClick={() => onBill(p.id)} className="btn-ghost !min-h-[40px] text-sm">
+                  🧾 Bill / print
+                </button>
+                <button onClick={() => onAdd(p)} className="btn-ghost !min-h-[40px] text-sm">
+                  ➕ Add items
+                </button>
+              </div>
             </div>
           );
         })}
