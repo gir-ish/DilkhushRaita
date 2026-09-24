@@ -100,7 +100,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         <nav
-          className="px-2 sm:px-4 flex gap-1.5 overflow-x-auto no-scrollbar pb-2.5 max-w-7xl mx-auto"
+          /* Scrolls, and shows that it does: on a laptop there is no swipe,
+             so a hidden bar leaves Reports and Staff off the right edge with
+             nothing to say they are there. */
+          className="px-2 sm:px-4 flex gap-1.5 scroll-x scroll-x-on-dark pb-2 max-w-7xl mx-auto"
           aria-label="Admin sections"
         >
           {NAV.map(([href, label]) => {
@@ -113,7 +116,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   // Bigger hit area — this is used on tablets at a busy counter.
-                  "px-4 py-2.5 rounded-xl text-[15px] font-semibold whitespace-nowrap transition",
+                  "px-4 py-2.5 rounded-xl text-[15px] font-semibold whitespace-nowrap shrink-0 transition",
                   active
                     ? "bg-cream-50 text-maroon-700 shadow-card"
                     : "text-cream-50/85 hover:bg-maroon-600 hover:text-cream-50"
@@ -134,7 +137,17 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
       </header>
-      <main className="p-4 sm:p-6 max-w-7xl mx-auto">{children}</main>
+      {/* Everything else is reading width; the counter is a working screen
+          used all day on a wide monitor, and capping it at 1280px threw away
+          two dishes per row and half the parcels. */}
+      <main
+        className={cn(
+          "p-4 sm:p-6 mx-auto",
+          pathname === "/admin/counter" ? "max-w-[1800px]" : "max-w-7xl"
+        )}
+      >
+        {children}
+      </main>
       {/* Outside <main> on purpose: it covers the screen whatever is under it. */}
       <NewOrderWatcher />
     </div>

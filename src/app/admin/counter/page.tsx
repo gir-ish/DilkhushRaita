@@ -460,107 +460,103 @@ function CounterInner() {
           The bottom padding clears that bar; without it the last row of dishes
           sits underneath it and cannot be tapped. */}
       <div className={lines.length > 0 ? "pb-28 lg:pb-0" : undefined}>
-      <div className="flex flex-wrap items-baseline gap-x-3 mb-3">
-        <h1 className="font-display text-2xl sm:text-3xl font-bold text-maroon-700">Counter</h1>
-        <p className="text-sm text-maroon-800/60">Take a walk-in or dine-in order</p>
-      </div>
+      {/* Everything that steers an order on one line: which branch, parcel or
+          table, and the khata. Each of these was its own row, which on a
+          laptop pushed the menu itself below the fold. */}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <h1 className="font-display text-2xl sm:text-3xl font-bold text-maroon-700 mr-1">Counter</h1>
 
-      {/* Which branch you are billing to must be impossible to misread. */}
-      {branches.length > 1 && (
-        <div
-          className="flex gap-2 overflow-x-auto no-scrollbar pb-1 mb-3"
-          role="group"
-          aria-label="Branch"
-        >
-          {branches.map((b) => {
-            const active = slug === b.slug;
-            return (
-              <button
-                key={b.id}
-                aria-pressed={active}
-                onClick={() => {
-                  if (b.slug === slug) return;
-                  if (lines.length && !confirm("Switching branch clears the current order. Continue?")) return;
-                  setLines([]);
-                  setSlug(b.slug);
-                }}
-                className={`rounded-xl px-4 sm:px-5 py-2.5 sm:py-3 text-sm sm:text-[15px] font-bold whitespace-nowrap transition ${
-                  active
-                    ? "bg-maroon-600 text-cream-50 shadow-card"
-                    : "bg-white text-maroon-700 border border-cream-300 hover:border-mustard-400 hover:bg-mustard-100"
-                }`}
-              >
-                <span className="flex items-center justify-center gap-2">
-                  🏪 {b.name.replace(/^DilKhush Dhaba\s*[–-]\s*/, "")}
-                  {openByBranch[b.id] > 0 && (
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-bold ${
-                        active ? "bg-cream-50/25 text-cream-50" : "bg-cream-200 text-maroon-700"
-                      }`}
-                    >
-                      {openByBranch[b.id]}
-                    </span>
-                  )}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-      {branches.length === 1 && (
-        <p className="mb-3 inline-block rounded-full bg-maroon-50 px-3 py-1 text-sm font-bold text-maroon-700">
-          🏪 Billing to {branches[0].name.replace(/^DilKhush Dhaba\s*[–-]\s*/, "")}
-        </p>
-      )}
-
-      {/* Parcel bills at once; dine-in opens a tab billed when they leave. */}
-      <div className="flex gap-2 mb-3">
-      <div className="flex gap-2 flex-1" role="group" aria-label="Order kind">
-        {([
-          ["PARCEL", "🛍️ Parcel", "Bill now"],
-          ["DINE_IN", "🍽️ Dine-in", "Open a table tab"],
-        ] as const).map(([m, label, hint]) => (
-          <button
-            key={m}
-            aria-pressed={mode === m}
-            onClick={() => {
-              if (mode === m) return;
-              if (lines.length && !confirm("Switching clears the current order. Continue?")) return;
-              setLines([]);
-              setAddingTo(null);
-              setMode(m);
-            }}
-            className={`flex-1 sm:flex-none rounded-xl px-3 sm:px-5 py-2.5 sm:py-3 text-left transition ${
-              mode === m
-                ? "bg-maroon-600 text-cream-50 shadow-card"
-                : "bg-white text-maroon-700 border border-cream-300 hover:border-mustard-400 hover:bg-mustard-100"
-            }`}
-          >
-            <span className="flex items-center gap-2 text-sm sm:text-[15px] font-bold">
-              {label}
-              {(m === "PARCEL" ? branchPickups.length : branchTabs.length) > 0 && (
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-bold ${
-                    mode === m ? "bg-cream-50/25 text-cream-50" : "bg-cream-200 text-maroon-700"
+        {/* Which branch you are billing to must be impossible to misread. */}
+        {branches.length > 1 && (
+          <div className="flex gap-2" role="group" aria-label="Branch">
+            {branches.map((b) => {
+              const active = slug === b.slug;
+              return (
+                <button
+                  key={b.id}
+                  aria-pressed={active}
+                  onClick={() => {
+                    if (b.slug === slug) return;
+                    if (lines.length && !confirm("Switching branch clears the current order. Continue?")) return;
+                    setLines([]);
+                    setSlug(b.slug);
+                  }}
+                  className={`rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 text-sm sm:text-[15px] font-bold whitespace-nowrap transition ${
+                    active
+                      ? "bg-maroon-600 text-cream-50 shadow-card"
+                      : "bg-white text-maroon-700 border border-cream-300 hover:border-mustard-400 hover:bg-mustard-100"
                   }`}
                 >
-                  {m === "PARCEL" ? branchPickups.length : branchTabs.length}
-                </span>
-              )}
-            </span>
-            <span className={`block text-xs ${mode === m ? "text-cream-50/75" : "text-maroon-800/50"}`}>
-              {hint}
-            </span>
+                  <span className="flex items-center justify-center gap-2">
+                    🏪 {b.name.replace(/^DilKhush Dhaba\s*[–-]\s*/, "")}
+                    {openByBranch[b.id] > 0 && (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                          active ? "bg-cream-50/25 text-cream-50" : "bg-cream-200 text-maroon-700"
+                        }`}
+                      >
+                        {openByBranch[b.id]}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {branches.length === 1 && (
+          <p className="inline-block rounded-full bg-maroon-50 px-3 py-1 text-sm font-bold text-maroon-700">
+            🏪 Billing to {branches[0].name.replace(/^DilKhush Dhaba\s*[–-]\s*/, "")}
+          </p>
+        )}
+
+        {/* Parcel bills at once; dine-in opens a tab billed when they leave. */}
+        <div className="flex gap-2 flex-1 items-center">
+        <div className="flex gap-2 flex-1 sm:flex-none" role="group" aria-label="Order kind">
+          {([
+            ["PARCEL", "🛍️ Parcel", "Bill now"],
+            ["DINE_IN", "🍽️ Dine-in", "Open a table tab"],
+          ] as const).map(([m, label, hint]) => (
+            <button
+              key={m}
+              aria-pressed={mode === m}
+              onClick={() => {
+                if (mode === m) return;
+                if (lines.length && !confirm("Switching clears the current order. Continue?")) return;
+                setLines([]);
+                setAddingTo(null);
+                setMode(m);
+              }}
+              title={hint}
+              className={`flex-1 sm:flex-none rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 text-left transition ${
+                mode === m
+                  ? "bg-maroon-600 text-cream-50 shadow-card"
+                  : "bg-white text-maroon-700 border border-cream-300 hover:border-mustard-400 hover:bg-mustard-100"
+              }`}
+            >
+              <span className="flex items-center gap-2 text-sm sm:text-[15px] font-bold">
+                {label}
+                {(m === "PARCEL" ? branchPickups.length : branchTabs.length) > 0 && (
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                      mode === m ? "bg-cream-50/25 text-cream-50" : "bg-cream-200 text-maroon-700"
+                    }`}
+                  >
+                    {m === "PARCEL" ? branchPickups.length : branchTabs.length}
+                  </span>
+                )}
+              </span>
+            </button>
+          ))}
+        </div>
+          <button
+            onClick={() => setKhataOpen(true)}
+            title="Receive a payment against a customer's khata"
+            className="ml-auto rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 text-sm sm:text-[15px] font-bold bg-white text-maroon-700 border border-cream-300 hover:border-mustard-400 hover:bg-mustard-100 transition whitespace-nowrap"
+          >
+            📒 Khata
           </button>
-        ))}
-      </div>
-        <button
-          onClick={() => setKhataOpen(true)}
-          className="rounded-xl px-3 sm:px-5 py-2.5 sm:py-3 text-left bg-white text-maroon-700 border border-cream-300 hover:border-mustard-400 hover:bg-mustard-100 transition"
-        >
-          <span className="block text-sm sm:text-[15px] font-bold">📒 Khata</span>
-          <span className="block text-xs text-maroon-800/50">Receive a payment</span>
-        </button>
+        </div>
       </div>
 
       {addingTo && (
@@ -650,7 +646,7 @@ function CounterInner() {
         />
       )}
 
-      <div className="grid lg:grid-cols-3 gap-4 mt-2">
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_340px] gap-4 mt-2">
         {/* ---------------------------------------------------------- menu */}
         {/* min-w-0 is load-bearing. A grid item defaults to min-width:auto,
             i.e. it refuses to shrink below its min-content — and the category
@@ -658,7 +654,7 @@ function CounterInner() {
             (~1000px). Without this the column inflates to that width and drags
             the menu grid off the side of the screen. overflow-x-auto lets the
             chips scroll but does not shrink what they report as a minimum. */}
-        <div className="lg:col-span-2 min-w-0">
+        <div className="min-w-0">
           <input
             className="input"
             placeholder="Search the menu…"
@@ -667,14 +663,17 @@ function CounterInner() {
             onChange={(e) => setQ(e.target.value)}
           />
           {menu && (
-            <div className="flex gap-2 overflow-x-auto no-scrollbar py-2">
-              <button className={`chip ${cat === "all" ? "chip-active" : ""}`} onClick={() => setCat("all")}>
+            <div className="flex gap-2 scroll-x pt-2 pb-1.5">
+              <button
+                className={`chip shrink-0 ${cat === "all" ? "chip-active" : ""}`}
+                onClick={() => setCat("all")}
+              >
                 All
               </button>
               {menu.categories.map((c) => (
                 <button
                   key={c.id}
-                  className={`chip ${cat === c.id ? "chip-active" : ""}`}
+                  className={`chip shrink-0 ${cat === c.id ? "chip-active" : ""}`}
                   onClick={() => setCat(c.id)}
                 >
                   {c.name}
@@ -688,23 +687,23 @@ function CounterInner() {
           ) : (
             filtered.map((c) => (
               <section key={c.id} className="mt-3">
-                <h2 className="font-semibold text-maroon-700 mb-2">{c.name}</h2>
+                <h2 className="font-semibold text-maroon-700 mb-1.5">{c.name}</h2>
                 {/* Two per row even on a phone: one dish per row turns a short
                     menu into a very long scroll between taps. */}
-                <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2">
                   {c.items.map((it) => (
                     <button
                       key={it.id}
                       onClick={() => tap(it)}
                       disabled={!it.available}
                       // Tall enough to hit reliably on a tablet mid-service.
-                      className="card card-hover p-3 sm:p-4 text-left min-h-[88px] sm:min-h-[92px] flex flex-col justify-between disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
+                      className="card card-hover p-2.5 sm:p-3 text-left min-h-[76px] sm:min-h-[80px] flex flex-col justify-between disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
                     >
                       <span className="flex items-start gap-1.5 sm:gap-2">
                         <VegMark veg={it.veg} className="mt-0.5 sm:mt-1" />
                         <span className="font-semibold text-sm sm:text-[15px] leading-snug">{it.name}</span>
                       </span>
-                      <span className="flex items-center justify-between gap-1 mt-2">
+                      <span className="flex items-center justify-between gap-1 mt-1.5">
                         <span className="font-bold text-maroon-700 text-base sm:text-lg">{inr(it.price)}</span>
                         {(it.variants.length > 0 || it.addOns.length > 0) && (
                           <span className="rounded-full bg-cream-200 px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] font-bold text-maroon-700">
@@ -1506,7 +1505,7 @@ function OpenTabs({
         onToggle={onToggle}
       />
       {open && (
-      <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+      <div className="grid sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
         {tabs.map((t) => (
           <div key={t.id} className="card p-3 sm:p-4 border-l-4 border-l-mustard-400">
             <div className="flex items-start justify-between gap-2">
@@ -1870,7 +1869,7 @@ function WaitingParcels({
         onToggle={onToggle}
       />
       {open && (
-      <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+      <div className="grid sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
         {sorted.map((p) => {
           const stage = PICKUP_STAGE[p.status] ?? PICKUP_STAGE.ACCEPTED;
           const pay = pickupPayment(p);

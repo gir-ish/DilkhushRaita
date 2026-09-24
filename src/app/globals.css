@@ -835,6 +835,39 @@
     flex: none;
   }
 
+  /* A row that scrolls sideways and says so.
+     The opposite choice to .no-scrollbar below, and the right one wherever
+     what is off the edge is not optional — the counter's categories, say. On
+     a laptop there is no swipe, so with the bar hidden the last few are
+     reachable only by a shift-wheel nobody thinks to try, and the row simply
+     looks cut off. Slim and in the page's own colours, not the chunky grey
+     default. */
+  .scroll-x {
+    --sx-thumb: var(--rule-strong);
+    --sx-thumb-hover: var(--oxblood);
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--sx-thumb) transparent;
+  }
+  .scroll-x::-webkit-scrollbar {
+    height: 8px;
+  }
+  .scroll-x::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scroll-x::-webkit-scrollbar-thumb {
+    background: var(--sx-thumb);
+    border-radius: 999px;
+  }
+  .scroll-x::-webkit-scrollbar-thumb:hover {
+    background: var(--sx-thumb-hover);
+  }
+  /* The same bar over a dark header, where an ink-coloured one is invisible. */
+  .scroll-x-on-dark {
+    --sx-thumb: rgb(253 251 246 / 0.38);
+    --sx-thumb-hover: rgb(253 251 246 / 0.7);
+  }
+
   /* Swipeable rows (branch tabs, admin nav) still scroll, but without the
      chunky bar that a desktop browser draws across them. */
   .no-scrollbar {
