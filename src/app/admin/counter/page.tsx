@@ -21,6 +21,26 @@ interface MenuData {
   categories: { id: string; name: string; items: MenuItem[] }[];
 }
 interface BranchLite { id: string; name: string; slug: string }
+
+/**
+ * An order already taken that the cashier is now adding more items to: a
+ * table ordering another round, or a parcel whose customer asked for one more
+ * thing while collecting it. Either way the items join that bill rather than
+ * becoming a second order with its own number.
+ */
+interface AddingTo {
+  kind: "TAB" | "PARCEL";
+  id: string;
+  orderNumber: string;
+  /** "Table 4" for a tab, the order number for a parcel. */
+  where: string;
+  who: string | null;
+  total: number;
+  /** The round about to be sent; a parcel does not count rounds. */
+  round: number | null;
+  /** Already paid for, so the extra is owed now and nothing else is. */
+  settled: boolean;
+}
 interface CustomerHit { id: string; name: string | null; phone: string | null; completedOrders: number; khataDue?: number }
 interface OpenTab {
   id: string;
@@ -67,6 +87,35 @@ interface Line {
  * production build (it passes `next dev` and type-check, so a full build is
  * the only thing that catches it).
  */
+/** The add-target for an open table. */
+function tabTarget(t: OpenTab): AddingTo {
+  return {
+    kind: "TAB",
+    id: t.id,
+    orderNumber: t.orderNumber,
+    where: t.tableNo ? `Table ${t.tableNo}` : t.orderNumber,
+    who: t.customer.name,
+    total: t.total,
+    round: t.rounds + 1,
+    settled: false,
+  };
+}
+
+/** The add-target for a parcel still waiting to be handed over. */
+function parcelTarget(p: Pickup): AddingTo {
+  return {
+    kind: "PARCEL",
+    id: p.id,
+    orderNumber: p.orderNumber,
+    where: "🛍️ " + p.orderNumber,
+    who: p.customer.name,
+    total: p.total,
+    round: null,
+    // Paid for already: the new items are the only thing still owed.
+    settled: p.paymentStatus === "PAID",
+  };
+}
+
 function CounterInner() {
   const params = useSearchParams();
   const [branches, setBranches] = useState<BranchLite[]>([]);
@@ -85,7 +134,9 @@ function CounterInner() {
   const [collecting, setCollecting] = useState<Pickup | null>(null);
   // When set, the cart is being added to this existing tab rather than
   // starting a new order.
-  const [addingTo, setAddingTo] = useState<OpenTab | null>(null);
+  const [addingTo, setAddingTo] = useState<AddingTo | null>(null);
+  // How the extra is paid when items are added to a parcel already settled.
+  const [extraMethod, setExtraMethod] = useState<"CASH" | "ONLINE">("CASH");
   const [settling, setSettling] = useState<OpenTab | null>(null);
   // "Khata" at the counter: someone has come in to pay what they owe.
   const [khataOpen, setKhataOpen] = useState(false);
@@ -163,7 +214,7 @@ function CounterInner() {
     const t = tabs.find((x) => x.id === wantedTab);
     if (t) {
       setMode("DINE_IN");
-      setAddingTo(t);
+      setAddingTo(tabTarget(t));
     }
   }, [wantedTab, tabs]);
 
@@ -289,6 +340,26 @@ function CounterInner() {
     }
   }, []);
 
+  /** Whichever way the order was taken — sidebar or sheet — this follows. */
+  const afterPlaced = useCallback(
+    (
+      placed: { orderId: string; orderNumber: string; total: number; kind: string },
+      print: boolean
+    ) => {
+      setCheckout(false);
+      setCartOpen(false);
+      setLines([]);
+      setLastPlaced(placed);
+      // Nobody leaves the counter: the next customer is already waiting, and a
+      // counter order is accepted the moment it is taken, so there is nothing
+      // to go and approve on the queue.
+      if (mode === "DINE_IN") loadTabs();
+      else loadPickups();
+      if (print) openBill(placed.orderId);
+    },
+    [mode, loadTabs, loadPickups, openBill]
+  );
+
   const filtered = useMemo(() => {
     if (!menu) return [];
     const ql = q.trim().toLowerCase();
@@ -311,44 +382,72 @@ function CounterInner() {
   const count = lines.reduce((s, l) => s + l.qty, 0);
 
   const submitLabel = addingTo
-    ? `Send round ${addingTo.rounds + 1} →`
+    ? addingTo.round
+      ? `Send round ${addingTo.round} →`
+      : `Add to ${addingTo.orderNumber} →`
     : mode === "DINE_IN"
       ? "Open tab →"
       : "Charge →";
 
-  /** Adding to a tab posts straight away; anything else needs the customer step. */
+  /**
+   * Adding to an order that already exists posts straight away; a new one
+   * needs the customer and payment step first.
+   */
   const submit = async () => {
     if (!addingTo) {
       setCartOpen(false);
       return setCheckout(true);
     }
+    const tab = addingTo.kind === "TAB";
     setError(null);
     try {
-      const r = await fetch(`/api/admin/counter/tabs/${addingTo.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: lines.map((l) => ({
-            menuItemId: l.menuItemId,
-            variantId: l.variantId,
-            addOnIds: l.addOnIds,
-            qty: l.qty,
-          })),
-        }),
-      });
+      const r = await fetch(
+        tab ? `/api/admin/counter/tabs/${addingTo.id}` : `/api/admin/counter/pickups/${addingTo.id}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            items: lines.map((l) => ({
+              menuItemId: l.menuItemId,
+              variantId: l.variantId,
+              addOnIds: l.addOnIds,
+              qty: l.qty,
+            })),
+            // Paid already: only the new items are charged, and this is how.
+            ...(!tab && addingTo.settled ? { extraPayment: extraMethod } : {}),
+          }),
+        }
+      );
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       playTone("success");
       setLines([]);
       setAddingTo(null);
       setCartOpen(false);
-      loadTabs();
+      if (tab) loadTabs();
+      else {
+        loadPickups();
+        // The bill has changed, so say what it is now and what was taken for
+        // the extra.
+        setLastPlaced({
+          orderId: addingTo.id,
+          orderNumber: d.orderNumber ?? addingTo.orderNumber,
+          total: d.total ?? addingTo.total,
+          kind: addingTo.settled ? `${inr(d.extra ?? 0)} extra taken` : "Items added",
+        });
+      }
     } catch (e) {
       // Close the sheet: the error banner sits at the top of the page and would
       // otherwise be hidden behind it, so the failure would look like a no-op.
       playTone("error");
       setCartOpen(false);
-      setError(e instanceof Error ? e.message : "Could not add to the tab");
+      setError(
+        e instanceof Error
+          ? e.message
+          : tab
+            ? "Could not add to the tab"
+            : "Could not add to the parcel"
+      );
     }
   };
 
@@ -467,14 +566,14 @@ function CounterInner() {
       {addingTo && (
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-mustard-400 bg-mustard-100 px-4 py-3">
           <span className="font-bold text-maroon-700">
-            ➕ Adding round {addingTo.rounds + 1} to{" "}
-            {addingTo.tableNo ? `Table ${addingTo.tableNo}` : addingTo.orderNumber}
+            ➕ {addingTo.round ? `Adding round ${addingTo.round} to` : "Adding items to"}{" "}
+            {addingTo.where}
           </span>
           <span className="rounded-lg bg-white/70 px-2 py-0.5 font-mono text-sm font-bold text-maroon-700">
             {addingTo.orderNumber}
           </span>
           <span className="text-sm text-maroon-800/70">
-            ({addingTo.customer.name ?? "Guest"} · running {inr(addingTo.total)})
+            ({addingTo.who ?? "Guest"} · {addingTo.settled ? "paid" : "running"} {inr(addingTo.total)})
           </span>
           <button
             className="ml-auto underline text-sm font-semibold"
@@ -485,6 +584,24 @@ function CounterInner() {
           >
             Cancel
           </button>
+          {/* Paid for already, so the customer owes the new items and nothing
+              else. The cashier says here how that difference is coming in. */}
+          {addingTo.settled && (
+            <div className="flex w-full flex-wrap items-center gap-2 border-t border-mustard-400/60 pt-2">
+              <span className="text-sm font-semibold text-maroon-800/70">
+                Already paid — take only the new items, by
+              </span>
+              {(["CASH", "ONLINE"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setExtraMethod(m)}
+                  className={`chip ${extraMethod === m ? "chip-active" : ""}`}
+                >
+                  {m === "CASH" ? "💵 Cash" : "📱 UPI / Card"}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -505,7 +622,7 @@ function CounterInner() {
         </div>
       )}
 
-      {mode === "PARCEL" && (
+      {mode === "PARCEL" && !addingTo && (
         <WaitingParcels
           pickups={branchPickups}
           onCollect={(p) => setCollecting(p)}
@@ -522,7 +639,7 @@ function CounterInner() {
           open={listsOpen}
           onToggle={toggleLists}
           onAdd={(t) => {
-            setAddingTo(t);
+            setAddingTo(tabTarget(t));
             setLines([]);
           }}
           onSettle={(t) => setSettling(t)}
@@ -616,7 +733,20 @@ function CounterInner() {
               onClear={() => setLines([])}
               onSubmit={submit}
               submitLabel={submitLabel}
+              /* On a laptop the payment step is right below, so there is
+                 nothing to charge through to. */
+              showSubmit={!!addingTo}
             />
+            {!addingTo && menu && lines.length > 0 && (
+              <div className="mt-4 border-t-2 border-cream-200 pt-4">
+                <CheckoutForm
+                  branchId={menu.branch.id}
+                  lines={lines}
+                  mode={mode}
+                  onDone={(_id, _payLater, placed, print) => afterPlaced(placed, print)}
+                />
+              </div>
+            )}
           </div>
         </aside>
       </div>
@@ -686,18 +816,7 @@ function CounterInner() {
           lines={lines}
           mode={mode}
           onClose={() => setCheckout(false)}
-          onDone={(orderId, payLater, placed) => {
-            setCheckout(false);
-            setLines([]);
-            if (placed) setLastPlaced(placed);
-            // Nobody leaves the counter: the next customer is already
-            // waiting, and a counter order is accepted the moment it is
-            // taken, so there is nothing to go and approve on the queue. The
-            // parcel stays on this screen either way — paid, or to be paid
-            // when they collect it.
-            if (mode === "DINE_IN") loadTabs();
-            else loadPickups();
-          }}
+          onDone={(_id, _payLater, placed, print) => afterPlaced(placed, print)}
         />
       )}
 
@@ -707,6 +826,11 @@ function CounterInner() {
         <CollectModal
           parcel={collecting}
           onClose={() => setCollecting(null)}
+          onAddItems={() => {
+            setAddingTo(parcelTarget(collecting));
+            setLines([]);
+            setCollecting(null);
+          }}
           onDone={(settled) => {
             setCollecting(null);
             loadPickups();
@@ -746,6 +870,7 @@ function CartPanel({
   onClear,
   onSubmit,
   submitLabel,
+  showSubmit = true,
 }: {
   lines: Line[];
   subtotal: number;
@@ -754,6 +879,7 @@ function CartPanel({
   onClear: () => void;
   onSubmit: () => void;
   submitLabel: string;
+  showSubmit?: boolean;
 }) {
   return (
     <>
@@ -814,7 +940,7 @@ function CartPanel({
         Taxes and packaging are added by the server on the final bill.
       </p>
 
-      <div className="grid grid-cols-3 gap-2 mt-4">
+      <div className={`grid gap-2 mt-4 ${showSubmit ? "grid-cols-3" : "grid-cols-1"}`}>
         <button
           onClick={onClear}
           disabled={lines.length === 0}
@@ -822,13 +948,15 @@ function CartPanel({
         >
           Clear
         </button>
-        <button
-          onClick={onSubmit}
-          disabled={lines.length === 0}
-          className="btn-primary col-span-2 !py-4 !text-lg"
-        >
-          {submitLabel}
-        </button>
+        {showSubmit && (
+          <button
+            onClick={onSubmit}
+            disabled={lines.length === 0}
+            className="btn-primary col-span-2 !py-4 !text-lg"
+          >
+            {submitLabel}
+          </button>
+        )}
       </div>
     </>
   );
@@ -904,26 +1032,45 @@ function OptionsModal({
   );
 }
 
-function CheckoutModal({
+/**
+ * Who is paying, and how — the last step before an order exists.
+ *
+ * On a laptop this sits in the cart itself, under the items, so taking an
+ * order is one screen and one button; on a phone there is no room beside the
+ * menu, so the same form is shown in a sheet. Hence a plain form here and a
+ * modal around it below, rather than one component that is always a dialog.
+ */
+function CheckoutForm({
   branchId,
   lines,
   mode,
-  onClose,
   onDone,
+  autoFocusPhone = false,
 }: {
   branchId: string;
   lines: Line[];
   mode: "PARCEL" | "DINE_IN";
-  onClose: () => void;
-  onDone: (orderId: string, payLater: boolean, placed?: { orderId: string; orderNumber: string; total: number; kind: string }) => void;
+  autoFocusPhone?: boolean;
+  onDone: (
+    orderId: string,
+    payLater: boolean,
+    placed: { orderId: string; orderNumber: string; total: number; kind: string },
+    print: boolean
+  ) => void;
 }) {
   const [search, setSearch] = useState("");
   const [hits, setHits] = useState<CustomerHit[]>([]);
   const [picked, setPicked] = useState<CustomerHit | null>(null);
   const [name, setName] = useState("");
-  // The walk-in who does not want to give a number. Billing them is the whole
-  // transaction: no account, no points, no SMS, and nothing to chase later.
-  const [guest, setGuest] = useState(false);
+  /*
+   * A guest unless a number is typed.
+   *
+   * Most people at the counter want their food, not an account, and asking
+   * every one of them for a number is what actually slows the queue. The box
+   * is still right there: the first digit turns the bill into that customer's,
+   * and emptying it goes back to a guest.
+   */
+  const [guest, setGuest] = useState(true);
   // LATER: the customer waits for the parcel and pays when they collect it.
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "ONLINE" | "KHATA" | "LATER">("CASH");
   const payLater = paymentMethod === "LATER";
@@ -961,7 +1108,7 @@ function CheckoutModal({
     if (exact) setPicked(exact);
   }, [hits, search, picked]);
 
-  const place = async () => {
+  const place = async (print: boolean) => {
     setBusy(true);
     setError(null);
     try {
@@ -994,26 +1141,29 @@ function CheckoutModal({
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
-      // Before the alert(), not after: alert() blocks the thread until it is
-      // dismissed, so a tone queued behind it would arrive far too late.
       playTone("success");
-      alert(
+      /*
+       * What just happened, for the banner across the top of the counter.
+       * This used to be an alert(): a blocking dialog between the cashier and
+       * the next customer, dismissed without being read. The banner says the
+       * same thing, keeps the order number on screen, and has the bill on it.
+       */
+      const kind =
         mode === "DINE_IN"
-          ? `Tab opened · ${d.orderNumber} · ${inr(d.total)} so far`
+          ? "Table open"
           : +discountValue > 0 && d.discount > 0
-            ? `Order ${d.orderNumber} placed · ${inr(d.total)} after ${inr(d.discount)} off`
-          : paymentMethod === "KHATA"
-            ? `Order ${d.orderNumber} placed · ${inr(Math.max(d.total - (+paidNow || 0), 0))} added to khata`
-            : payLater
-              ? `Order ${d.orderNumber} placed · collect ${inr(d.total)} when they take the parcel`
-              : `Order ${d.orderNumber} placed · ${inr(d.total)}`
+            ? `Paid · ${inr(d.discount)} off`
+            : paymentMethod === "KHATA"
+              ? `${inr(Math.max(d.total - (+paidNow || 0), 0))} on khata`
+              : payLater
+                ? "To collect"
+                : "Paid";
+      onDone(
+        d.orderId,
+        mode !== "DINE_IN" && payLater,
+        { orderId: d.orderId, orderNumber: d.orderNumber, total: d.total, kind },
+        print
       );
-      onDone(d.orderId, mode !== "DINE_IN" && payLater, {
-        orderId: d.orderId,
-        orderNumber: d.orderNumber,
-        total: d.total,
-        kind: mode === "DINE_IN" ? "Table open" : payLater ? "To collect" : "Paid",
-      });
     } catch (e) {
       playTone("error");
       setError(e instanceof Error ? e.message : "Could not place the order");
@@ -1026,7 +1176,6 @@ function CheckoutModal({
   const ready = guest || picked !== null || search.length === 10;
 
   return (
-    <Modal open onClose={onClose} title="Customer & payment" wide>
       <div className="space-y-4">
         {/* One box, not two. The cashier types the number; if we already know
             it the customer appears to be tapped, and if we do not, that same
@@ -1040,7 +1189,7 @@ function CheckoutModal({
               type="button"
               aria-pressed={guest}
               onClick={() => {
-                setGuest((g) => !g);
+                setGuest(true);
                 setPicked(null);
                 setSearch("");
                 setName("");
@@ -1052,15 +1201,6 @@ function CheckoutModal({
               🚶 Guest — no number
             </button>
           </div>
-          {guest ? (
-            <p className="mt-2 rounded-xl border border-cream-300 bg-cream-100 px-3 py-2 text-sm">
-              Billing as <strong>Guest</strong>. No points, no SMS, and it cannot go on khata —
-              everything else works as usual.{" "}
-              <button type="button" className="underline font-semibold" onClick={() => setGuest(false)}>
-                take their number instead
-              </button>
-            </p>
-          ) : (
           <div className="flex mt-1.5">
             <span className="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-cream-300 bg-cream-100 text-sm font-semibold">
               +91
@@ -1068,17 +1208,26 @@ function CheckoutModal({
             <input
               id="c-search"
               className="input !rounded-l-none"
-              autoFocus
+              autoFocus={autoFocusPhone}
               inputMode="numeric"
               maxLength={10}
-              placeholder="98XXXXXXXX"
+              placeholder={guest ? "Guest — tap to add a number" : "98XXXXXXXX"}
               value={search}
               onChange={(e) => {
-                setSearch(e.target.value.replace(/\D/g, "").slice(0, 10));
+                const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
+                setSearch(digits);
                 setPicked(null);
+                // The box decides: a number in it is a customer, an empty one
+                // is a guest. Nothing else has to be tapped either way.
+                setGuest(digits.length === 0);
               }}
             />
           </div>
+          {guest && (
+            <p className="mt-1.5 text-xs text-maroon-800/60">
+              No number — billed as <strong>Guest</strong>. No points, no SMS, and it cannot go on
+              khata. Start typing a number to bill a customer instead.
+            </p>
           )}
           {!guest && hits.length > 0 && !picked && (
             <ul className="mt-2 border border-cream-300 rounded-xl divide-y divide-cream-200 overflow-hidden">
@@ -1216,10 +1365,44 @@ function CheckoutModal({
         </div>
 
         <ErrorBox message={error} />
-        <button onClick={place} disabled={busy || !ready} className="btn-primary w-full !py-4">
-          {busy ? "Placing…" : mode === "DINE_IN" ? "Open tab" : paymentMethod === "KHATA" ? "Place order on khata" : "Place order"}
-        </button>
+        {/* Two ways out, because a parcel usually wants a bill in the bag and
+            a table does not. "Place & print" saves going and finding the order
+            again afterwards just to print it. */}
+        <div className="grid gap-2">
+          <button onClick={() => place(false)} disabled={busy || !ready} className="btn-primary w-full !py-4">
+            {busy ? "Placing…" : mode === "DINE_IN" ? "Open tab" : paymentMethod === "KHATA" ? "Place order on khata" : "Place order"}
+          </button>
+          <button
+            onClick={() => place(true)}
+            disabled={busy || !ready}
+            className="btn-secondary w-full !min-h-[46px]"
+          >
+            🧾 {mode === "DINE_IN" ? "Open tab & print" : "Place & print bill"}
+          </button>
+        </div>
       </div>
+  );
+}
+
+/** The same form in a sheet, for a phone, where the cart has no room beside it. */
+function CheckoutModal({
+  onClose,
+  ...rest
+}: {
+  branchId: string;
+  lines: Line[];
+  mode: "PARCEL" | "DINE_IN";
+  onClose: () => void;
+  onDone: (
+    orderId: string,
+    payLater: boolean,
+    placed: { orderId: string; orderNumber: string; total: number; kind: string },
+    print: boolean
+  ) => void;
+}) {
+  return (
+    <Modal open onClose={onClose} title="Customer & payment" wide>
+      <CheckoutForm {...rest} autoFocusPhone />
     </Modal>
   );
 }
@@ -1724,10 +1907,13 @@ function CollectModal({
   parcel,
   onClose,
   onDone,
+  onAddItems,
 }: {
   parcel: Pickup;
   onClose: () => void;
   onDone: (settled: { orderId: string; orderNumber: string; total: number }) => void;
+  /** They want one more thing while they are standing here. */
+  onAddItems: () => void;
 }) {
   const pay = pickupPayment(parcel);
   const [method, setMethod] = useState<"CASH" | "ONLINE" | "KHATA">("CASH");
@@ -1833,6 +2019,12 @@ function CollectModal({
           className="btn-primary w-full !py-4 !text-lg"
         >
           {busy ? "Saving…" : label}
+        </button>
+        {/* Asked for at the last moment, which is when it usually is. The
+            items join this bill rather than starting a second order, and if
+            the parcel is already paid for only the new ones are charged. */}
+        <button onClick={onAddItems} disabled={busy} className="btn-secondary w-full !min-h-[46px]">
+          ➕ Add more items{parcel.paymentStatus === "PAID" ? " (charge the extra only)" : ""}
         </button>
       </div>
     </Modal>
