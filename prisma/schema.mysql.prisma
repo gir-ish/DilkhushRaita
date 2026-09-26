@@ -128,6 +128,7 @@ model Branch {
   orders         Order[]
   staff          StaffBranchAssignment[]
   carts          Cart[]
+  expenses       Expense[]
 }
 
 model BranchHours {
@@ -716,4 +717,37 @@ model ContactList {
   contacts Contact[]
 
   @@index([uploadedAt])
+}
+
+/**
+ * One thing the shop paid for: a sack of onions, a gas cylinder, a helper's
+ * wages, the electricity bill.
+ *
+ * The owner's own account book, and deliberately not the customer khata —
+ * that is money owed TO the shop, this is money going out of it. Kept per day
+ * rather than per invoice, because that is how it is actually written down at
+ * the end of a shift, and per branch, with null meaning it covers both.
+ */
+model Expense {
+  id       String   @id @default(cuid())
+  /** The day it belongs to: midnight, Indian time. */
+  date     DateTime
+  branchId String?
+  branch   Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  category String // see EXPENSE_CATEGORIES
+  /** Who it went to — the supplier, or the helper's name. */
+  payee    String?
+  note     String?
+  amount   Float
+  paidBy   String   @default("CASH") // CASH | UPI | CARD | BANK
+  /** Taken now, paid later: the shop's own credit with a supplier. */
+  unpaid   Boolean  @default(false)
+
+  createdBy String? // the staff member's name at the time
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+  @@index([branchId, date])
+  @@index([category, date])
 }

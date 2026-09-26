@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { handler, HttpError, requireStaff } from "@/lib/guard";
 import { audit } from "@/lib/audit";
-import { importContacts, UNKNOWN_NAME } from "@/lib/contacts-csv";
+import { cleanName, importContacts, looksFake, UNKNOWN_NAME } from "@/lib/contacts-csv";
+import { normalizePhone } from "@/lib/utils";
 
 /**
  * The contact book: numbers from uploaded phone-book exports, kept so a
@@ -87,6 +88,32 @@ function safeJson(raw: string): { raw: string; why: string }[] {
 
 export const POST = handler(async (req: Request) => {
   const s = await requireStaff("MARKETING");
+
+  /*
+   * One number, typed in by hand — a customer who gives it over the counter,
+   * or one missed by an export. The same check a file gets, and the same
+   * refusal to hold the same number twice: the book is only worth trusting if
+   * nothing can get in unchecked.
+   */
+  if ((req.headers.get("content-type") ?? "").includes("application/json")) {
+    const body = await req.json().catch(() => null);
+    const phone = normalizePhone(String(body?.phone ?? ""));
+    if (!phone)
+      throw new HttpError(400, "That is not an Indian mobile number \u2014 ten digits starting 6 to 9.");
+    if (looksFake(phone)) throw new HttpError(400, "That number is not a real one.");
+
+    const already = await db.contact.findUnique({ where: { phone } });
+    if (already)
+      throw new HttpError(
+        409,
+        `${phone} is already in the contact book${already.name ? ` as ${already.name}` : ""}.`
+      );
+
+    const name = cleanName([String(body?.name ?? "")]) ?? UNKNOWN_NAME;
+    const saved = await db.contact.create({ data: { phone, name } });
+    await audit({ uid: s.uid, name: s.name }, "CONTACT_ADDED", "Contact", saved.id, { phone, name });
+    return NextResponse.json({ ok: true, contact: { id: saved.id, phone, name } });
+  }
 
   const form = await req.formData().catch(() => null);
   if (!form) throw new HttpError(400, "Send the CSV as a file upload.");

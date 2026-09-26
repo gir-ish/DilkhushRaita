@@ -63,6 +63,10 @@ export function ContactBook() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UploadResult | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  // Adding one by hand: a number given over the counter, or one an export missed.
+  const [newPhone, setNewPhone] = useState("");
+  const [newName, setNewName] = useState("");
+  const [added, setAdded] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
@@ -106,6 +110,33 @@ export function ContactBook() {
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const addOne = async () => {
+    setBusy(true);
+    setError(null);
+    setAdded(null);
+    try {
+      const r = await fetch("/api/admin/marketing/contacts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: newPhone, name: newName }),
+      });
+      const d = await r.json();
+      // 409 is the interesting one: the number is already here, so nothing is
+      // added and the book does not gain a second copy of the same person.
+      if (!r.ok) throw new Error(d.error);
+      setAdded(`${d.contact.name} \u00b7 ${d.contact.phone} added.`);
+      setNewPhone("");
+      setNewName("");
+      setQ("");
+      setPage(0);
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not add that number");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -155,6 +186,49 @@ export function ContactBook() {
         landlines, foreign numbers and half-typed ones are left out, and the same number twice
         becomes one. Nothing is sent by uploading.
       </p>
+
+      {/* One number at a time, beside the file. Same checks, and it refuses a
+          number the book already holds rather than keeping two of them. */}
+      <div className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-cream-300 bg-cream-100/60 p-3">
+        <div>
+          <label className="label !mb-1" htmlFor="cb-phone">Add one number</label>
+          <div className="flex">
+            <span className="inline-flex items-center rounded-l-xl border border-r-0 border-cream-300 bg-cream-100 px-3 text-sm font-semibold">
+              +91
+            </span>
+            <input
+              id="cb-phone"
+              className="input !rounded-l-none !w-40"
+              inputMode="numeric"
+              maxLength={10}
+              placeholder="98XXXXXXXX"
+              value={newPhone}
+              onChange={(e) => setNewPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+              onKeyDown={(e) => e.key === "Enter" && newPhone.length === 10 && !busy && addOne()}
+            />
+          </div>
+        </div>
+        <div>
+          <label className="label !mb-1" htmlFor="cb-name">Name (optional)</label>
+          <input
+            id="cb-name"
+            className="input !w-48"
+            maxLength={60}
+            placeholder="Greeted as Customer if blank"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && newPhone.length === 10 && !busy && addOne()}
+          />
+        </div>
+        <button
+          onClick={addOne}
+          disabled={busy || newPhone.length !== 10}
+          className="btn-outline !min-h-[44px]"
+        >
+          ➕ Add
+        </button>
+        {added && <span className="text-sm font-semibold text-leaf-600">✓ {added}</span>}
+      </div>
 
       <ErrorBox message={error} />
 

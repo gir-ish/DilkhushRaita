@@ -19,6 +19,8 @@ const NAV = [
   ["/admin/coupons", "🎟️ Marketing", ["OWNER", "MARKETING"]],
   ["/admin/customers", "👥 Customers", ["OWNER", "BRANCH_MANAGER", "MARKETING"]],
   ["/admin/reports", "📈 Reports", ["OWNER", "BRANCH_MANAGER", "CASHIER", "MARKETING"]],
+  // The shop's own hisaab: money going out, not the customer khata.
+  ["/admin/expenses", "📒 Accounts", ["OWNER"]],
   // Owner only: these accounts are the keys to everything above.
   ["/admin/staff", "🧑‍🍳 Staff", ["OWNER"]],
 ] as const;
