@@ -88,6 +88,9 @@ export interface QuoteResult {
   /** Live scheme rates, so the browser never has to hardcode what a point is worth. */
   pointValueRupees: number;
   minPointsToRedeem: number;
+  /** The ceilings, so the checkout can say why it is not all of them. */
+  maxRedeemPerOrder: number;
+  maxRedeemPercent: number;
   totals: ReturnType<typeof computeTotals>;
   paymentMethod: "COD" | "ONLINE";
   scheduledFor: Date | null;
@@ -497,6 +500,8 @@ export async function buildQuote(
     pointsRedeemed,
     pointValueRupees: rates.pointValueRupees,
     minPointsToRedeem: rates.minPointsToRedeem,
+    maxRedeemPerOrder: rates.maxRedeemPerOrder,
+    maxRedeemPercent: rates.maxRedeemPercent,
     totals,
     paymentMethod,
     scheduledFor,

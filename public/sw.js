@@ -1,6 +1,6 @@
 /* DilKhush Dhaba service worker: cache app shell, offline fallback, update flow. */
 /* Bumped when SHELL changes: activate deletes every cache that is not this one. */
-const CACHE = "dk-shell-v5";
+const CACHE = "dk-shell-v6";
 const SHELL = [
   "/offline.html",
   // Two installable apps, two manifests: the shop, and the staff dashboard.
@@ -63,5 +63,63 @@ self.addEventListener("fetch", (e) => {
         if (e.request.mode === "navigate") return caches.match("/offline.html");
         return Response.error();
       })
+  );
+});
+
+/* ------------------------------------------------------------------ push */
+
+/*
+ * A new order, delivered to a browser that may be closed.
+ *
+ * The push service wakes this worker even with no tab open, which is the
+ * whole point: the dashboard's chime needs a page on screen, and at nine in
+ * the evening there is not one. Everything below has to survive that — no
+ * page, no React, nothing but this file.
+ */
+self.addEventListener("push", (e) => {
+  let data = { title: "New order", body: "Open the dashboard to see it.", url: "/admin/online" };
+  try {
+    if (e.data) data = { ...data, ...e.data.json() };
+  } catch {
+    // A push with no payload, or one we cannot read, is still worth showing:
+    // something happened, and the dashboard will say what.
+  }
+
+  e.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: "/icon-admin-192.png",
+      badge: "/icon-admin-192.png",
+      // Survives being ignored: an order alert must stay on the lock screen
+      // until somebody looks at it.
+      requireInteraction: true,
+      // Android only, and silently ignored elsewhere.
+      vibrate: [200, 100, 200, 100, 200],
+      tag: data.tag || "dk-order",
+      renotify: true,
+      data: { url: data.url || "/admin/online" },
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || "/admin/online";
+
+  /*
+   * Reuse a dashboard tab if one is already open rather than piling up a new
+   * one per order — and focus it, because on a phone the browser may be in the
+   * background even though the tab exists.
+   */
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if (client.url.includes("/admin") && "focus" in client) {
+          client.navigate(url).catch(() => {});
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(url);
+    })
   );
 });

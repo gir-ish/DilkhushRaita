@@ -25,6 +25,8 @@ export async function loyaltyRates(): Promise<LoyaltyRates> {
           pointsPer10Rupees: row.pointsPer10Rupees,
           pointValueRupees: row.pointValueRupees,
           minPointsToRedeem: row.minPointsToRedeem,
+          maxRedeemPerOrder: row.maxRedeemPerOrder,
+          maxRedeemPercent: row.maxRedeemPercent,
         }
       : DEFAULT_LOYALTY_RATES;
     cache = { rates, at: Date.now() };
@@ -46,6 +48,8 @@ export async function loyaltySettingsRow() {
       pointsPer10Rupees: DEFAULT_LOYALTY_RATES.pointsPer10Rupees,
       pointValueRupees: DEFAULT_LOYALTY_RATES.pointValueRupees,
       minPointsToRedeem: DEFAULT_LOYALTY_RATES.minPointsToRedeem,
+      maxRedeemPerOrder: DEFAULT_LOYALTY_RATES.maxRedeemPerOrder,
+      maxRedeemPercent: DEFAULT_LOYALTY_RATES.maxRedeemPercent,
     },
   });
 }

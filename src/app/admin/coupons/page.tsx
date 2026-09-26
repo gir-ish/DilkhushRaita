@@ -388,7 +388,7 @@ function CouponModal({
  * "0.5" on its own does not read as "we give away 5% of revenue".
  */
 function PointValueEditor() {
-  const [f, setF] = useState<{ pointsPer10Rupees: number; pointValueRupees: number; minPointsToRedeem: number } | null>(null);
+  const [f, setF] = useState<{ pointsPer10Rupees: number; pointValueRupees: number; minPointsToRedeem: number; maxRedeemPerOrder: number; maxRedeemPercent: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -400,6 +400,8 @@ function PointValueEditor() {
         pointsPer10Rupees: d.settings.pointsPer10Rupees,
         pointValueRupees: d.settings.pointValueRupees,
         minPointsToRedeem: d.settings.minPointsToRedeem,
+        maxRedeemPerOrder: d.settings.maxRedeemPerOrder ?? 0,
+        maxRedeemPercent: d.settings.maxRedeemPercent ?? 0,
       }))
       .catch(() => setError("Could not load point settings"));
   }, []);
@@ -451,10 +453,41 @@ function PointValueEditor() {
             onChange={(e) => setF({ ...f, pointValueRupees: +e.target.value })} />
         </div>
         <div>
-          <label className="label" htmlFor="lp-min">Minimum points before redeeming</label>
+          <label className="label" htmlFor="lp-min">Least they must hold to redeem</label>
           <input id="lp-min" type="number" step="10" min={1} className="input"
             value={f.minPointsToRedeem}
             onChange={(e) => setF({ ...f, minPointsToRedeem: +e.target.value })} />
+          <p className="mt-1 text-xs text-maroon-800/50">
+            A floor on the balance — not a limit on how many are spent.
+          </p>
+        </div>
+      </div>
+
+      {/* Without a ceiling, a customer who has been saving for months can
+          clear an entire bill in one order. These two put a lid on it; the
+          tighter of the two applies, and 0 means no limit. */}
+      <div className="grid gap-3 sm:grid-cols-2 text-sm mt-3">
+        <div>
+          <label className="label" htmlFor="lp-max">Most points usable on one order</label>
+          <input id="lp-max" type="number" step="10" min={0} className="input"
+            value={f.maxRedeemPerOrder}
+            onChange={(e) => setF({ ...f, maxRedeemPerOrder: Math.max(0, +e.target.value) })} />
+          <p className="mt-1 text-xs text-maroon-800/50">
+            {f.maxRedeemPerOrder > 0
+              ? `At most ${inr(f.maxRedeemPerOrder * f.pointValueRupees)} off any one bill.`
+              : "0 — no limit; they can spend the whole balance."}
+          </p>
+        </div>
+        <div>
+          <label className="label" htmlFor="lp-maxpc">…or at most this much of the bill (%)</label>
+          <input id="lp-maxpc" type="number" step="5" min={0} max={100} className="input"
+            value={f.maxRedeemPercent}
+            onChange={(e) => setF({ ...f, maxRedeemPercent: Math.min(100, Math.max(0, +e.target.value)) })} />
+          <p className="mt-1 text-xs text-maroon-800/50">
+            {f.maxRedeemPercent > 0
+              ? `Points can pay for at most ${f.maxRedeemPercent}% of an order.`
+              : "0 — no share limit."}
+          </p>
         </div>
       </div>
 

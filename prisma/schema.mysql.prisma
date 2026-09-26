@@ -47,6 +47,7 @@ model User {
   notifications      Notification[]
   branchAssignments  StaffBranchAssignment[]
   staffDevices       StaffDevice[]
+  pushSubs           PushSubscription[]
   deliveryAgent      DeliveryAgent?
   carts              Cart[]
 }
@@ -458,7 +459,12 @@ model LoyaltySettings {
   id                String   @id @default("singleton")
   pointsPer10Rupees Float    @default(1)
   pointValueRupees  Float    @default(0.5)
+  /** A floor on the balance: below this, points cannot be spent at all. */
   minPointsToRedeem Int      @default(100)
+  /** A ceiling per order, in points. 0 means no ceiling. */
+  maxRedeemPerOrder Int      @default(0)
+  /** …and as a share of the bill, 1-100. 0 means no share limit. */
+  maxRedeemPercent  Int      @default(0)
   updatedAt         DateTime @updatedAt
 }
 
@@ -750,4 +756,35 @@ model Expense {
   @@index([date])
   @@index([branchId, date])
   @@index([category, date])
+}
+
+/**
+ * A browser that has agreed to be woken for new orders.
+ *
+ * The dashboard's chime only works while a tab is open, which is no use at
+ * nine in the evening with the laptop shut. A push subscription is the
+ * browser's own permission slip, held by its push service (Google's or
+ * Apple's), and a message sent to that endpoint reaches the device whether or
+ * not the site is open.
+ *
+ * One row per browser, not per person: an owner with a phone and a till has
+ * two, and revoking one must not silence the other.
+ */
+model PushSubscription {
+  id       String @id @default(cuid())
+  /** The push service's URL for this browser. Unique: it IS the device. */
+  endpoint String @unique
+  p256dh   String
+  auth     String
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  label String @default("")
+  /** Consecutive send failures; a browser that has been reinstalled is gone. */
+  failures   Int      @default(0)
+  lastSentAt DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
 }

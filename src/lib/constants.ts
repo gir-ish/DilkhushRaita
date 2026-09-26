@@ -145,6 +145,9 @@ export const TICKET_TYPES = [
 export const POINTS_PER_10_RUPEES = 1;
 export const POINT_VALUE_RUPEES = 0.5;
 export const MIN_POINTS_TO_REDEEM = 100;
+/** No ceiling by default, which is what the shop had before there was one. */
+export const MAX_REDEEM_PER_ORDER = 0;
+export const MAX_REDEEM_PERCENT = 0;
 
 // Ten, because the DLT-approved SMS tells the customer ten. The template is the
 // harder of the two to change, and a code that dies while the message still

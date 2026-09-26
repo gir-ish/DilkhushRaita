@@ -16,6 +16,9 @@ const Body = z.object({
   pointsPer10Rupees: z.number().min(0).max(100),
   pointValueRupees: z.number().min(0.01).max(100),
   minPointsToRedeem: z.number().int().min(1).max(100000),
+  /** 0 = no ceiling, which is what it was before there was one. */
+  maxRedeemPerOrder: z.number().int().min(0).max(1000000).default(0),
+  maxRedeemPercent: z.number().int().min(0).max(100).default(0),
 });
 
 export const PUT = handler(async (req: Request) => {

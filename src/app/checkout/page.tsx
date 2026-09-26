@@ -30,6 +30,8 @@ interface QuoteDto {
   pointsRedeemed: number;
   pointValueRupees: number;
   minPointsToRedeem: number;
+  maxRedeemPerOrder: number;
+  maxRedeemPercent: number;
   tierName: string | null;
   freeDelivery: boolean;
   // What the shop is accepting right now, and why not — set by the owner.
@@ -618,11 +620,25 @@ export default function CheckoutPage() {
               the owner can reprice points from the dashboard, and this line has
               to quote whatever they set. */}
           {quote && quote.pointsBalance >= quote.minPointsToRedeem && (
-            <label className="flex items-center gap-2 mt-3 text-sm cursor-pointer">
-              <input type="checkbox" className="h-4 w-4 accent-maroon-600" checked={redeemPoints} onChange={(e) => setRedeemPoints(e.target.checked)} />
-              Redeem {quote.pointsRedeemed > 0 ? quote.pointsRedeemed : ""} DilKhush points
-              (balance: {quote.pointsBalance} = {inr(quote.pointsBalance * quote.pointValueRupees)})
-            </label>
+            <>
+              <label className="flex items-center gap-2 mt-3 text-sm cursor-pointer">
+                <input type="checkbox" className="h-4 w-4 accent-maroon-600" checked={redeemPoints} onChange={(e) => setRedeemPoints(e.target.checked)} />
+                Redeem {quote.pointsRedeemed > 0 ? quote.pointsRedeemed : ""} DilKhush points
+                (balance: {quote.pointsBalance} = {inr(quote.pointsBalance * quote.pointValueRupees)})
+              </label>
+              {/* Say so when only part of the balance can go in, rather than
+                  letting the total quietly disagree with the balance. */}
+              {redeemPoints && quote.pointsRedeemed < quote.pointsBalance && (
+                <p className="text-xs text-maroon-800/60 mt-1">
+                  {quote.maxRedeemPerOrder > 0 && quote.pointsRedeemed >= quote.maxRedeemPerOrder
+                    ? `Up to ${quote.maxRedeemPerOrder} points on one order.`
+                    : quote.maxRedeemPercent > 0
+                      ? `Points can cover up to ${quote.maxRedeemPercent}% of an order.`
+                      : "Points never pay more than the bill."}{" "}
+                  The rest stays on your account.
+                </p>
+              )}
+            </>
           )}
           {quote?.tierName && (
             <p className="text-xs text-mustard-600 font-semibold mt-2">

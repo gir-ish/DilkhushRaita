@@ -6,6 +6,7 @@ import { buildQuote } from "@/lib/quote";
 import { nextOrderNumber } from "@/lib/order-number";
 import { rateLimit } from "@/lib/rate-limit";
 import { notifyUser } from "@/lib/notify";
+import { pushNewOrder } from "@/lib/push";
 import { createGatewayOrder, onlinePaymentsEnabled, paymentProvider } from "@/lib/payments";
 
 const Body = z.object({
@@ -266,6 +267,20 @@ export const POST = handler(async (req: Request) => {
     "Order placed ✅",
     `Order ${order.orderNumber} has been sent to ${quote.branch.name}. We'll confirm it shortly.`
   );
+
+  /*
+   * Wake whoever is on. Not awaited: the order is already saved, and a push
+   * service having a bad minute must not turn that into an error on the
+   * customer's screen.
+   */
+  void pushNewOrder({
+    id: order.id,
+    orderNumber: order.orderNumber,
+    branchId: order.branchId,
+    total: order.total,
+    type: order.type,
+    customerName: user.name ?? null,
+  });
 
   return NextResponse.json({ ok: true, orderId: order.id, orderNumber: order.orderNumber });
 });

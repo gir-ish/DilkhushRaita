@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { db } from "@/lib/db";
 import { notifyUser } from "@/lib/notify";
+import { pushNewOrder } from "@/lib/push";
 
 /**
  * Modular payment provider. Select with the PAYMENT_PROVIDER env variable:
@@ -231,7 +232,7 @@ export async function markOrderPaid(opts: {
 }): Promise<MarkPaidResult> {
   const order = await db.order.findUnique({
     where: { id: opts.orderId },
-    include: { payment: true, branch: { select: { name: true } } },
+    include: { payment: true, branch: { select: { name: true } }, user: { select: { name: true } } },
   });
   if (!order) return "not-found";
 
@@ -272,5 +273,19 @@ export async function markOrderPaid(opts: {
     "Payment received ✅",
     `Order ${order.orderNumber} is paid and has been sent to ${order.branch.name}. We'll confirm it shortly.`
   );
+
+  /*
+   * Only now, not when the order row was written. An online order that is
+   * never paid for is hidden from every screen, and waking the kitchen for
+   * one would be waking them for nothing.
+   */
+  void pushNewOrder({
+    id: order.id,
+    orderNumber: order.orderNumber,
+    branchId: order.branchId,
+    total: order.total,
+    type: order.type,
+    customerName: order.user?.name ?? null,
+  });
   return "paid";
 }

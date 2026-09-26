@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ErrorBox, Spinner } from "@/components/ui";
 import { inr } from "@/lib/utils";
+import { OrderAlerts } from "@/components/admin/order-alerts";
 
 interface Summary {
   revenue: number; totalOrders: number; completedOrders: number; cancelledOrders: number;
@@ -52,6 +53,12 @@ export default function AdminOverview() {
             <option key={b.id} value={b.id}>{b.name}</option>
           ))}
         </select>
+      </div>
+
+      {/* Above the numbers on purpose: being woken for an order matters more
+          than yesterday's revenue, and nobody scrolls to find a setting. */}
+      <div className="mb-4">
+        <OrderAlerts />
       </div>
 
       <ErrorBox message={error} />
