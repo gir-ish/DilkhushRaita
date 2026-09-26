@@ -683,3 +683,48 @@ model OtpCode {
 
   @@index([phone, createdAt])
 }
+
+/**
+ * A number from an uploaded phone book, kept so campaigns can be sent to
+ * people who have not ordered through the website yet.
+ *
+ * Separate from User on purpose: these are not accounts. Nobody has signed
+ * in, agreed to anything or earned a point, and mixing them into the customer
+ * table would quietly inflate every count built on it.
+ */
+model Contact {
+  id         String   @id @default(cuid())
+  phone      String   @unique // +91XXXXXXXXXX, validated on the way in
+  name       String? // null only if never known; uploads write "Customer"
+  optedOut   Boolean  @default(false) // asked not to be texted again
+  note       String?
+  // The upload it arrived in, kept for the history.
+  listId     String?
+  list       ContactList? @relation(fields: [listId], references: [id], onDelete: SetNull)
+  lastSentAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([createdAt])
+  @@index([listId])
+}
+
+/** One upload: what the file was, and what became of every row in it. */
+model ContactList {
+  id         String   @id @default(cuid())
+  filename   String
+  uploadedAt DateTime @default(now())
+  uploadedBy String? // the staff member's name at the time
+
+  rowsRead     Int    @default(0)
+  added        Int    @default(0) // numbers we had never seen
+  updated      Int    @default(0) // already known; a name filled in
+  duplicates   Int    @default(0) // the same number more than once in the file
+  rejected     Int    @default(0)
+  // A sample of what was thrown out and why, for the history page.
+  rejectedJson String
+
+  contacts Contact[]
+
+  @@index([uploadedAt])
+}

@@ -33,8 +33,13 @@ const Body = z.object({
   minPoints: z.number().int().min(1).max(10_000_000).default(1),
   /** Whatever was pasted or uploaded. Parsed and validated server-side. */
   recipients: z.string().max(200_000).default(""),
-  /** "customers" builds the list from the shop's own customers instead. */
-  source: z.enum(["paste", "customers"]).default("paste"),
+  /**
+   * Where the list comes from: pasted in, the shop's own customers, or the
+   * contact book built from uploaded phone-book exports.
+   */
+  source: z.enum(["paste", "customers", "contacts"]).default("paste"),
+  /** Contact book: only numbers that arrived in this upload. */
+  listId: z.string().optional(),
   dryRun: z.boolean().default(true),
   /** What the dashboard showed before the operator pressed send. */
   expect: z.object({ count: z.number().int(), credits: z.number().int() }).optional(),
@@ -79,7 +84,36 @@ export const POST = handler(async (req: Request) => {
     profile: { select: { notifyPromos: true, loyaltyPoints: true } },
   } as const;
 
-  if (body.source === "customers") {
+  if (body.source === "contacts") {
+    /*
+     * Every number here was validated when it was uploaded, so nothing is
+     * re-checked and nothing is thrown away at send time. Two things still
+     * apply: a contact who asked not to be texted, and a customer opt-out
+     * belonging to the same number, since the person is the same person
+     * however their number reached the list.
+     */
+    const contacts = await db.contact.findMany({
+      where: { optedOut: false, ...(body.listId ? { listId: body.listId } : {}) },
+      orderBy: { createdAt: "asc" },
+      take: MAX_PER_CAMPAIGN,
+      select: { phone: true, name: true },
+    });
+    const known = await db.user.findMany({
+      where: { phone: { in: contacts.map((c) => c.phone) }, role: "CUSTOMER" },
+      select: customerSelect,
+    });
+    const byPhone = new Map(known.map((u) => [u.phone!, u]));
+    recipients = contacts.map((c) => {
+      const u = byPhone.get(c.phone);
+      return {
+        phone: c.phone,
+        // Their own account's name wins: they chose it, the phone book did not.
+        name: u?.name ?? c.name,
+        points: u?.profile?.loyaltyPoints ?? null,
+        optedOut: u?.profile?.notifyPromos === false,
+      };
+    });
+  } else if (body.source === "customers") {
     const customers = await db.user.findMany({
       where: { role: "CUSTOMER", blocked: false, phone: { not: null } },
       select: customerSelect,
@@ -179,6 +213,12 @@ export const POST = handler(async (req: Request) => {
     }
   }
 
+  if (body.source === "contacts" && sent > 0)
+    await db.contact.updateMany({
+      where: { phone: { in: plan.groups.flatMap((g) => g.numbers) } },
+      data: { lastSentAt: new Date() },
+    });
+
   await audit(
     { uid: session.uid, name: session.name },
     "MARKETING_CAMPAIGN_SENT",
@@ -187,6 +227,7 @@ export const POST = handler(async (req: Request) => {
     {
       template: body.template,
       templateId: template.id,
+      source: body.source,
       recipients: plan.recipients,
       sent,
       credits: creditsSpent,

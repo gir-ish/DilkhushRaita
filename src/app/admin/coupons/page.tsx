@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { SmsCampaign } from "@/components/admin/sms-campaign";
+import { ContactBook } from "@/components/admin/contact-book";
 import { ErrorBox, Modal, Spinner } from "@/components/ui";
 import { inr } from "@/lib/utils";
 
@@ -165,6 +166,8 @@ export default function MarketingPage() {
 
       <PointValueEditor />
       <SmsCampaign />
+
+      <ContactBook />
       {tiers && <TierEditor tiers={tiers} onSaved={load} />}
       {showNew && <CouponModal onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); load(); }} />}
       {editing && (

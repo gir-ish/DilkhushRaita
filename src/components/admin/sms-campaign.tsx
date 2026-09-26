@@ -70,7 +70,9 @@ export function SmsCampaign() {
   const [couponId, setCouponId] = useState("");
   // Points Reminder: only customers with at least this many points.
   const [minPoints, setMinPoints] = useState("1");
-  const [source, setSource] = useState<"paste" | "customers">("customers");
+  const [source, setSource] = useState<"paste" | "customers" | "contacts">("customers");
+  // Contact book: how many numbers are in it, so the choice says what it means.
+  const [book, setBook] = useState<{ sendable: number; optedOut: number } | null>(null);
   const [recipients, setRecipients] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [result, setResult] = useState<SendResult | null>(null);
@@ -78,6 +80,13 @@ export function SmsCampaign() {
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetch("/api/admin/marketing/contacts?take=1")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setBook(d.totals))
+      .catch(() => setBook(null));
+  }, []);
 
   useEffect(() => {
     fetch("/api/admin/coupons")
@@ -101,7 +110,7 @@ export function SmsCampaign() {
         template,
         couponId: template === "specialOffer" ? couponId : undefined,
         minPoints: template === "customerOffer" ? Math.max(1, Math.floor(+minPoints || 1)) : undefined,
-        recipients: source === "customers" ? "" : recipients,
+        recipients: source === "paste" ? recipients : "",
         source,
         dryRun,
         expect,
@@ -162,7 +171,7 @@ export function SmsCampaign() {
   const current = TEMPLATES.find((t) => t.key === template)!;
   const canPreview =
     !busy &&
-    (source === "customers" || recipients.trim().length > 0) &&
+    (source !== "paste" || recipients.trim().length > 0) &&
     (template !== "specialOffer" || !!couponId);
 
   return (
@@ -257,6 +266,7 @@ export function SmsCampaign() {
         {(
           [
             ["customers", "Our customers"],
+            ["contacts", "Contact book"],
             ["paste", "A list I provide"],
           ] as const
         ).map(([s, label]) => (
@@ -278,6 +288,21 @@ export function SmsCampaign() {
         <p className="mt-2 rounded-lg bg-cream-100 px-3 py-2 text-sm">
           Everyone who has ordered from you, is not blocked and has not turned promotions off.
           Each is greeted by their own first name.
+        </p>
+      ) : source === "contacts" ? (
+        <p className="mt-2 rounded-lg bg-cream-100 px-3 py-2 text-sm">
+          {book ? (
+            <>
+              The <strong>{book.sendable.toLocaleString("en-IN")}</strong> number
+              {book.sendable === 1 ? "" : "s"} in your contact book. Every one was checked when it
+              was uploaded, so nothing is spent finding out a number is wrong.
+              {book.optedOut > 0 && (
+                <> {book.optedOut} opted out {book.optedOut === 1 ? "is" : "are"} left out.</>
+              )}
+            </>
+          ) : (
+            <>Upload a phone book below to fill the contact book.</>
+          )}
         </p>
       ) : (
         <>
