@@ -1553,34 +1553,41 @@ function OpenTabs({
       {open && (
       <div className="grid sm:grid-cols-2 lg:grid-cols-1 gap-3">
         {tabs.map((t) => (
-          <div key={t.id} className="card p-3 sm:p-4 border-l-4 border-l-mustard-400">
-            <div className="flex items-start justify-between gap-2">
-              <span className="font-bold text-lg">
-                {t.tableNo ? `🪑 Table ${t.tableNo}` : "🍽️"}
-                <span className="block font-mono text-xs font-bold text-maroon-800/60">{t.orderNumber}</span>
+          <div key={t.id} className="card p-2.5 sm:p-3 border-l-4 border-l-mustard-400">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-bold text-[15px] sm:text-base truncate">
+                {t.tableNo ? `🪑 Table ${t.tableNo}` : "🍽️"}{" "}
+                <span className="font-mono text-xs font-bold text-maroon-800/60">{t.orderNumber}</span>
               </span>
-              <span className="rounded-full bg-cream-200 px-2 py-0.5 text-xs font-bold whitespace-nowrap">
+              <span className="rounded-full bg-cream-200 px-2 py-0.5 text-[10px] font-bold whitespace-nowrap shrink-0">
                 {t.rounds} round{t.rounds > 1 ? "s" : ""}
               </span>
             </div>
-            <p className="text-sm text-maroon-800/70 mt-0.5">
+            <p className="text-xs text-maroon-800/60 truncate mt-0.5">
               {t.customer.name ?? "Guest"} · {t.itemCount} item{t.itemCount === 1 ? "" : "s"}
-            </p>
-            <p className="text-xs text-maroon-800/50 truncate mt-1">
+              {" · "}
               {t.items.map((i) => `${i.qty}×${i.name}`).join(", ")}
             </p>
-            <p className="mt-2 text-2xl font-bold text-maroon-700">{inr(t.total)}</p>
-            <div className="grid grid-cols-2 gap-2 mt-3">
-              <button onClick={() => onAdd(t)} className="btn-secondary !min-h-[46px] !px-2">
-                ➕ Add items
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-lg font-bold text-maroon-700 whitespace-nowrap">{inr(t.total)}</span>
+              <button
+                onClick={() => onAdd(t)}
+                className="btn-secondary ml-auto !min-h-[42px] !px-3 !text-sm whitespace-nowrap"
+              >
+                ➕ Add
               </button>
-              <button onClick={() => onSettle(t)} className="btn-primary !min-h-[46px] !px-2">
-                💳 Bill & settle
+              <button
+                onClick={() => onSettle(t)}
+                className="btn-primary !min-h-[42px] !px-3 !text-sm whitespace-nowrap"
+              >
+                💳 Bill
               </button>
             </div>
-            <button onClick={() => onBill(t.id)} className="btn-ghost w-full !min-h-[40px] mt-2 text-sm">
-              🧾 Print running bill
-            </button>
+            <div className="mt-1.5 text-xs font-semibold text-maroon-700">
+              <button onClick={() => onBill(t.id)} className="underline hover:no-underline">
+                🧾 Print running bill
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -1929,33 +1936,43 @@ function WaitingParcels({
           return (
             <div
               key={p.id}
-              className={`card p-3 sm:p-4 border-l-4 ${p.status === "READY" ? "border-l-leaf-500" : "border-l-mustard-400"}`}
+              className={`card p-2.5 sm:p-3 border-l-4 ${p.status === "READY" ? "border-l-leaf-500" : "border-l-mustard-400"}`}
             >
-              <div className="flex items-start justify-between gap-2">
-                <span className="font-mono font-bold text-lg">🛍️ {p.orderNumber}</span>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-bold whitespace-nowrap ${stage.tone}`}>{stage.label}</span>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="font-mono font-bold text-[15px] sm:text-base truncate">
+                  🛍️ {p.orderNumber}
+                </span>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap shrink-0 ${stage.tone}`}>
+                  {stage.label}
+                </span>
               </div>
-              <p className="text-sm text-maroon-800/70 mt-0.5">
+              {/* Who and what, on one line: on a phone the second line was
+                  costing more height than it was worth. */}
+              <p className="text-xs text-maroon-800/60 truncate mt-0.5">
                 {p.customer.name ?? "Walk-in"}
                 {p.customer.phone && ` · ${p.customer.phone.replace(/^\+91/, "")}`}
-              </p>
-              <p className="text-xs text-maroon-800/50 truncate mt-1">
+                {" · "}
                 {p.items.map((i) => `${i.qty}×${i.name}`).join(", ")}
               </p>
-              <p className={`mt-2 text-xl font-bold ${pay.due ? "text-maroon-700" : "text-leaf-600"}`}>
-                {inr(p.total)} <span className="text-sm font-semibold">{pay.note}</span>
-              </p>
-              <button onClick={() => onCollect(p)} className="btn-primary w-full !min-h-[46px] mt-3">
-                {pay.due ? "💰 Collect & hand over" : "📦 Hand over"}
-              </button>
-              {/* Both on the card: a customer collecting who asks for one more
-                  thing is common enough that it should not need the parcel to
-                  be opened first. */}
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                <button onClick={() => onBill(p.id)} className="btn-ghost !min-h-[40px] text-sm">
+              <div className="mt-2 flex items-center gap-2">
+                <span className={`text-lg font-bold whitespace-nowrap ${pay.due ? "text-maroon-700" : "text-leaf-600"}`}>
+                  {inr(p.total)}{" "}
+                  <span className="text-xs font-semibold">{pay.note}</span>
+                </span>
+                <button
+                  onClick={() => onCollect(p)}
+                  className="btn-primary ml-auto !min-h-[42px] !px-3 !text-sm whitespace-nowrap"
+                >
+                  {pay.due ? "💰 Collect" : "📦 Hand over"}
+                </button>
+              </div>
+              {/* Links, not buttons: both are occasional, and a slab each was
+                  what turned this card into half a phone screen. */}
+              <div className="mt-1.5 flex gap-4 text-xs font-semibold text-maroon-700">
+                <button onClick={() => onBill(p.id)} className="underline hover:no-underline">
                   🧾 Bill / print
                 </button>
-                <button onClick={() => onAdd(p)} className="btn-ghost !min-h-[40px] text-sm">
+                <button onClick={() => onAdd(p)} className="underline hover:no-underline">
                   ➕ Add items
                 </button>
               </div>
