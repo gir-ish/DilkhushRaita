@@ -671,7 +671,7 @@ function CounterInner() {
       <div
         className={`grid gap-4 mt-2 lg:flex-1 lg:min-h-0 ${
           leftColumn
-            ? "lg:grid-cols-[280px_minmax(0,1fr)_340px]"
+            ? "lg:grid-cols-[300px_minmax(0,1fr)_340px]"
             : "lg:grid-cols-[minmax(0,1fr)_340px]"
         }`}
       >
@@ -1554,12 +1554,12 @@ function OpenTabs({
       <div className="grid sm:grid-cols-2 lg:grid-cols-1 gap-3">
         {tabs.map((t) => (
           <div key={t.id} className="card p-2.5 sm:p-3 border-l-4 border-l-mustard-400">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="font-bold text-[15px] sm:text-base truncate">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <span className="font-bold text-[15px] sm:text-base whitespace-nowrap">
                 {t.tableNo ? `🪑 Table ${t.tableNo}` : "🍽️"}{" "}
                 <span className="font-mono text-xs font-bold text-maroon-800/60">{t.orderNumber}</span>
               </span>
-              <span className="rounded-full bg-cream-200 px-2 py-0.5 text-[10px] font-bold whitespace-nowrap shrink-0">
+              <span className="ml-auto rounded-full bg-cream-200 px-2 py-0.5 text-[10px] font-bold whitespace-nowrap shrink-0">
                 {t.rounds} round{t.rounds > 1 ? "s" : ""}
               </span>
             </div>
@@ -1938,11 +1938,11 @@ function WaitingParcels({
               key={p.id}
               className={`card p-2.5 sm:p-3 border-l-4 ${p.status === "READY" ? "border-l-leaf-500" : "border-l-mustard-400"}`}
             >
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="font-mono font-bold text-[15px] sm:text-base truncate">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span className="font-mono font-bold text-[15px] sm:text-base whitespace-nowrap">
                   🛍️ {p.orderNumber}
                 </span>
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap shrink-0 ${stage.tone}`}>
+                <span className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap shrink-0 ${stage.tone}`}>
                   {stage.label}
                 </span>
               </div>

@@ -20,7 +20,8 @@
     "db:reset": "prisma migrate reset --force",
     "mysql:generate": "prisma generate --schema=prisma/schema.mysql.prisma",
     "mysql:push": "prisma db push --schema=prisma/schema.mysql.prisma",
-    "mysql:deploy": "npm run mysql:push && npm run build"
+    "mysql:deploy": "npm run mysql:push && npm run build",
+    "push:test": "node scripts/push-test.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
