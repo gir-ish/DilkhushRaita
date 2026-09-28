@@ -1877,10 +1877,17 @@ const PICKUP_STAGE: Record<string, { label: string; tone: string }> = {
 };
 
 /** What is still owed on a waiting parcel, in words. */
-function pickupPayment(p: Pickup): { label: string; due: boolean } {
-  if (p.paymentStatus === "PAID") return { label: "Paid ✓", due: false };
-  if (p.paymentMethod === "KHATA") return { label: "📒 On khata", due: false };
-  return { label: `${inr(p.total)} to collect`, due: true };
+/**
+ * What the money says on a waiting parcel.
+ *
+ * The amount is shown whether or not it is still owed: "Paid ✓" on its own
+ * left the cashier having to open the parcel to see what it came to, which
+ * is the one number they are asked for while handing it over.
+ */
+function pickupPayment(p: Pickup): { note: string; due: boolean } {
+  if (p.paymentStatus === "PAID") return { note: "Paid ✓", due: false };
+  if (p.paymentMethod === "KHATA") return { note: "📒 On khata", due: false };
+  return { note: "to collect", due: true };
 }
 
 /**
@@ -1935,7 +1942,9 @@ function WaitingParcels({
               <p className="text-xs text-maroon-800/50 truncate mt-1">
                 {p.items.map((i) => `${i.qty}×${i.name}`).join(", ")}
               </p>
-              <p className={`mt-2 text-xl font-bold ${pay.due ? "text-maroon-700" : "text-leaf-600"}`}>{pay.label}</p>
+              <p className={`mt-2 text-xl font-bold ${pay.due ? "text-maroon-700" : "text-leaf-600"}`}>
+                {inr(p.total)} <span className="text-sm font-semibold">{pay.note}</span>
+              </p>
               <button onClick={() => onCollect(p)} className="btn-primary w-full !min-h-[46px] mt-3">
                 {pay.due ? "💰 Collect & hand over" : "📦 Hand over"}
               </button>
@@ -2070,7 +2079,9 @@ function CollectModal({
             )}
           </div>
         ) : (
-          <p className="text-sm text-leaf-600 font-semibold">{pay.label} — nothing to collect.</p>
+          <p className="text-sm text-leaf-600 font-semibold">
+            {inr(parcel.total)} · {pay.note} — nothing to collect.
+          </p>
         )}
 
         <ErrorBox message={error} />
