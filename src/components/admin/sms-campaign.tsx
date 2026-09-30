@@ -54,6 +54,8 @@ interface SendResult {
   attempted: number;
   creditsSpent: number;
   failures: string[];
+  /** The gateway's id for each submission — what the Delivery Report is searched by. */
+  messageIds?: string[];
 }
 
 /**
@@ -457,6 +459,17 @@ export function SmsCampaign() {
                 <li key={i}>• {f}</li>
               ))}
             </ul>
+          )}
+          {/* The only thread back to what actually happened: the gateway tells
+              us nothing about delivery, and the panel's Delivery Report is
+              searched by this id. */}
+          {result.messageIds && result.messageIds.length > 0 && (
+            <p className="mt-2 text-xs text-maroon-800/70">
+              Gateway reference{result.messageIds.length > 1 ? "s" : ""}:{" "}
+              <span className="font-mono font-semibold">{result.messageIds.join(", ")}</span>
+              <br />
+              Look this up in the SMS panel&apos;s Delivery Report to see what reached each number.
+            </p>
           )}
           <p className="mt-2 text-xs text-maroon-800/60">
             Accepted by the gateway is not the same as delivered — numbers on Do Not Disturb are

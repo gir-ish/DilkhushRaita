@@ -200,6 +200,13 @@ export const POST = handler(async (req: Request) => {
   let sent = 0;
   let creditsSpent = 0;
   const failures: string[] = [];
+  /*
+   * The gateway's id for each submission, kept because it is the only way to
+   * find out afterwards what actually happened. The API never reports
+   * delivery — only the panel's Delivery Report does, and it is searched by
+   * this id. A campaign nobody received is otherwise impossible to trace.
+   */
+  const messageIds: string[] = [];
 
   for (const group of plan.groups) {
     for (const batch of batches(group.numbers)) {
@@ -207,6 +214,7 @@ export const POST = handler(async (req: Request) => {
       if (result.ok) {
         sent += batch.length;
         creditsSpent += batch.length * group.creditsEach;
+        if (result.messageId) messageIds.push(result.messageId);
       } else {
         failures.push(`${batch.length} number${batch.length === 1 ? "" : "s"}: ${result.detail}`);
       }
@@ -233,6 +241,7 @@ export const POST = handler(async (req: Request) => {
       credits: creditsSpent,
       skipped: plan.skipped.length,
       failedBatches: failures.length,
+      messageIds: messageIds.slice(0, 50),
     }
   );
 
@@ -242,5 +251,6 @@ export const POST = handler(async (req: Request) => {
     attempted: plan.recipients,
     creditsSpent,
     failures,
+    messageIds,
   });
 });

@@ -21,6 +21,20 @@ export function gatewayConfig(): GatewayConfig | null {
 export interface SendResult {
   ok: boolean;
   detail?: string;
+  /**
+   * The gateway's own id for this submission.
+   *
+   * The one thing that makes a send traceable afterwards. "Submitted
+   * successfully" is all the API ever says — whether a message reached a
+   * handset is only visible in the panel's Delivery Report, and this is the
+   * id to look it up by. Thrown away, a campaign that nobody received leaves
+   * nothing at all to investigate.
+   */
+  messageId?: string;
+  /** What the gateway says it charged, which is not always what we predicted. */
+  credits?: string;
+  /** How many destinations it accepted. */
+  numbers?: string;
 }
 
 /** The documented codes, plus the undocumented 003, named for the log. */
@@ -69,7 +83,12 @@ export async function sendSms(
       signal: AbortSignal.timeout(timeoutMs),
     });
     const text = await res.text();
-    let data: { status?: boolean | string; code?: string; description?: string } = {};
+    let data: {
+      status?: boolean | string;
+      code?: string;
+      description?: string;
+      data?: { messageid?: string; totnumber?: string; totalcredit?: string };
+    } = {};
     try {
       data = JSON.parse(text);
     } catch {
@@ -80,7 +99,13 @@ export async function sendSms(
     const status = typeof data.status === "string" ? data.status.toLowerCase() : data.status;
     const ok =
       res.ok && (data.code === "011" || status === true || status === "true" || status === "success");
-    if (ok) return { ok: true };
+    if (ok)
+      return {
+        ok: true,
+        messageId: data.data?.messageid,
+        credits: data.data?.totalcredit,
+        numbers: data.data?.totnumber,
+      };
     return {
       ok: false,
       detail: (data.code ? KNOWN[data.code] : undefined) ?? data.description ?? `code ${data.code ?? "?"}`,
