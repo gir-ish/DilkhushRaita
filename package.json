@@ -22,7 +22,8 @@
     "mysql:push": "prisma db push --schema=prisma/schema.mysql.prisma",
     "mysql:deploy": "npm run mysql:push && npm run build",
     "push:test": "node scripts/push-test.mjs",
-    "sms:campaign": "tsx scripts/campaign-test.mts"
+    "sms:campaign": "tsx scripts/campaign-test.mts",
+    "sms:audit": "tsx scripts/sms-audit.mts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
