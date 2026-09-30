@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { handler, HttpError } from "@/lib/guard";
-import { generateOtp, hashOtp, otpProvider, otpBypassEnabled } from "@/lib/otp";
+import { generateOtp, hashOtp, otpProvider, otpBypassEnabled, otpFallbackExisting } from "@/lib/otp";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { mayRequestOtp, recordOtpSend } from "@/lib/otp-abuse";
 import { normalizePhone } from "@/lib/utils";
@@ -65,6 +65,23 @@ export const POST = handler(async (req: Request) => {
   if (OTP_BYPASS) {
     // No SMS sent, no code generated — the verify step will skip checking too.
     return NextResponse.json({ ok: true, bypass: true });
+  }
+
+  /*
+   * The gateway is down and this number already belongs to a customer: let
+   * them in without a code rather than send them to a phone that will never
+   * ring. A number we do NOT know still gets the normal path, so no account
+   * can be created without a real code.
+   */
+  if (otpFallbackExisting()) {
+    const existing = await db.user.findUnique({
+      where: { phone },
+      select: { role: true, blocked: true },
+    });
+    if (existing && existing.role === "CUSTOMER" && !existing.blocked) {
+      console.warn(`[otp] FALLBACK sign-in for ${phone} — SMS verification is switched off`);
+      return NextResponse.json({ ok: true, bypass: true, fallback: true });
+    }
   }
 
   const hourAgo = new Date(Date.now() - 60 * 60 * 1000);

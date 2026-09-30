@@ -294,6 +294,30 @@ export function otpHashMatches(storedHash: string, candidateHash: string): boole
  * run in production: a flag whose failure mode is "anyone is anyone" should
  * take more than a typo to switch on.
  */
+/**
+ * Lets a customer we already know sign in without a code.
+ *
+ * For one situation only: the SMS gateway is down, so no code can reach
+ * anybody and the shop is losing every online order. Unlike OTP_BYPASS this
+ * one does work in production \u2014 which is the point, and why it is narrower
+ * in every other respect:
+ *
+ *  - only a phone number that already has an account, so nobody can create
+ *    one without a code;
+ *  - only a CUSTOMER account, never staff;
+ *  - never a blocked account;
+ *  - every use is written to the log.
+ *
+ * What it costs: anyone who knows a customer's number can sign in as them and
+ * see their orders, addresses and points. That is a real risk, accepted
+ * deliberately and briefly. Turn it off the moment SMS is working:
+ *
+ *   OTP_FALLBACK_EXISTING="true"   in .env, then restart. No rebuild.
+ */
+export function otpFallbackExisting(): boolean {
+  return process.env.OTP_FALLBACK_EXISTING === "true";
+}
+
 export function otpBypassEnabled(): boolean {
   if (process.env.OTP_BYPASS !== "true") return false;
   if (process.env.NODE_ENV === "production") {

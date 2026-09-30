@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { handler, HttpError } from "@/lib/guard";
-import { hashOtp, otpBypassEnabled, otpHashMatches } from "@/lib/otp";
+import { hashOtp, otpBypassEnabled, otpFallbackExisting, otpHashMatches } from "@/lib/otp";
 import {
   clearIdentityFailures,
   clientIp,
@@ -51,7 +51,21 @@ export const POST = handler(async (req: Request) => {
   if (!identityAllowed("otp-verify", phone, OTP_FAILS, OTP_WINDOW))
     throw new HttpError(429, "Too many incorrect codes for this number. Try again in an hour.");
 
-  if (!OTP_BYPASS) {
+  /*
+   * The same narrow exception as the send step, checked again here rather
+   * than trusted from the client: this route is reachable on its own.
+   */
+  let skipCode = OTP_BYPASS;
+  if (!skipCode && otpFallbackExisting()) {
+    const existing = await db.user.findUnique({
+      where: { phone },
+      select: { role: true, blocked: true },
+    });
+    skipCode = !!existing && existing.role === "CUSTOMER" && !existing.blocked;
+    if (skipCode) console.warn(`[otp] FALLBACK sign-in completed for ${phone}`);
+  }
+
+  if (!skipCode) {
     if (!body.code || !new RegExp(`^\\d{${OTP_LENGTH}}$`).test(body.code))
       throw new HttpError(400, `Enter the ${OTP_LENGTH}-digit OTP`);
 
