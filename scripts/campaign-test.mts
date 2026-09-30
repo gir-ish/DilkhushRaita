@@ -51,6 +51,17 @@ for (const file of [".env.local", ".env"]) {
 
 const args = process.argv.slice(2);
 const SEND = args.includes("--send");
+/*
+ * Leaves templateid out of the request.
+ *
+ * From STPL's own documentation: "If templateid is not sent, the system
+ * checks the sender ID and message details, then forwards the best match to
+ * the vendor." So a message that arrives without the id and not with it says
+ * the id we send is paired with different wording on the portal \u2014 which is
+ * otherwise invisible, because the gateway accepts the message either way and
+ * the operator drops it silently afterwards.
+ */
+const NO_TEMPLATE = args.includes("--no-template");
 const key = args.find((a) => !a.startsWith("--") && !/^\d/.test(a)) as CampaignTemplate | undefined;
 const number = args.find((a) => /^\d/.test(a))?.replace(/\D/g, "");
 
@@ -114,13 +125,14 @@ if (!/^[6-9]\d{9}$/.test(ten)) {
 const query = [
   ...(apiKey ? [`apikey=${encodeURIComponent(apiKey)}`] : []),
   `senderid=${encodeURIComponent(senderId)}`,
-  `templateid=${encodeURIComponent(SMS_TEMPLATES[key].id)}`,
+  ...(NO_TEMPLATE ? [] : [`templateid=${encodeURIComponent(SMS_TEMPLATES[key].id)}`]),
   `number=${encodeURIComponent("91" + ten)}`,
   `message=${encodeURIComponent(message)}`,
   "format=JSON",
 ].join("&");
 
 console.log(`\n   sender     ${senderId}`);
+if (NO_TEMPLATE) console.log("   templateid OMITTED — the gateway matches by wording");
 console.log(`   to         91${ten}`);
 console.log(`   url        https://smsfortius.org/V2/apikey.php?${query.replace(/apikey=[^&]*/, "apikey=***")}`);
 
