@@ -6,7 +6,9 @@ import { rateLimit } from "@/lib/rate-limit";
 import { audit } from "@/lib/audit";
 import { CAMPAIGN_TEMPLATES, SMS_TEMPLATES } from "@/lib/sms-templates";
 import { gatewayConfig, sendSms } from "@/lib/sms-gateway";
+import { hhmm, withinTimeWindow } from "@/lib/utils";
 import {
+  PROMO_WINDOW,
   batches,
   parseRecipients,
   planCampaign,
@@ -179,6 +181,22 @@ export const POST = handler(async (req: Request) => {
   if (body.dryRun) return NextResponse.json({ ok: true, dryRun: true, ...summary });
 
   if (plan.recipients === 0) throw new HttpError(400, "Nobody to send to.");
+
+  /*
+   * The operator will not carry promotional traffic outside its window, so a
+   * campaign sent at ten in the evening is credits spent on messages nobody
+   * receives. Checked here rather than in the browser: the clock that matters
+   * is India's, not the one on the laptop sending it — which on this project
+   * has been in Korea.
+   */
+  const now = hhmm(new Date(), "Asia/Kolkata");
+  if (!withinTimeWindow(now, PROMO_WINDOW.from, PROMO_WINDOW.to))
+    throw new HttpError(
+      400,
+      `It is ${now} in India. Promotional messages are only delivered between ` +
+        `${PROMO_WINDOW.from} and ${PROMO_WINDOW.to}, so this would be paid for and dropped. ` +
+        `Preview it now and send it inside those hours.`
+    );
 
   /*
    * The list must be the one the operator approved. Between previewing and

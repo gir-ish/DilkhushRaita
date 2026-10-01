@@ -55,10 +55,16 @@ describe("is not sent", () => {
     });
   });
 
-  it("outside 9am–9pm, when operators refuse promotional SMS", () => {
-    expect("skip" in pointsSmsFor(DEFAULT_SMS_SETTINGS, order({ nowHHmm: "21:15" }))).toBe(true);
-    expect("skip" in pointsSmsFor(DEFAULT_SMS_SETTINGS, order({ nowHHmm: "08:59" }))).toBe(true);
-    expect("message" in pointsSmsFor(DEFAULT_SMS_SETTINGS, order({ nowHHmm: "09:00" }))).toBe(true);
+  // 11:00–20:00 for this account — narrower than the regulator's 9–9, and
+  // confirmed with the vendor. Outside it the operator takes the credit and
+  // drops the message.
+  it("outside the hours the operator will carry promotional SMS", () => {
+    expect("skip" in pointsSmsFor(DEFAULT_SMS_SETTINGS, order({ nowHHmm: "10:59" }))).toBe(true);
+    expect("message" in pointsSmsFor(DEFAULT_SMS_SETTINGS, order({ nowHHmm: "11:00" }))).toBe(true);
+    expect("message" in pointsSmsFor(DEFAULT_SMS_SETTINGS, order({ nowHHmm: "19:59" }))).toBe(true);
+    // The end is exclusive, as everywhere else a window is used here: on the
+    // stroke of eight it is already too late.
+    expect("skip" in pointsSmsFor(DEFAULT_SMS_SETTINGS, order({ nowHHmm: "20:00" }))).toBe(true);
   });
 
   it("without a phone number", () => {

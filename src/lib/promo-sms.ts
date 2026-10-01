@@ -41,6 +41,19 @@ export interface RecipientList {
  * twice is a spreadsheet artefact, not a decision, and sending twice would cost
  * twice while annoying once.
  */
+/**
+ * When a promotional message may go out, Indian time.
+ *
+ * Not our rule: the operator will not terminate promotional traffic outside
+ * it, so a campaign sent at ten in the evening is credits spent on messages
+ * nobody receives. Confirmed with the vendor as 11:00\u201320:00 for this
+ * account \u2014 narrower than the 09:00\u201321:00 the regulator allows, which is why
+ * it is written here rather than assumed.
+ *
+ * Transactional messages \u2014 OTP, order updates \u2014 are not restricted.
+ */
+export const PROMO_WINDOW = { from: "11:00", to: "20:00" } as const;
+
 export function parseRecipients(raw: string, max = 5000): RecipientList {
   const seen = new Set<string>();
   const numbers: string[] = [];

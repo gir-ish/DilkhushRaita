@@ -2,6 +2,7 @@ import { db } from "./db";
 import { NAME_FALLBACK, SMS_TEMPLATES, fillTemplate, firstName } from "./sms-templates";
 import { gatewayConfig, sendSms } from "./sms-gateway";
 import { hhmm, withinTimeWindow } from "./utils";
+import { PROMO_WINDOW } from "./promo-sms";
 
 /**
  * "Hi Rahul, you earned 120 Dilkhush Points on your order!" — sent by itself
@@ -22,8 +23,8 @@ export interface SmsSettingsView {
 }
 export const DEFAULT_SMS_SETTINGS: SmsSettingsView = { pointsSmsEnabled: true, pointsSmsMinOrder: 1000 };
 
-/** Promotional SMS hours in India (TRAI): 9am to 9pm. */
-export const PROMO_WINDOW = { from: "09:00", to: "21:00" } as const;
+/** The hours promotional SMS may go out; defined with the campaigns. */
+export { PROMO_WINDOW };
 
 export async function smsSettings(): Promise<SmsSettingsView> {
   const row = await db.smsSettings.findUnique({ where: { id: "singleton" } });
