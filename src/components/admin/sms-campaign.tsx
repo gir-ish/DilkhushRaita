@@ -72,7 +72,7 @@ export function SmsCampaign() {
   const [couponId, setCouponId] = useState("");
   // Points Reminder: only customers with at least this many points.
   const [minPoints, setMinPoints] = useState("1");
-  const [source, setSource] = useState<"paste" | "customers" | "contacts">("customers");
+  const [source, setSource] = useState<"paste" | "customers" | "contacts" | "both">("customers");
   // Contact book: how many numbers are in it, so the choice says what it means.
   const [book, setBook] = useState<{ sendable: number; optedOut: number } | null>(null);
   const [recipients, setRecipients] = useState("");
@@ -269,6 +269,7 @@ export function SmsCampaign() {
           [
             ["customers", "Our customers"],
             ["contacts", "Contact book"],
+            ["both", "Both together"],
             ["paste", "A list I provide"],
           ] as const
         ).map(([s, label]) => (
@@ -290,6 +291,19 @@ export function SmsCampaign() {
         <p className="mt-2 rounded-lg bg-cream-100 px-3 py-2 text-sm">
           Everyone who has ordered from you, is not blocked and has not turned promotions off.
           Each is greeted by their own first name.
+        </p>
+      ) : source === "both" ? (
+        <p className="mt-2 rounded-lg bg-cream-100 px-3 py-2 text-sm">
+          Everyone who has ordered from you, <strong>and</strong> every number in the contact book.
+          Anybody on both lists is counted once and paid for once, and is greeted by the name on
+          their own account rather than the one the phone book had.
+          {book && (
+            <>
+              {" "}
+              The contact book holds <strong>{book.sendable.toLocaleString("en-IN")}</strong> of
+              those.
+            </>
+          )}
         </p>
       ) : source === "contacts" ? (
         <p className="mt-2 rounded-lg bg-cream-100 px-3 py-2 text-sm">

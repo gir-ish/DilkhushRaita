@@ -39,7 +39,7 @@ const Body = z.object({
    * Where the list comes from: pasted in, the shop's own customers, or the
    * contact book built from uploaded phone-book exports.
    */
-  source: z.enum(["paste", "customers", "contacts"]).default("paste"),
+  source: z.enum(["paste", "customers", "contacts", "both"]).default("paste"),
   /** Contact book: only numbers that arrived in this upload. */
   listId: z.string().optional(),
   dryRun: z.boolean().default(true),
@@ -86,47 +86,69 @@ export const POST = handler(async (req: Request) => {
     profile: { select: { notifyPromos: true, loyaltyPoints: true } },
   } as const;
 
-  if (body.source === "contacts") {
+  if (body.source === "customers" || body.source === "contacts" || body.source === "both") {
     /*
-     * Every number here was validated when it was uploaded, so nothing is
-     * re-checked and nothing is thrown away at send time. Two things still
-     * apply: a contact who asked not to be texted, and a customer opt-out
-     * belonging to the same number, since the person is the same person
-     * however their number reached the list.
+     * One list, keyed by number, so somebody who is both a customer and a
+     * line in the phone book is texted once and paid for once.
+     *
+     * Customers go in first and are never overwritten: their account carries
+     * the name they chose for themselves, the points they hold, and the
+     * opt-out they set \u2014 all of which beat whatever an exported phone book
+     * had for the same number.
      */
-    const contacts = await db.contact.findMany({
-      where: { optedOut: false, ...(body.listId ? { listId: body.listId } : {}) },
-      orderBy: { createdAt: "asc" },
-      take: MAX_PER_CAMPAIGN,
-      select: { phone: true, name: true },
-    });
-    const known = await db.user.findMany({
-      where: { phone: { in: contacts.map((c) => c.phone) }, role: "CUSTOMER" },
-      select: customerSelect,
-    });
-    const byPhone = new Map(known.map((u) => [u.phone!, u]));
-    recipients = contacts.map((c) => {
-      const u = byPhone.get(c.phone);
-      return {
-        phone: c.phone,
-        // Their own account's name wins: they chose it, the phone book did not.
-        name: u?.name ?? c.name,
-        points: u?.profile?.loyaltyPoints ?? null,
-        optedOut: u?.profile?.notifyPromos === false,
-      };
-    });
-  } else if (body.source === "customers") {
-    const customers = await db.user.findMany({
-      where: { role: "CUSTOMER", blocked: false, phone: { not: null } },
-      select: customerSelect,
-      take: MAX_PER_CAMPAIGN,
-    });
-    recipients = customers.map((c) => ({
-      phone: c.phone!,
-      name: c.name,
-      points: c.profile?.loyaltyPoints ?? null,
-      optedOut: c.profile?.notifyPromos === false,
-    }));
+    const wantCustomers = body.source === "customers" || body.source === "both";
+    const wantContacts = body.source === "contacts" || body.source === "both";
+    const byPhone = new Map<string, CampaignRecipient>();
+
+    if (wantCustomers) {
+      const customers = await db.user.findMany({
+        where: { role: "CUSTOMER", blocked: false, phone: { not: null } },
+        select: customerSelect,
+        take: MAX_PER_CAMPAIGN,
+      });
+      for (const c of customers)
+        byPhone.set(c.phone!, {
+          phone: c.phone!,
+          name: c.name,
+          points: c.profile?.loyaltyPoints ?? null,
+          optedOut: c.profile?.notifyPromos === false,
+        });
+    }
+
+    if (wantContacts) {
+      /*
+       * Every number here was validated when it was uploaded, so nothing is
+       * re-checked and nothing is thrown away at send time. A contact who
+       * asked not to be texted is already excluded by the query; a customer
+       * opt-out on the same number is applied below, because the person is
+       * the same person however their number reached the list.
+       */
+      const contacts = await db.contact.findMany({
+        where: { optedOut: false, ...(body.listId ? { listId: body.listId } : {}) },
+        orderBy: { createdAt: "asc" },
+        take: MAX_PER_CAMPAIGN,
+        select: { phone: true, name: true },
+      });
+      const fresh = contacts.filter((c) => !byPhone.has(c.phone));
+      // Only the ones not already in hand need looking up.
+      const known = await db.user.findMany({
+        where: { phone: { in: fresh.map((c) => c.phone) }, role: "CUSTOMER" },
+        select: customerSelect,
+      });
+      const users = new Map(known.map((u) => [u.phone!, u]));
+      for (const c of fresh) {
+        if (byPhone.size >= MAX_PER_CAMPAIGN) break;
+        const u = users.get(c.phone);
+        byPhone.set(c.phone, {
+          phone: c.phone,
+          name: u?.name ?? c.name,
+          points: u?.profile?.loyaltyPoints ?? null,
+          optedOut: u?.profile?.notifyPromos === false,
+        });
+      }
+    }
+
+    recipients = [...byPhone.values()];
   } else {
     const list = parseRecipients(body.recipients, MAX_PER_CAMPAIGN);
     rejected = list.rejected;
