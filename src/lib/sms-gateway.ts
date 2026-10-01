@@ -99,13 +99,22 @@ export async function sendSms(
     const status = typeof data.status === "string" ? data.status.toLowerCase() : data.status;
     const ok =
       res.ok && (data.code === "011" || status === true || status === "true" || status === "success");
-    if (ok)
+    if (ok) {
+      // As in the OTP path: the answer is always "submitted", so what it was
+      // submitted AS is the only thing worth keeping. A repeating messageid
+      // across different payloads means the gateway is not queueing anything.
+      console.log(
+        `[sms] submitted to ${numbers.length} number(s) sender=${cfg.senderId} ` +
+          `template=${templateId} code=${data.code ?? "?"} ` +
+          `messageid=${data.data?.messageid ?? "?"} credits=${data.data?.totalcredit ?? "?"}`
+      );
       return {
         ok: true,
         messageId: data.data?.messageid,
         credits: data.data?.totalcredit,
         numbers: data.data?.totnumber,
       };
+    }
     return {
       ok: false,
       detail: (data.code ? KNOWN[data.code] : undefined) ?? data.description ?? `code ${data.code ?? "?"}`,

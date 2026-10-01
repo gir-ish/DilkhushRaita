@@ -208,6 +208,25 @@ const stplProvider: OtpProvider = {
         console.error(`[OTP][stpl] send failed (${res.status}) code=${data.code ?? "?"}: ${why}`);
         return { ok: false };
       }
+
+      /*
+       * Logged on success too, not only on failure.
+       *
+       * "Submitted successfully" is the only thing this gateway ever says,
+       * and it says it whether or not a handset will ever see the message. So
+       * the line that matters later is what it answered WITH \u2014 the messageid
+       * especially: a gateway that is queueing work issues a new one each
+       * time, and one that repeats is not. Without this there is nothing in
+       * the log to compare when somebody reports that no OTP arrived.
+       *
+       * Never the API key, and the number only in part.
+       */
+      const sent = (data.data ?? {}) as { messageid?: string; totalcredit?: string };
+      console.log(
+        `[OTP][stpl] submitted number=${number.slice(0, 4)}****${number.slice(-2)} ` +
+          `sender=${senderId} template=${templateId} code=${data.code ?? "?"} ` +
+          `messageid=${sent.messageid ?? "?"} credits=${sent.totalcredit ?? "?"}`
+      );
       return { ok: true };
     } catch (e) {
       const why = e instanceof Error && e.name === "TimeoutError" ? "timed out" : "network error";

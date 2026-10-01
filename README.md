@@ -478,3 +478,17 @@ rm -rf .next && NODE_OPTIONS=--max-old-space-size=2048 npm run build
 touch tmp/restart.txt
 sleep 8
 ```
+
+
+TURN ON (customers can sign in without a code):
+```bash
+cd ~/public_html
+echo 'OTP_FALLBACK_EXISTING="true"' >> .env
+touch tmp/restart.txt
+```
+TURN OFF (back to normal, needs SMS working):
+```bash
+cd ~/public_html
+sed -i 's/^OTP_FALLBACK_EXISTING=.*/OTP_FALLBACK_EXISTING="false"/' .env
+touch tmp/restart.txt
+```
