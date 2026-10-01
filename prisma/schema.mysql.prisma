@@ -788,3 +788,36 @@ model PushSubscription {
 
   @@index([userId])
 }
+
+/**
+ * One promotional message, to one number, that the gateway accepted.
+ *
+ * Kept so a campaign can be sent to the people who have not had it yet. The
+ * shop's lists grow — a phone book is uploaded, numbers are added by hand —
+ * and without this, the only choice is to text everybody again and pay for
+ * the ones who already received it.
+ *
+ * Per template, not per number: "Website Promotion" is a thing you send once,
+ * while "Special Offer" is sent again every Diwali. Asking "has this number
+ * had THIS message" is the only useful form of the question.
+ *
+ * Not a delivery record. This gateway reports nothing about delivery, so this
+ * says only that the message was accepted for sending.
+ */
+model SmsSend {
+  id         String   @id @default(cuid())
+  phone      String // +91XXXXXXXXXX
+  /** The template key, e.g. "websitePromotion" — not the DLT id, which changes. */
+  template   String
+  templateId String
+  /** The gateway's campaign id, when it gave one. */
+  messageId  String?
+  credits    Int      @default(1)
+  /** Which list the number came from for this send. */
+  source     String?
+  sentAt     DateTime @default(now())
+
+  @@index([template, phone])
+  @@index([phone])
+  @@index([sentAt])
+}

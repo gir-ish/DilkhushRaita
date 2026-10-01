@@ -28,6 +28,8 @@ export const GET = handler(async (req: Request) => {
   const q = url.searchParams.get("q")?.trim() ?? "";
   const listId = url.searchParams.get("listId");
   const take = Math.min(Number(url.searchParams.get("take") ?? 100) || 100, 500);
+  /** "never" \u2014 only numbers no campaign has ever gone to. */
+  const texted = url.searchParams.get("texted");
   const skip = Math.max(Number(url.searchParams.get("skip") ?? 0) || 0, 0);
 
   const digits = q.replace(/\D/g, "");
@@ -43,9 +45,25 @@ export const GET = handler(async (req: Request) => {
       : {}),
   };
 
+  /*
+   * Numbers a campaign has already gone to, so the list can show how many
+   * each has had and be narrowed to the ones that have had none. Counted in
+   * one query rather than one per row.
+   */
+  const sendCounts = new Map<string, number>();
+  const grouped = await db.smsSend.groupBy({ by: ["phone"], _count: { phone: true } });
+  for (const g of grouped) sendCounts.set(g.phone, g._count.phone);
+
+  // "Never texted" has to be applied to the query, not to the page, or a page
+  // of a hundred could come back with three rows on it.
+  const whereTexted =
+    texted === "never" && sendCounts.size > 0
+      ? { phone: { notIn: [...sendCounts.keys()] } }
+      : {};
+
   const [contacts, total, sendable, optedOut, lists] = await Promise.all([
     db.contact.findMany({
-      where,
+      where: { ...where, ...whereTexted },
       orderBy: { createdAt: "desc" },
       take,
       skip,
@@ -59,16 +77,24 @@ export const GET = handler(async (req: Request) => {
         list: { select: { id: true, filename: true } },
       },
     }),
-    db.contact.count({ where }),
+    db.contact.count({ where: { ...where, ...whereTexted } }),
     db.contact.count({ where: { optedOut: false } }),
     db.contact.count({ where: { optedOut: true } }),
     db.contactList.findMany({ orderBy: { uploadedAt: "desc" }, take: 25 }),
   ]);
 
   return NextResponse.json({
-    contacts,
+    contacts: contacts.map((c) => ({ ...c, smsCount: sendCounts.get(c.phone) ?? 0 })),
     total,
-    totals: { all: sendable + optedOut, sendable, optedOut },
+    totals: {
+      all: sendable + optedOut,
+      sendable,
+      optedOut,
+      /** How many in the book have never been in a campaign. */
+      neverTexted: await db.contact.count({
+        where: sendCounts.size > 0 ? { phone: { notIn: [...sendCounts.keys()] } } : {},
+      }),
+    },
     lists: lists.map((l) => ({
       ...l,
       rejectedSample: safeJson(l.rejectedJson),

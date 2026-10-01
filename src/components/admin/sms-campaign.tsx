@@ -44,6 +44,10 @@ interface Preview {
   skipped: { phone: string; why: string }[];
   skippedCount: number;
   duplicatesRemoved: number;
+  /** Left out because they have had this very message before. */
+  alreadySent: number;
+  /** …or any message, recently. */
+  recentlyTexted: number;
   rejected: { raw: string; why: string }[];
   rejectedCount: number;
 }
@@ -76,6 +80,10 @@ export function SmsCampaign() {
   // Contact book: how many numbers are in it, so the choice says what it means.
   const [book, setBook] = useState<{ sendable: number; optedOut: number } | null>(null);
   const [recipients, setRecipients] = useState("");
+  // Send to the people who have not had this one yet. On by default: the
+  // usual reason to send a campaign again is that the list has grown.
+  const [onlyNew, setOnlyNew] = useState(true);
+  const [quietDays, setQuietDays] = useState("0");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [result, setResult] = useState<SendResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -114,6 +122,8 @@ export function SmsCampaign() {
         minPoints: template === "customerOffer" ? Math.max(1, Math.floor(+minPoints || 1)) : undefined,
         recipients: source === "paste" ? recipients : "",
         source,
+        onlyNew,
+        quietDays: Math.max(0, Math.floor(+quietDays || 0)),
         dryRun,
         expect,
       }),
@@ -350,6 +360,45 @@ export function SmsCampaign() {
         </>
       )}
 
+      {/* Who to leave out. Both narrow whichever audience is chosen above. */}
+      <div className="mt-3 rounded-xl border border-cream-300 bg-cream-100/60 p-3">
+        <p className="text-xs font-bold uppercase tracking-wide text-maroon-800/50">Leave out</p>
+        <label className="mt-1.5 flex items-start gap-2 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-maroon-600"
+            checked={onlyNew}
+            onChange={(e) => {
+              setOnlyNew(e.target.checked);
+              invalidate();
+            }}
+          />
+          <span>
+            Anyone who has already had <strong>this message</strong>
+            <span className="block text-xs text-maroon-800/60">
+              Counted per message, so a special offer can go out again at Diwali to everyone,
+              while a website promotion only ever reaches each number once.
+            </span>
+          </span>
+        </label>
+        <label className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+          Anyone texted in the last
+          <input
+            type="number"
+            min={0}
+            max={365}
+            className="input !w-20 !min-h-[36px] text-center"
+            value={quietDays}
+            onChange={(e) => {
+              setQuietDays(e.target.value);
+              invalidate();
+            }}
+          />
+          days by any campaign
+          <span className="text-xs text-maroon-800/60">(0 = no limit)</span>
+        </label>
+      </div>
+
       <div className="mt-3">
         <button onClick={doPreview} disabled={!canPreview} className="btn-outline !min-h-[40px]">
           {busy && !confirming ? "Checking…" : "Preview & cost"}
@@ -394,6 +443,18 @@ export function SmsCampaign() {
             </div>
           </dl>
 
+          {preview.alreadySent > 0 && (
+            <p className="mt-2 text-sm">
+              ✓ <strong>{preview.alreadySent}</strong> already had this message and{" "}
+              {preview.alreadySent === 1 ? "is" : "are"} left out.
+            </p>
+          )}
+          {preview.recentlyTexted > 0 && (
+            <p className="mt-1 text-sm">
+              ⏸ <strong>{preview.recentlyTexted}</strong> were texted recently and{" "}
+              {preview.recentlyTexted === 1 ? "is" : "are"} left out.
+            </p>
+          )}
           {preview.duplicatesRemoved > 0 && (
             <p className="mt-2 text-sm text-maroon-800/70">
               {preview.duplicatesRemoved} duplicate{preview.duplicatesRemoved === 1 ? "" : "s"} removed —

@@ -214,7 +214,7 @@ const stplProvider: OtpProvider = {
        *
        * "Submitted successfully" is the only thing this gateway ever says,
        * and it says it whether or not a handset will ever see the message. So
-       * the line that matters later is what it answered WITH \u2014 the messageid
+       * the line that matters later is what it answered WITH — the messageid
        * especially: a gateway that is queueing work issues a new one each
        * time, and one that repeats is not. Without this there is nothing in
        * the log to compare when somebody reports that no OTP arrived.
@@ -318,7 +318,7 @@ export function otpHashMatches(storedHash: string, candidateHash: string): boole
  *
  * For one situation only: the SMS gateway is down, so no code can reach
  * anybody and the shop is losing every online order. Unlike OTP_BYPASS this
- * one does work in production \u2014 which is the point, and why it is narrower
+ * one does work in production — which is the point, and why it is narrower
  * in every other respect:
  *
  *  - only a phone number that already has an account, so nobody can create

@@ -42,6 +42,16 @@ const Body = z.object({
   source: z.enum(["paste", "customers", "contacts", "both"]).default("paste"),
   /** Contact book: only numbers that arrived in this upload. */
   listId: z.string().optional(),
+  /**
+   * Leave out anyone who has already had THIS message.
+   *
+   * Per template on purpose: a website promotion is sent once, a special
+   * offer goes out again every festival. On by default, because the usual
+   * reason to send again is that the list has grown.
+   */
+  onlyNew: z.boolean().default(true),
+  /** …and anyone texted by any campaign within this many days. 0 = no limit. */
+  quietDays: z.number().int().min(0).max(365).default(0),
   dryRun: z.boolean().default(true),
   /** What the dashboard showed before the operator pressed send. */
   expect: z.object({ count: z.number().int(), credits: z.number().int() }).optional(),
@@ -93,7 +103,7 @@ export const POST = handler(async (req: Request) => {
      *
      * Customers go in first and are never overwritten: their account carries
      * the name they chose for themselves, the points they hold, and the
-     * opt-out they set \u2014 all of which beat whatever an exported phone book
+     * opt-out they set — all of which beat whatever an exported phone book
      * had for the same number.
      */
     const wantCustomers = body.source === "customers" || body.source === "both";
@@ -173,6 +183,49 @@ export const POST = handler(async (req: Request) => {
     });
   }
 
+  /*
+   * Who has heard from us already.
+   *
+   * Done here rather than inside planCampaign because it is a question about
+   * history, not about the message, and because the numbers it removes should
+   * be reported as skipped rather than silently missing.
+   */
+  let alreadySent = 0;
+  let recentlyTexted = 0;
+  if ((body.onlyNew || body.quietDays > 0) && recipients.length > 0) {
+    const phones = recipients.map((r) => r.phone);
+    const hadThis = new Set<string>();
+    const hadAnything = new Set<string>();
+
+    if (body.onlyNew) {
+      const rows = await db.smsSend.findMany({
+        where: { template: body.template, phone: { in: phones } },
+        select: { phone: true },
+      });
+      for (const r of rows) hadThis.add(r.phone);
+    }
+    if (body.quietDays > 0) {
+      const since = new Date(Date.now() - body.quietDays * 86_400_000);
+      const rows = await db.smsSend.findMany({
+        where: { phone: { in: phones }, sentAt: { gte: since } },
+        select: { phone: true },
+      });
+      for (const r of rows) hadAnything.add(r.phone);
+    }
+
+    recipients = recipients.filter((r) => {
+      if (hadThis.has(r.phone)) {
+        alreadySent++;
+        return false;
+      }
+      if (hadAnything.has(r.phone)) {
+        recentlyTexted++;
+        return false;
+      }
+      return true;
+    });
+  }
+
   let plan;
   try {
     plan = planCampaign(body.template, recipients, offer, body.minPoints);
@@ -195,6 +248,8 @@ export const POST = handler(async (req: Request) => {
     skipped: plan.skipped.slice(0, 50),
     skippedCount: plan.skipped.length,
     duplicatesRemoved: duplicates,
+    alreadySent,
+    recentlyTexted,
     rejected: rejected.slice(0, 50),
     rejectedCount: rejected.length,
   };
@@ -255,6 +310,23 @@ export const POST = handler(async (req: Request) => {
         sent += batch.length;
         creditsSpent += batch.length * group.creditsEach;
         if (result.messageId) messageIds.push(result.messageId);
+        /*
+         * Written per number, so the next campaign can leave these people
+         * out. Never allowed to fail the send: the messages are already gone
+         * and a bookkeeping error must not be reported as a failed campaign.
+         */
+        await db.smsSend
+          .createMany({
+            data: batch.map((phone) => ({
+              phone,
+              template: body.template,
+              templateId: template.id,
+              messageId: result.messageId ?? null,
+              credits: group.creditsEach,
+              source: body.source,
+            })),
+          })
+          .catch((e) => console.error("[campaign] could not record the send", e));
       } else {
         failures.push(`${batch.length} number${batch.length === 1 ? "" : "s"}: ${result.detail}`);
       }

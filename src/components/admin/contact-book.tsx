@@ -21,6 +21,8 @@ interface Contact {
   optedOut: boolean;
   createdAt: string;
   lastSentAt: string | null;
+  /** How many campaigns this number has been in. */
+  smsCount: number;
   list: { id: string; filename: string } | null;
 }
 
@@ -54,7 +56,9 @@ const PAGE = 100;
 export function ContactBook() {
   const [contacts, setContacts] = useState<Contact[] | null>(null);
   const [lists, setLists] = useState<ContactList[]>([]);
-  const [totals, setTotals] = useState({ all: 0, sendable: 0, optedOut: 0 });
+  const [totals, setTotals] = useState({ all: 0, sendable: 0, optedOut: 0, neverTexted: 0 });
+  // "never" narrows the list to numbers no campaign has ever gone to.
+  const [texted, setTexted] = useState("");
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState("");
   const [listId, setListId] = useState("");
@@ -73,6 +77,7 @@ export function ContactBook() {
     const params = new URLSearchParams({ take: String(PAGE), skip: String(page * PAGE) });
     if (q.trim()) params.set("q", q.trim());
     if (listId) params.set("listId", listId);
+    if (texted) params.set("texted", texted);
     fetch(`/api/admin/marketing/contacts?${params}`)
       .then(async (r) => {
         const d = await r.json();
@@ -84,7 +89,7 @@ export function ContactBook() {
         setError(null);
       })
       .catch((e) => setError(e.message));
-  }, [q, listId, page]);
+  }, [q, listId, texted, page]);
 
   // Debounced, so typing a number is one request rather than ten.
   useEffect(() => {
@@ -163,6 +168,7 @@ export function ContactBook() {
         <h2 className="font-display text-xl font-bold text-maroon-700">📇 Contact book</h2>
         <span className="text-sm text-maroon-800/60">
           {totals.sendable.toLocaleString("en-IN")} to send to
+          {totals.neverTexted > 0 && ` · ${totals.neverTexted.toLocaleString("en-IN")} never texted`}
           {totals.optedOut > 0 && ` · ${totals.optedOut} opted out`}
         </span>
         <input
@@ -339,6 +345,18 @@ export function ContactBook() {
           }}
           aria-label="Search the contact book"
         />
+        <select
+          className="input !w-auto !min-h-[40px] text-sm"
+          value={texted}
+          onChange={(e) => {
+            setTexted(e.target.value);
+            setPage(0);
+          }}
+          aria-label="Filter by whether they have been texted"
+        >
+          <option value="">Texted or not</option>
+          <option value="never">Never texted</option>
+        </select>
         {listId && (
           <button
             onClick={() => {
@@ -371,6 +389,7 @@ export function ContactBook() {
                 <th className="py-1 pr-3">Name</th>
                 <th className="py-1 pr-3">Number</th>
                 <th className="py-1 pr-3">From</th>
+                <th className="py-1 pr-3 text-right">SMS</th>
                 <th className="py-1 pr-3">Last texted</th>
                 <th className="py-1" />
               </tr>
@@ -382,6 +401,13 @@ export function ContactBook() {
                   <td className="py-1.5 pr-3 font-mono whitespace-nowrap">{c.phone}</td>
                   <td className="py-1.5 pr-3 text-maroon-800/60 truncate max-w-[14rem]">
                     {c.list?.filename ?? "—"}
+                  </td>
+                  <td className="py-1.5 pr-3 text-right">
+                    {c.smsCount > 0 ? (
+                      <span className="font-bold">{c.smsCount}</span>
+                    ) : (
+                      <span className="text-maroon-800/40">—</span>
+                    )}
                   </td>
                   <td className="py-1.5 pr-3 whitespace-nowrap text-maroon-800/60">
                     {c.lastSentAt ? istDateTime(c.lastSentAt) : "never"}
