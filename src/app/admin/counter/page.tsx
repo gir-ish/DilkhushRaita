@@ -1563,7 +1563,7 @@ function OpenTabs({
                 {t.rounds} round{t.rounds > 1 ? "s" : ""}
               </span>
             </div>
-            <p className="text-xs text-maroon-800/60 truncate mt-0.5">
+            <p className="text-xs text-maroon-800/60 mt-0.5 break-words">
               {t.customer.name ?? "Guest"} · {t.itemCount} item{t.itemCount === 1 ? "" : "s"}
               {" · "}
               {t.items.map((i) => `${i.qty}×${i.name}`).join(", ")}
@@ -1948,7 +1948,7 @@ function WaitingParcels({
               </div>
               {/* Who and what, on one line: on a phone the second line was
                   costing more height than it was worth. */}
-              <p className="text-xs text-maroon-800/60 truncate mt-0.5">
+              <p className="text-xs text-maroon-800/60 mt-0.5 break-words">
                 {p.customer.name ?? "Walk-in"}
                 {p.customer.phone && ` · ${p.customer.phone.replace(/^\+91/, "")}`}
                 {" · "}
