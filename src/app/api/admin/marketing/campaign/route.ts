@@ -43,13 +43,17 @@ const Body = z.object({
   /** Contact book: only numbers that arrived in this upload. */
   listId: z.string().optional(),
   /**
-   * Leave out anyone who has already had THIS message.
+   * The most times somebody may already have had this message and still be
+   * sent it again.
    *
-   * Per template on purpose: a website promotion is sent once, a special
-   * offer goes out again every festival. On by default, because the usual
-   * reason to send again is that the list has grown.
+   * 0 means only those who have never had it, which is the default and the
+   * usual case: the list has grown and the new numbers need it. 1 means
+   * "nobody who has had it twice", and null means send regardless.
+   *
+   * Counted per message, and for a Special Offer per coupon — a Diwali offer
+   * and a welcome offer are different things to have received.
    */
-  onlyNew: z.boolean().default(true),
+  maxTimesSent: z.number().int().min(0).max(50).nullable().default(0),
   /** …and anyone texted by any campaign within this many days. 0 = no limit. */
   quietDays: z.number().int().min(0).max(365).default(0),
   dryRun: z.boolean().default(true),
@@ -184,6 +188,13 @@ export const POST = handler(async (req: Request) => {
   }
 
   /*
+   * Which version of this template the history should be counted against:
+   * the coupon for a Special Offer, nothing for the templates that only ever
+   * say one thing.
+   */
+  const variant = body.template === "specialOffer" ? (offer?.code ?? null) : null;
+
+  /*
    * Who has heard from us already.
    *
    * Done here rather than inside planCampaign because it is a question about
@@ -192,17 +203,20 @@ export const POST = handler(async (req: Request) => {
    */
   let alreadySent = 0;
   let recentlyTexted = 0;
-  if ((body.onlyNew || body.quietDays > 0) && recipients.length > 0) {
+  const limit = body.maxTimesSent;
+  if ((limit !== null || body.quietDays > 0) && recipients.length > 0) {
     const phones = recipients.map((r) => r.phone);
     const hadThis = new Set<string>();
     const hadAnything = new Set<string>();
 
-    if (body.onlyNew) {
-      const rows = await db.smsSend.findMany({
-        where: { template: body.template, phone: { in: phones } },
-        select: { phone: true },
+    if (limit !== null) {
+      // How many times each has had this exact message before.
+      const rows = await db.smsSend.groupBy({
+        by: ["phone"],
+        where: { template: body.template, variant, phone: { in: phones } },
+        _count: { phone: true },
       });
-      for (const r of rows) hadThis.add(r.phone);
+      for (const r of rows) if (r._count.phone > limit) hadThis.add(r.phone);
     }
     if (body.quietDays > 0) {
       const since = new Date(Date.now() - body.quietDays * 86_400_000);
@@ -250,6 +264,9 @@ export const POST = handler(async (req: Request) => {
     duplicatesRemoved: duplicates,
     alreadySent,
     recentlyTexted,
+    /** What "already had it" meant for this preview, for the wording on screen. */
+    maxTimesSent: limit,
+    variant,
     rejected: rejected.slice(0, 50),
     rejectedCount: rejected.length,
   };
@@ -320,6 +337,7 @@ export const POST = handler(async (req: Request) => {
             data: batch.map((phone) => ({
               phone,
               template: body.template,
+              variant,
               templateId: template.id,
               messageId: result.messageId ?? null,
               credits: group.creditsEach,

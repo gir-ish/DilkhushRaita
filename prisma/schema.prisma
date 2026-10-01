@@ -821,6 +821,15 @@ model SmsSend {
   /** The template key, e.g. "websitePromotion" — not the DLT id, which changes. */
   template   String
   templateId String
+  /**
+   * Which version of this template, when there is more than one.
+   *
+   * A Special Offer announcing Diwali and one announcing a welcome coupon are
+   * the same template with a different coupon in it, and somebody who has had
+   * the first has not had the second. The coupon code goes here; the templates
+   * with only one form leave it null.
+   */
+  variant    String?
   /** The gateway's campaign id, when it gave one. */
   messageId  String?
   credits    Int      @default(1)
@@ -828,7 +837,7 @@ model SmsSend {
   source     String?
   sentAt     DateTime @default(now())
 
-  @@index([template, phone])
+  @@index([template, variant, phone])
   @@index([phone])
   @@index([sentAt])
 }

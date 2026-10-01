@@ -46,6 +46,10 @@ interface Preview {
   duplicatesRemoved: number;
   /** Left out because they have had this very message before. */
   alreadySent: number;
+  /** The limit this preview applied: 0 = never had it, null = no limit. */
+  maxTimesSent: number | null;
+  /** For a Special Offer, the coupon the count was against. */
+  variant: string | null;
   /** …or any message, recently. */
   recentlyTexted: number;
   rejected: { raw: string; why: string }[];
@@ -82,7 +86,8 @@ export function SmsCampaign() {
   const [recipients, setRecipients] = useState("");
   // Send to the people who have not had this one yet. On by default: the
   // usual reason to send a campaign again is that the list has grown.
-  const [onlyNew, setOnlyNew] = useState(true);
+  // "" = no limit; otherwise the most times they may already have had it.
+  const [maxTimesSent, setMaxTimesSent] = useState("0");
   const [quietDays, setQuietDays] = useState("0");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [result, setResult] = useState<SendResult | null>(null);
@@ -122,7 +127,7 @@ export function SmsCampaign() {
         minPoints: template === "customerOffer" ? Math.max(1, Math.floor(+minPoints || 1)) : undefined,
         recipients: source === "paste" ? recipients : "",
         source,
-        onlyNew,
+        maxTimesSent: maxTimesSent === "" ? null : Math.max(0, Math.floor(+maxTimesSent)),
         quietDays: Math.max(0, Math.floor(+quietDays || 0)),
         dryRun,
         expect,
@@ -363,24 +368,34 @@ export function SmsCampaign() {
       {/* Who to leave out. Both narrow whichever audience is chosen above. */}
       <div className="mt-3 rounded-xl border border-cream-300 bg-cream-100/60 p-3">
         <p className="text-xs font-bold uppercase tracking-wide text-maroon-800/50">Leave out</p>
-        <label className="mt-1.5 flex items-start gap-2 text-sm cursor-pointer">
-          <input
-            type="checkbox"
-            className="mt-0.5 h-4 w-4 accent-maroon-600"
-            checked={onlyNew}
+        <label className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
+          Send to those who have had this message
+          <select
+            className="input !w-auto !min-h-[36px]"
+            value={maxTimesSent}
             onChange={(e) => {
-              setOnlyNew(e.target.checked);
+              setMaxTimesSent(e.target.value);
               invalidate();
             }}
-          />
-          <span>
-            Anyone who has already had <strong>this message</strong>
-            <span className="block text-xs text-maroon-800/60">
-              Counted per message, so a special offer can go out again at Diwali to everyone,
-              while a website promotion only ever reaches each number once.
-            </span>
-          </span>
+          >
+            <option value="0">never</option>
+            <option value="1">at most once</option>
+            <option value="2">at most twice</option>
+            <option value="3">at most 3 times</option>
+            <option value="5">at most 5 times</option>
+            <option value="">any number of times — send to everyone</option>
+          </select>
         </label>
+        <p className="mt-1 text-xs text-maroon-800/60">
+          Counted per message, and for a special offer per coupon — so a Diwali offer reaches
+          people who have already had a welcome offer, while a website promotion only ever goes
+          to each number once.
+          {template === "specialOffer" && !couponId && (
+            <span className="block text-maroon-700 font-semibold">
+              Choose the coupon above; the count is kept against that offer.
+            </span>
+          )}
+        </p>
         <label className="mt-2 flex flex-wrap items-center gap-2 text-sm">
           Anyone texted in the last
           <input
@@ -445,8 +460,10 @@ export function SmsCampaign() {
 
           {preview.alreadySent > 0 && (
             <p className="mt-2 text-sm">
-              ✓ <strong>{preview.alreadySent}</strong> already had this message and{" "}
-              {preview.alreadySent === 1 ? "is" : "are"} left out.
+              ✓ <strong>{preview.alreadySent}</strong> already had{" "}
+              {preview.variant ? `the ${preview.variant} offer` : "this message"}
+              {preview.maxTimesSent ? ` more than ${preview.maxTimesSent} time${preview.maxTimesSent === 1 ? "" : "s"}` : ""}{" "}
+              and {preview.alreadySent === 1 ? "is" : "are"} left out.
             </p>
           )}
           {preview.recentlyTexted > 0 && (
