@@ -653,6 +653,12 @@ model SmsSettings {
   /// After an order above pointsSmsMinOrder, text the customer the points it earned.
   pointsSmsEnabled  Boolean  @default(true)
   pointsSmsMinOrder Float    @default(1000)
+  /// Each order update, on its own switch. The confirmation is off by
+  /// default: a customer ordering on the website has just been told on the
+  /// website, and the credit buys nothing they do not already know.
+  orderConfirmedSms  Boolean @default(false)
+  orderDispatchedSms Boolean @default(true)
+  orderDeliveredSms  Boolean @default(true)
   updatedAt         DateTime @updatedAt
 }
 
@@ -691,6 +697,14 @@ model Contact {
   phone    String  @unique // +91XXXXXXXXXX, validated on the way in
   name     String? // null only if it was never known; uploads write "Customer"
   optedOut Boolean @default(false) // asked not to be texted again
+  /**
+   * The operator refuses this number — every attempt failed, never once
+   * delivered. Kept apart from optedOut, which is a person's choice rather
+   * than a technical fact, so the two can be reviewed and undone separately.
+   */
+  undeliverable Boolean @default(false)
+  /** The delivery error the operator gave, when it always gave the same one. */
+  lastError     String?
   note     String?
 
   /** The upload it arrived in; kept for the history, so null if that is deleted. */

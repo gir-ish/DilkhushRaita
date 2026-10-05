@@ -42,7 +42,7 @@ describe("is not sent", () => {
     expect(pointsSmsFor({ ...DEFAULT_SMS_SETTINGS, pointsSmsEnabled: false }, order())).toEqual({
       skip: "points SMS are switched off",
     });
-    expect("skip" in pointsSmsFor({ pointsSmsEnabled: true, pointsSmsMinOrder: 2000 }, order())).toBe(true);
+    expect("skip" in pointsSmsFor({ ...DEFAULT_SMS_SETTINGS, pointsSmsMinOrder: 2000 }, order())).toBe(true);
   });
 
   it("when the order earned no points", () => {

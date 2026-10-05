@@ -19,6 +19,9 @@ interface Contact {
   phone: string;
   name: string | null;
   optedOut: boolean;
+  /** The operator refused this number every time it was tried. */
+  undeliverable: boolean;
+  lastError: string | null;
   createdAt: string;
   lastSentAt: string | null;
   /** How many campaigns this number has been in. */
@@ -56,7 +59,25 @@ const PAGE = 100;
 export function ContactBook() {
   const [contacts, setContacts] = useState<Contact[] | null>(null);
   const [lists, setLists] = useState<ContactList[]>([]);
-  const [totals, setTotals] = useState({ all: 0, sendable: 0, optedOut: 0, neverTexted: 0 });
+  const [totals, setTotals] = useState({
+    all: 0,
+    sendable: 0,
+    optedOut: 0,
+    neverTexted: 0,
+    undeliverable: 0,
+  });
+  const [reportResult, setReportResult] = useState<{
+    filename: string;
+    rows: number;
+    numbers: number;
+    delivered: number;
+    failed: number;
+    pending: number;
+    undeliverableFound: number;
+    marked: number;
+    byError: { code: string; numbers: number }[];
+  } | null>(null);
+  const reportRef = useRef<HTMLInputElement>(null);
   // "never" narrows the list to numbers no campaign has ever gone to.
   const [texted, setTexted] = useState("");
   const [total, setTotal] = useState(0);
@@ -118,6 +139,26 @@ export function ContactBook() {
     }
   };
 
+  const uploadReport = async (file: File) => {
+    setBusy(true);
+    setError(null);
+    setReportResult(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const r = await fetch("/api/admin/marketing/report", { method: "POST", body: form });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      setReportResult(d);
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not read that report");
+    } finally {
+      setBusy(false);
+      if (reportRef.current) reportRef.current.value = "";
+    }
+  };
+
   const addOne = async () => {
     setBusy(true);
     setError(null);
@@ -169,6 +210,7 @@ export function ContactBook() {
         <span className="text-sm text-maroon-800/60">
           {totals.sendable.toLocaleString("en-IN")} to send to
           {totals.neverTexted > 0 && ` · ${totals.neverTexted.toLocaleString("en-IN")} never texted`}
+          {totals.undeliverable > 0 && ` · ${totals.undeliverable.toLocaleString("en-IN")} unreachable`}
           {totals.optedOut > 0 && ` · ${totals.optedOut} opted out`}
         </span>
         <input
@@ -178,10 +220,25 @@ export function ContactBook() {
           className="hidden"
           onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
         />
+        <input
+          ref={reportRef}
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={(e) => e.target.files?.[0] && uploadReport(e.target.files[0])}
+        />
+        <button
+          onClick={() => reportRef.current?.click()}
+          disabled={busy}
+          className="btn-outline ml-auto !min-h-[40px] !px-4"
+          title="The delivery report CSV from the SMS panel"
+        >
+          📊 Upload delivery report
+        </button>
         <button
           onClick={() => fileRef.current?.click()}
           disabled={busy}
-          className="btn-primary ml-auto !min-h-[40px] !px-4"
+          className="btn-primary !min-h-[40px] !px-4"
         >
           {busy ? "Reading…" : "📄 Upload phone book"}
         </button>
@@ -237,6 +294,37 @@ export function ContactBook() {
       </div>
 
       <ErrorBox message={error} />
+
+      {reportResult && (
+        <div className="mt-3 rounded-xl border-2 border-maroon-600/30 bg-cream-100 p-3">
+          <p className="font-bold text-maroon-700">
+            {reportResult.filename} · {reportResult.rows.toLocaleString("en-IN")} messages to{" "}
+            {reportResult.numbers.toLocaleString("en-IN")} numbers
+          </p>
+          <ul className="mt-1.5 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+            <li>✅ {reportResult.delivered.toLocaleString("en-IN")} delivered</li>
+            <li>❌ {reportResult.failed.toLocaleString("en-IN")} failed</li>
+            <li className="sm:col-span-2 text-maroon-800/70">
+              ⏳ {reportResult.pending.toLocaleString("en-IN")} still &ldquo;submitted&rdquo; — the
+              operator never answered, so nothing is assumed about those.
+            </li>
+            <li className="sm:col-span-2">
+              🚫 <strong>{reportResult.marked.toLocaleString("en-IN")}</strong> number
+              {reportResult.marked === 1 ? "" : "s"} marked unreachable — campaigns will skip them
+              from now on, saving that many credits every time.
+            </li>
+          </ul>
+          {reportResult.byError.length > 0 && (
+            <p className="mt-1.5 text-xs text-maroon-800/60">
+              By error code:{" "}
+              {reportResult.byError.map((e) => `${e.code} × ${e.numbers}`).join(" · ")}
+            </p>
+          )}
+          <button onClick={() => setReportResult(null)} className="mt-2 text-sm underline font-semibold">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {result && (
         <div className="mt-3 rounded-xl border-2 border-leaf-500/40 bg-leaf-50 p-3">
@@ -356,6 +444,7 @@ export function ContactBook() {
         >
           <option value="">Texted or not</option>
           <option value="never">Never texted</option>
+          <option value="undeliverable">Operator refuses</option>
         </select>
         {listId && (
           <button
@@ -397,7 +486,17 @@ export function ContactBook() {
             <tbody>
               {contacts.map((c) => (
                 <tr key={c.id} className={`border-t border-cream-200 ${c.optedOut ? "opacity-50" : ""}`}>
-                  <td className="py-1.5 pr-3 font-semibold">{c.name ?? "Customer"}</td>
+                  <td className="py-1.5 pr-3 font-semibold">
+                    {c.name ?? "Customer"}
+                    {c.undeliverable && (
+                      <span
+                        className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700"
+                        title={`The operator refused this number every time${c.lastError ? ` (error ${c.lastError})` : ""}. Campaigns skip it.`}
+                      >
+                        unreachable
+                      </span>
+                    )}
+                  </td>
                   <td className="py-1.5 pr-3 font-mono whitespace-nowrap">{c.phone}</td>
                   <td className="py-1.5 pr-3 text-maroon-800/60 truncate max-w-[14rem]">
                     {c.list?.filename ?? "—"}

@@ -14,6 +14,9 @@ export const GET = handler(async () => {
 const Body = z.object({
   pointsSmsEnabled: z.boolean(),
   pointsSmsMinOrder: z.number().min(0).max(1_000_000),
+  orderConfirmedSms: z.boolean().default(false),
+  orderDispatchedSms: z.boolean().default(true),
+  orderDeliveredSms: z.boolean().default(true),
 });
 
 export const PUT = handler(async (req: Request) => {

@@ -20,15 +20,33 @@ import { PROMO_WINDOW } from "./promo-sms";
 export interface SmsSettingsView {
   pointsSmsEnabled: boolean;
   pointsSmsMinOrder: number;
+  orderConfirmedSms: boolean;
+  orderDispatchedSms: boolean;
+  orderDeliveredSms: boolean;
 }
-export const DEFAULT_SMS_SETTINGS: SmsSettingsView = { pointsSmsEnabled: true, pointsSmsMinOrder: 1000 };
+export const DEFAULT_SMS_SETTINGS: SmsSettingsView = {
+  pointsSmsEnabled: true,
+  pointsSmsMinOrder: 1000,
+  // Off: the customer has just seen the confirmation on screen.
+  orderConfirmedSms: false,
+  orderDispatchedSms: true,
+  orderDeliveredSms: true,
+};
 
 /** The hours promotional SMS may go out; defined with the campaigns. */
 export { PROMO_WINDOW };
 
 export async function smsSettings(): Promise<SmsSettingsView> {
   const row = await db.smsSettings.findUnique({ where: { id: "singleton" } });
-  return row ? { pointsSmsEnabled: row.pointsSmsEnabled, pointsSmsMinOrder: row.pointsSmsMinOrder } : DEFAULT_SMS_SETTINGS;
+  return row
+    ? {
+        pointsSmsEnabled: row.pointsSmsEnabled,
+        pointsSmsMinOrder: row.pointsSmsMinOrder,
+        orderConfirmedSms: row.orderConfirmedSms,
+        orderDispatchedSms: row.orderDispatchedSms,
+        orderDeliveredSms: row.orderDeliveredSms,
+      }
+    : DEFAULT_SMS_SETTINGS;
 }
 
 /**

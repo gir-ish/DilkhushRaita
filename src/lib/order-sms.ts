@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { NAME_FALLBACK, SMS_TEMPLATES, fillTemplate, firstName, type TemplateKey } from "./sms-templates";
 import { gatewayConfig, sendSms } from "./sms-gateway";
+import { smsSettings } from "./points-sms";
 
 /**
  * Order updates by SMS: confirmed, on the way, delivered.
@@ -70,6 +71,20 @@ export function orderSmsFor(
  */
 export async function sendOrderSms(orderId: string, event: OrderEvent): Promise<void> {
   if (process.env.NOTIFY_SMS_ENABLED !== "true") return;
+
+  /*
+   * Each update has its own switch on the Marketing page, because they are
+   * not worth the same. "On the way" and "delivered" tell the customer
+   * something they cannot see; the confirmation repeats what the website said
+   * a second earlier, which is why it starts off.
+   */
+  const settings = await smsSettings();
+  const allowed: Record<OrderEvent, boolean> = {
+    confirmed: settings.orderConfirmedSms,
+    dispatched: settings.orderDispatchedSms,
+    delivered: settings.orderDeliveredSms,
+  };
+  if (!allowed[event]) return;
   try {
     const cfg = gatewayConfig();
     if (!cfg) {

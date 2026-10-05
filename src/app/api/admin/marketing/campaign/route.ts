@@ -138,7 +138,13 @@ export const POST = handler(async (req: Request) => {
        * the same person however their number reached the list.
        */
       const contacts = await db.contact.findMany({
-        where: { optedOut: false, ...(body.listId ? { listId: body.listId } : {}) },
+        where: {
+          optedOut: false,
+          // Refused by the operator on every attempt: texting it again is a
+          // credit spent on a handset that will not ring.
+          undeliverable: false,
+          ...(body.listId ? { listId: body.listId } : {}),
+        },
         orderBy: { createdAt: "asc" },
         take: MAX_PER_CAMPAIGN,
         select: { phone: true, name: true },

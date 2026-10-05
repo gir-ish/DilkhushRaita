@@ -59,7 +59,9 @@ export const GET = handler(async (req: Request) => {
   const whereTexted =
     texted === "never" && sendCounts.size > 0
       ? { phone: { notIn: [...sendCounts.keys()] } }
-      : {};
+      : texted === "undeliverable"
+        ? { undeliverable: true }
+        : {};
 
   const [contacts, total, sendable, optedOut, lists] = await Promise.all([
     db.contact.findMany({
@@ -72,6 +74,8 @@ export const GET = handler(async (req: Request) => {
         phone: true,
         name: true,
         optedOut: true,
+        undeliverable: true,
+        lastError: true,
         createdAt: true,
         lastSentAt: true,
         list: { select: { id: true, filename: true } },
@@ -90,6 +94,8 @@ export const GET = handler(async (req: Request) => {
       all: sendable + optedOut,
       sendable,
       optedOut,
+      /** Numbers the operator refused every time; campaigns skip these. */
+      undeliverable: await db.contact.count({ where: { undeliverable: true } }),
       /** How many in the book have never been in a campaign. */
       neverTexted: await db.contact.count({
         where: sendCounts.size > 0 ? { phone: { notIn: [...sendCounts.keys()] } } : {},

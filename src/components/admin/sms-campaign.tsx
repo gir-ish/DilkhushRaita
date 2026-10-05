@@ -580,7 +580,13 @@ export function SmsCampaign() {
  * 9am–9pm.
  */
 function PointsSmsSettings() {
-  const [s, setS] = useState<{ pointsSmsEnabled: boolean; pointsSmsMinOrder: number } | null>(null);
+  const [s, setS] = useState<{
+    pointsSmsEnabled: boolean;
+    pointsSmsMinOrder: number;
+    orderConfirmedSms: boolean;
+    orderDispatchedSms: boolean;
+    orderDeliveredSms: boolean;
+  } | null>(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -633,7 +639,38 @@ function PointsSmsSettings() {
       </div>
       <p className="text-xs text-maroon-800/60 mt-1">
         Website, parcel and dine-in alike — sent when the order completes. 1 credit each. Never to someone who turned
-        promotions off, and not between 9pm and 9am.
+        promotions off, and only within the hours the operator carries promotional messages.
+      </p>
+
+      {/* The three order updates, each on its own switch: they are not worth
+          the same. "On the way" tells the customer something they cannot see;
+          the confirmation repeats what the website said a second earlier. */}
+      <p className="font-semibold mt-3">Order updates by SMS</p>
+      <div className="mt-1 grid gap-1.5 sm:grid-cols-3">
+        {(
+          [
+            ["orderConfirmedSms", "✅ Order confirmed", "Repeats what the website just said"],
+            ["orderDispatchedSms", "🛵 On the way", "Delivery orders only"],
+            ["orderDeliveredSms", "📦 Delivered", "Delivery orders only"],
+          ] as const
+        ).map(([key, label, hint]) => (
+          <label key={key} className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-maroon-600"
+              checked={s[key]}
+              onChange={(e) => save({ ...s, [key]: e.target.checked })}
+            />
+            <span>
+              {label}
+              <span className="block text-xs text-maroon-800/60">{hint}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      <p className="text-xs text-maroon-800/60 mt-1">
+        1 credit each, and transactional — they reach numbers that have blocked promotional
+        messages. Switching one off here stops it everywhere, without a deploy.
       </p>
       {error && <p className="text-xs text-red-700 mt-1">{error}</p>}
     </div>
