@@ -27,9 +27,14 @@ export interface SmsSettingsView {
 export const DEFAULT_SMS_SETTINGS: SmsSettingsView = {
   pointsSmsEnabled: true,
   pointsSmsMinOrder: 1000,
-  // Off: the customer has just seen the confirmation on screen.
+  /*
+   * Both off. The confirmation repeats what the website said a second
+   * earlier, and "on the way" is a credit for something the customer is
+   * already waiting for. "Delivered" stays on: it closes the order, and it
+   * is the one that carries the points message behind it.
+   */
   orderConfirmedSms: false,
-  orderDispatchedSms: true,
+  orderDispatchedSms: false,
   orderDeliveredSms: true,
 };
 

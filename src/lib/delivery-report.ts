@@ -43,6 +43,8 @@ export interface ReportSummary {
   pending: number;
   /** Numbers that failed every time they were tried. */
   undeliverable: NumberResult[];
+  /** Every number in the report, delivered or not, for the running record. */
+  all: NumberResult[];
   /** How many of each error code, for the dashboard. */
   byError: { code: string; numbers: number }[];
 }
@@ -74,6 +76,7 @@ export function readDeliveryReport(text: string): ReportSummary {
     failed: 0,
     pending: 0,
     undeliverable: [],
+    all: [],
     byError: [],
   };
   if (rows.length < 2) return empty;
@@ -146,6 +149,7 @@ export function readDeliveryReport(text: string): ReportSummary {
     failed,
     pending,
     undeliverable,
+    all: [...byPhone.values()],
     byError: [...errorCounts.entries()]
       .map(([code, numbers]) => ({ code, numbers }))
       .sort((a, b) => b.numbers - a.numbers),

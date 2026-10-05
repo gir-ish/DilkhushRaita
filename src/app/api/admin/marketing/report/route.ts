@@ -36,10 +36,40 @@ export const POST = handler(async (req: Request) => {
     );
 
   /*
-   * Only numbers already in the contact book are touched. A report covers
-   * every message the account sent, including ones to customers who were
-   * never in the book, and inventing contacts from a delivery report is not
-   * what was asked for.
+   * What happened to every number, kept so a later campaign can be sent only
+   * to the ones that demonstrably receive. Added to rather than replaced: a
+   * second report covers a different period, and a number that worked in
+   * either of them works.
+   */
+  let reachable = 0;
+  for (const r of summary.all) {
+    const existing = await db.phoneDelivery.findUnique({ where: { phone: r.phone } });
+    await db.phoneDelivery.upsert({
+      where: { phone: r.phone },
+      create: {
+        phone: r.phone,
+        delivered: r.delivered,
+        failed: r.failed,
+        pending: r.pending,
+        lastError: r.error,
+        lastDeliveredAt: r.delivered > 0 ? new Date() : null,
+      },
+      update: {
+        delivered: { increment: r.delivered },
+        failed: { increment: r.failed },
+        pending: { increment: r.pending },
+        ...(r.error ? { lastError: r.error } : {}),
+        ...(r.delivered > 0 ? { lastDeliveredAt: new Date() } : {}),
+      },
+    });
+    if (r.delivered > 0 || (existing?.delivered ?? 0) > 0) reachable++;
+  }
+
+  /*
+   * Marking, on the other hand, only touches numbers already in the contact
+   * book. A report covers every message the account sent, including ones to
+   * customers who were never in the book, and inventing contacts from a
+   * delivery report is not what was asked for.
    */
   const phones = summary.undeliverable.map((u) => u.phone);
   let marked = 0;
@@ -75,6 +105,8 @@ export const POST = handler(async (req: Request) => {
     pending: summary.pending,
     undeliverableFound: summary.undeliverable.length,
     marked,
+    /** Numbers now known to receive, from this report and any before it. */
+    reachable,
     byError: summary.byError,
     /** What this saves on the next full campaign, at one credit each. */
     creditsSavedPerCampaign: marked,

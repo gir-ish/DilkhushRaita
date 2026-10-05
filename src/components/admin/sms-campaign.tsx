@@ -52,6 +52,8 @@ interface Preview {
   variant: string | null;
   /** …or any message, recently. */
   recentlyTexted: number;
+  /** …or because no report has ever shown the number receiving anything. */
+  unreachableSkipped: number;
   rejected: { raw: string; why: string }[];
   rejectedCount: number;
 }
@@ -89,6 +91,8 @@ export function SmsCampaign() {
   // "" = no limit; otherwise the most times they may already have had it.
   const [maxTimesSent, setMaxTimesSent] = useState("0");
   const [quietDays, setQuietDays] = useState("0");
+  // Spend only on the handsets a delivery report has shown actually receive.
+  const [onlyReachable, setOnlyReachable] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [result, setResult] = useState<SendResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -129,6 +133,7 @@ export function SmsCampaign() {
         source,
         maxTimesSent: maxTimesSent === "" ? null : Math.max(0, Math.floor(+maxTimesSent)),
         quietDays: Math.max(0, Math.floor(+quietDays || 0)),
+        onlyReachable,
         dryRun,
         expect,
       }),
@@ -396,6 +401,26 @@ export function SmsCampaign() {
             </span>
           )}
         </p>
+        <label className="mt-2 flex items-start gap-2 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-maroon-600"
+            checked={onlyReachable}
+            onChange={(e) => {
+              setOnlyReachable(e.target.checked);
+              invalidate();
+            }}
+          />
+          <span>
+            Anyone a delivery report has <strong>not</strong> shown receiving a message
+            <span className="block text-xs text-maroon-800/60">
+              Only sends to handsets the operator has actually been seen to reach. Needs a
+              delivery report uploaded in the contact book first — without one, nobody
+              qualifies and the campaign reaches nobody.
+            </span>
+          </span>
+        </label>
+
         <label className="mt-2 flex flex-wrap items-center gap-2 text-sm">
           Anyone texted in the last
           <input
@@ -464,6 +489,12 @@ export function SmsCampaign() {
               {preview.variant ? `the ${preview.variant} offer` : "this message"}
               {preview.maxTimesSent ? ` more than ${preview.maxTimesSent} time${preview.maxTimesSent === 1 ? "" : "s"}` : ""}{" "}
               and {preview.alreadySent === 1 ? "is" : "are"} left out.
+            </p>
+          )}
+          {preview.unreachableSkipped > 0 && (
+            <p className="mt-1 text-sm">
+              📵 <strong>{preview.unreachableSkipped}</strong> have never been seen to
+              receive a message and {preview.unreachableSkipped === 1 ? "is" : "are"} left out.
             </p>
           )}
           {preview.recentlyTexted > 0 && (

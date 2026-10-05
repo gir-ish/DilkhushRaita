@@ -56,6 +56,16 @@ const Body = z.object({
   maxTimesSent: z.number().int().min(0).max(50).nullable().default(0),
   /** …and anyone texted by any campaign within this many days. 0 = no limit. */
   quietDays: z.number().int().min(0).max(365).default(0),
+  /**
+   * Send only to numbers a delivery report has shown actually receive.
+   *
+   * At this account's delivery rates most of a list never gets anything, and
+   * every one of those still costs a credit. This spends only on the handsets
+   * the operator has been seen to reach. Off by default: a number that has
+   * never been texted has no record yet, and excluding it would quietly stop
+   * the list ever growing.
+   */
+  onlyReachable: z.boolean().default(false),
   dryRun: z.boolean().default(true),
   /** What the dashboard showed before the operator pressed send. */
   expect: z.object({ count: z.number().int(), credits: z.number().int() }).optional(),
@@ -207,6 +217,22 @@ export const POST = handler(async (req: Request) => {
    * history, not about the message, and because the numbers it removes should
    * be reported as skipped rather than silently missing.
    */
+  /*
+   * Only the numbers known to receive, when asked for. Checked before the
+   * history filters so the counts below report what each one removed.
+   */
+  let unreachableSkipped = 0;
+  if (body.onlyReachable && recipients.length > 0) {
+    const proven = await db.phoneDelivery.findMany({
+      where: { phone: { in: recipients.map((r) => r.phone) }, delivered: { gt: 0 } },
+      select: { phone: true },
+    });
+    const canReceive = new Set(proven.map((p) => p.phone));
+    const before = recipients.length;
+    recipients = recipients.filter((r) => canReceive.has(r.phone));
+    unreachableSkipped = before - recipients.length;
+  }
+
   let alreadySent = 0;
   let recentlyTexted = 0;
   const limit = body.maxTimesSent;
@@ -270,6 +296,7 @@ export const POST = handler(async (req: Request) => {
     duplicatesRemoved: duplicates,
     alreadySent,
     recentlyTexted,
+    unreachableSkipped,
     /** What "already had it" meant for this preview, for the wording on screen. */
     maxTimesSent: limit,
     variant,

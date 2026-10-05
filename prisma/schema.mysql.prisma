@@ -657,7 +657,7 @@ model SmsSettings {
   /// default: a customer ordering on the website has just been told on the
   /// website, and the credit buys nothing they do not already know.
   orderConfirmedSms  Boolean @default(false)
-  orderDispatchedSms Boolean @default(true)
+  orderDispatchedSms Boolean @default(false)
   orderDeliveredSms  Boolean @default(true)
   updatedAt         DateTime @updatedAt
 }
@@ -843,4 +843,30 @@ model SmsSend {
   @@index([template, variant, phone])
   @@index([phone])
   @@index([sentAt])
+}
+
+/**
+ * What the operator actually did with messages to one number.
+ *
+ * Built from the delivery reports, which are the only place that knows. The
+ * gateway accepts everything and reports nothing, so without this there is no
+ * way to tell a number that receives from one that silently never does — and
+ * at the delivery rates seen on this account, that is most of the list.
+ *
+ * Keyed by the number rather than by contact or customer, because the same
+ * handset can be both and the question is about the handset.
+ */
+model PhoneDelivery {
+  id        String @id @default(cuid())
+  phone     String @unique // +91XXXXXXXXXX
+  delivered Int    @default(0)
+  failed    Int    @default(0)
+  /** Accepted by the gateway and never resolved either way. */
+  pending   Int    @default(0)
+  /** The operator's error, when it always gave the same one. */
+  lastError String?
+  lastDeliveredAt DateTime?
+  updatedAt DateTime @updatedAt
+
+  @@index([delivered])
 }

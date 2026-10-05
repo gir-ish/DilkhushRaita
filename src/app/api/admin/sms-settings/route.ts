@@ -15,7 +15,7 @@ const Body = z.object({
   pointsSmsEnabled: z.boolean(),
   pointsSmsMinOrder: z.number().min(0).max(1_000_000),
   orderConfirmedSms: z.boolean().default(false),
-  orderDispatchedSms: z.boolean().default(true),
+  orderDispatchedSms: z.boolean().default(false),
   orderDeliveredSms: z.boolean().default(true),
 });
 
