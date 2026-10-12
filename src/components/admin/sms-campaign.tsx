@@ -371,12 +371,12 @@ export function SmsCampaign() {
       )}
 
       {/* Who to leave out. Both narrow whichever audience is chosen above. */}
-      <div className="mt-3 rounded-xl border border-cream-300 bg-cream-100/60 p-3">
+      <div className="mt-3 min-w-0 overflow-hidden rounded-xl border border-cream-300 bg-cream-100/60 p-3">
         <p className="text-xs font-bold uppercase tracking-wide text-maroon-800/50">Leave out</p>
-        <label className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
+        <label className="mt-1.5 flex flex-wrap items-center gap-2 text-sm min-w-0">
           Send to those who have had this message
           <select
-            className="input !w-auto !min-h-[36px]"
+            className="input !w-full sm:!w-auto !max-w-full !min-h-[36px]"
             value={maxTimesSent}
             onChange={(e) => {
               setMaxTimesSent(e.target.value);
@@ -388,7 +388,7 @@ export function SmsCampaign() {
             <option value="2">at most twice</option>
             <option value="3">at most 3 times</option>
             <option value="5">at most 5 times</option>
-            <option value="">any number of times — send to everyone</option>
+            <option value="">any number of times</option>
           </select>
         </label>
         <p className="mt-1 text-xs text-maroon-800/60">
@@ -421,7 +421,7 @@ export function SmsCampaign() {
           </span>
         </label>
 
-        <label className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+        <label className="mt-2 flex flex-wrap items-center gap-2 text-sm min-w-0">
           Anyone texted in the last
           <input
             type="number"
