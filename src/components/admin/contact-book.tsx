@@ -538,7 +538,7 @@ export function ContactBook() {
       )}
 
       {pages > 1 && (
-        <div className="mt-3 flex items-center justify-center gap-3">
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
           <button
             onClick={() => setPage((p) => Math.max(p - 1, 0))}
             disabled={page === 0}

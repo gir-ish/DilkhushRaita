@@ -186,7 +186,7 @@ export function SmsCampaign() {
   };
 
   const pill = (active: boolean) =>
-    `min-h-[38px] flex-1 rounded-lg border px-3 text-sm font-semibold ${
+    `min-h-[38px] flex-1 basis-[46%] sm:basis-0 rounded-lg border px-3 text-sm font-semibold ${
       active ? "border-maroon-600 bg-maroon-600 text-white" : "border-maroon-800/20"
     }`;
 
@@ -259,7 +259,7 @@ export function SmsCampaign() {
           <label className="label" htmlFor="campaign-min-points">
             Only customers with at least
           </label>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <input
               id="campaign-min-points"
               className="input !w-32"
@@ -284,7 +284,7 @@ export function SmsCampaign() {
       <p className="mt-4 mb-1 text-xs font-bold uppercase tracking-wide text-maroon-800/50">
         Send to
       </p>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {(
           [
             ["customers", "Our customers"],
