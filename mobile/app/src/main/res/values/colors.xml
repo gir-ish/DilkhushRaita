@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The dashboard's own colours, so the app does not look borrowed. -->
+    <color name="maroon_600">#71201C</color>
+    <color name="maroon_700">#591917</color>
+    <color name="maroon_900">#2A0C0B</color>
+    <color name="cream_50">#FFFDF7</color>
+    <color name="cream_100">#FAF3E3</color>
+    <color name="mustard_200">#FBE39B</color>
+    <color name="mustard_300">#F8D567</color>
+</resources>

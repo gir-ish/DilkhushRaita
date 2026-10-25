@@ -1,0 +1,56 @@
+name: Build the Android app
+
+# Builds the owner's phone app and attaches the APK to the run, so the file
+# can be downloaded straight onto a phone. Nothing is published anywhere:
+# this app is handed out by its owner, not listed in a store.
+#
+# To get the file: GitHub → Actions → this workflow → the newest run →
+# Artifacts → dilkhush-dashboard-apk.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/android.yml"
+  # …and on demand, which is how you get a fresh build without changing code.
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          # No wrapper is checked in, so the action has to bring Gradle itself.
+          gradle-version: "8.11.1"
+
+      - name: Build the APK
+        working-directory: mobile
+        run: gradle assembleRelease --no-daemon
+
+      - name: Name it something a person can read
+        run: |
+          mkdir -p out
+          cp mobile/app/build/outputs/apk/release/*.apk \
+             "out/DilKhush-Dashboard-${{ github.run_number }}.apk"
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dilkhush-dashboard-apk
+          path: out/*.apk
+          # Long enough to still be there when somebody gets round to it.
+          retention-days: 60

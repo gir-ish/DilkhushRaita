@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DilKhush Dashboard</string>
+
+    <!-- The quiet line that keeps the watcher alive -->
+    <string name="channel_watching">Watching for orders</string>
+    <string name="channel_watching_desc">One silent line in the notification shade. It is what stops Android putting the app to sleep — turning it off stops order alerts.</string>
+    <string name="watching_clear">Watching for orders · nothing waiting</string>
+    <string name="watching_one">1 order waiting to be accepted</string>
+    <string name="watching_many">%1$d orders waiting to be accepted</string>
+    <string name="watching_signed_out">Open the app and sign in to watch for orders</string>
+
+    <!-- The loud one -->
+    <string name="channel_order">New orders</string>
+    <string name="channel_order_desc">Rings until somebody accepts the order, through silent mode. This is the alert the app exists for.</string>
+    <string name="alarm_title_one">New order %1$s</string>
+    <string name="alarm_title_many">%1$d new orders</string>
+
+    <string name="kind_delivery">Delivery</string>
+    <string name="kind_pickup">Self-pickup</string>
+    <string name="kind_dinein">Dine-in</string>
+
+    <string name="alarm_heading">NEW ORDER</string>
+    <string name="alarm_open">Open orders</string>
+    <string name="alarm_silence">Silence</string>
+
+    <string name="battery_title">Let the app stay awake</string>
+    <string name="battery_message">Android puts apps to sleep to save battery, and a sleeping app cannot tell you an order has come in.\n\nOn the next screen, find DilKhush Dashboard and set it to Unrestricted — or choose "All apps", then this one, then Don\'t optimise.</string>
+    <string name="battery_ok">Open settings</string>
+    <string name="battery_later">Not now</string>
+
+    <string name="loading">Loading the dashboard…</string>
+
+    <plurals name="items">
+        <item quantity="one">%d item</item>
+        <item quantity="other">%d items</item>
+    </plurals>
+    <plurals name="more_waiting">
+        <item quantity="one">+ %d more order waiting</item>
+        <item quantity="other">+ %d more orders waiting</item>
+    </plurals>
+</resources>
