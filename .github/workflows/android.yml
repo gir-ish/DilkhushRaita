@@ -28,21 +28,36 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
+      - name: Set up the Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          # No wrapper is checked in, so the action has to bring Gradle itself.
-          gradle-version: "8.11.1"
+      # Gradle ships on the runner image, but which version is not ours to
+      # decide and this build needs 8.5 or newer for the Android plugin. Used
+      # if it is new enough, downloaded if it is not, so the build does not
+      # depend on what today's image happens to carry.
+      - name: Make sure Gradle is new enough
+        run: |
+          set -eux
+          want=8.11.1
+          have=$(gradle --version 2>/dev/null | awk '/^Gradle /{print $2}' || true)
+          echo "runner has Gradle: ${have:-none}"
+          if [ "$have" = "$want" ]; then
+            echo "GRADLE=gradle" >> "$GITHUB_ENV"
+          else
+            curl -sSLo /tmp/gradle.zip \
+              "https://services.gradle.org/distributions/gradle-$want-bin.zip"
+            unzip -q /tmp/gradle.zip -d /opt
+            echo "GRADLE=/opt/gradle-$want/bin/gradle" >> "$GITHUB_ENV"
+          fi
 
       - name: Build the APK
         working-directory: mobile
-        run: gradle assembleRelease --no-daemon
+        # --stacktrace so a failure says where, rather than that it failed.
+        run: $GRADLE assembleRelease --no-daemon --stacktrace
 
       - name: Name it something a person can read
         run: |
+          set -eux
           mkdir -p out
           cp mobile/app/build/outputs/apk/release/*.apk \
              "out/DilKhush-Dashboard-${{ github.run_number }}.apk"
@@ -54,3 +69,16 @@ jobs:
           path: out/*.apk
           # Long enough to still be there when somebody gets round to it.
           retention-days: 60
+
+      # A failed build is the normal case the first few times, and the useful
+      # part is the report Gradle leaves behind rather than the console.
+      - name: Keep the reports when it fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-reports
+          path: |
+            mobile/app/build/reports/**
+            mobile/app/build/outputs/logs/**
+          if-no-files-found: ignore
+          retention-days: 14
