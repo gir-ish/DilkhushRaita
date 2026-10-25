@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { allowedBranchIds, handler, requireStaff } from "@/lib/guard";
 import { ACTIVE_STATUSES } from "@/lib/constants";
+import { sweepIfDue } from "@/lib/order-sweep";
 
 /**
  * Staff order queue. Filters: ?status= &branchId= &q= (order no / name / phone)
@@ -26,6 +27,14 @@ export const GET = handler(async (req: Request) => {
   const date = url.searchParams.get("date");
   // Online orders whose payment never arrived, which the other views hide.
   const unpaid = url.searchParams.get("unpaid");
+
+  /*
+   * Every dashboard polls this every ten seconds, which makes it the one
+   * reliable heartbeat the app has without a cron entry. Not awaited: staff
+   * are waiting for their queue, and chasing a missed order is not worth
+   * holding it up. Throttled inside to one run a minute across all callers.
+   */
+  void sweepIfDue();
 
   const scope = await allowedBranchIds(session);
   const where: Record<string, unknown> = {};

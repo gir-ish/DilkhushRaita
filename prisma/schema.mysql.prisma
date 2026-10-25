@@ -329,6 +329,15 @@ model Order {
   deliveredAt DateTime?
   cancelledAt DateTime?
 
+  // Chasing an order nobody has accepted. The first alert goes out when it
+  // lands; these record the chasing afterwards, so a reminder is sent once a
+  // minute rather than once per sweep, and so it eventually stops.
+  lastNaggedAt DateTime?
+  nagCount     Int       @default(0)
+  // Finished by the morning sweep rather than by a person, kept so the day's
+  // takings can be read honestly: these were never confirmed by anyone.
+  autoClosedAt DateTime?
+
   items       OrderItem[]
   payment     Payment?
   refunds     Refund[]
