@@ -1,24 +1,70 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:orientation="vertical"
     android:background="@color/cream_100"
     android:fitsSystemWindows="true">
 
-    <WebView
-        android:id="@+id/web"
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="0dp"
+        android:layout_weight="1">
 
-    <!-- Shown until the first page paints, so a slow counter wifi looks like
-         loading rather than a broken white screen. -->
-    <TextView
-        android:id="@+id/loading"
+        <WebView
+            android:id="@+id/web"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <!-- Shown until the first page paints, so a slow counter wifi looks
+             like loading rather than a broken white screen. -->
+        <TextView
+            android:id="@+id/loading"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:background="@color/cream_100"
+            android:text="@string/loading"
+            android:textColor="@color/maroon_700"
+            android:textSize="16sp" />
+    </FrameLayout>
+
+    <!--
+      What the watcher is doing, in words.
+      One line, because "it did not ring" has four quite different causes that
+      look identical from the outside, and this says which one it is.
+    -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:gravity="center"
-        android:background="@color/cream_100"
-        android:text="@string/loading"
-        android:textColor="@color/maroon_700"
-        android:textSize="16sp" />
-</FrameLayout>
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/maroon_700"
+        android:paddingStart="14dp"
+        android:paddingEnd="6dp"
+        android:paddingVertical="4dp">
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/cream_50"
+            android:textSize="12sp"
+            android:maxLines="2" />
+
+        <Button
+            android:id="@+id/test"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:minHeight="40dp"
+            android:paddingHorizontal="12dp"
+            android:text="@string/test_alarm"
+            android:textAllCaps="false"
+            android:textColor="@color/mustard_300"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+</LinearLayout>

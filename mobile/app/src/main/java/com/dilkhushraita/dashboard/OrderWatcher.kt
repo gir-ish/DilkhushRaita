@@ -56,6 +56,7 @@ class OrderWatcher : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(Config.NOTIF_WATCHING, watchingNotification(null))
+        Status.serviceUp = true
         if (job?.isActive != true) job = scope.launch { loop() }
         // START_STICKY: if Android does reclaim us under real memory pressure,
         // come back by ourselves rather than waiting for someone to notice.
@@ -63,6 +64,7 @@ class OrderWatcher : Service() {
     }
 
     override fun onDestroy() {
+        Status.serviceUp = false
         job?.cancel()
         super.onDestroy()
     }
@@ -72,7 +74,7 @@ class OrderWatcher : Service() {
             val wait = try {
                 val waiting = fetchWaiting()
                 if (waiting == null) {
-                    // Not signed in, or no network. Say so quietly rather than
+                    // Not signed in, or refused. Say so quietly rather than
                     // pretending all is well with an empty queue.
                     update(watchingNotification(null))
                     Config.RETRY_MS
@@ -82,6 +84,8 @@ class OrderWatcher : Service() {
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "poll failed", e)
+                Status.offline()
+                update(watchingNotification(null))
                 Config.RETRY_MS
             }
             delay(wait)
@@ -89,6 +93,7 @@ class OrderWatcher : Service() {
     }
 
     private fun onWaiting(orders: List<WaitingOrder>) {
+        Status.watching(orders.size)
         update(watchingNotification(orders.size))
 
         val ids = orders.map { it.id }.toSet()
@@ -114,7 +119,10 @@ class OrderWatcher : Service() {
 
     private fun fetchWaiting(): List<WaitingOrder>? {
         val cookie = CookieManager.getInstance().getCookie(Config.ORIGIN)
-        if (cookie.isNullOrBlank()) return null
+        if (cookie.isNullOrBlank()) {
+            Status.noLogin()
+            return null
+        }
 
         val conn = (URL(Config.WAITING_URL).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
@@ -126,8 +134,13 @@ class OrderWatcher : Service() {
         }
         try {
             // 401/403: signed out, or a role with no order access. Both mean
-            // "nothing to watch", and neither is an error worth shouting about.
-            if (conn.responseCode != 200) return null
+            // "nothing to watch", and neither is an error worth shouting about
+            // — but the code is kept, because 401 and 403 need different fixes.
+            val code = conn.responseCode
+            if (code != 200) {
+                Status.refused(code)
+                return null
+            }
             val body = conn.inputStream.bufferedReader().use { it.readText() }
             val arr = JSONObject(body).optJSONArray("orders") ?: return emptyList()
             return (0 until arr.length()).map { i ->

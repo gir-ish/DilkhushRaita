@@ -9,7 +9,11 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.os.Handler
+import android.os.Looper
 import android.view.View
+import android.widget.Button
+import android.widget.TextView
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -32,6 +36,8 @@ import androidx.core.content.ContextCompat
 class MainActivity : AppCompatActivity() {
 
     private lateinit var web: WebView
+    private lateinit var status: TextView
+    private val ticker = Handler(Looper.getMainLooper())
 
     private val askNotifications =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -44,6 +50,30 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        status = findViewById(R.id.status)
+
+        /*
+         * Fires the alarm with a made-up order, so the loud path can be tried
+         * without a customer. The one thing worth being able to test on
+         * demand: if this rings and a real order does not, the fault is in the
+         * watching, not in the ringing — which is two different fixes.
+         */
+        findViewById<Button>(R.id.test).setOnClickListener {
+            Alarm.raise(
+                this,
+                WaitingOrder(
+                    id = "test",
+                    orderNumber = "TEST",
+                    type = "PICKUP",
+                    total = 0.0,
+                    itemCount = 1,
+                    customerName = getString(R.string.test_customer),
+                    branchName = getString(R.string.app_name)
+                ),
+                1
+            )
+        }
 
         web = findViewById(R.id.web)
         web.settings.apply {
@@ -99,10 +129,22 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        tick()
         // Starting it here as well as at launch: it is cheap when already
         // running, and it quietly repairs the case where Android killed the
         // service while the app was in the background.
         OrderWatcher.start(this)
+    }
+
+    override fun onPause() {
+        ticker.removeCallbacksAndMessages(null)
+        super.onPause()
+    }
+
+    /** The status line, kept current while anyone is looking at it. */
+    private fun tick() {
+        status.text = Status.line()
+        ticker.postDelayed({ tick() }, 2_000)
     }
 
     @Suppress("DEPRECATION")

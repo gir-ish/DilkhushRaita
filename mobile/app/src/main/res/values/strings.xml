@@ -30,6 +30,8 @@
     <string name="battery_later">Not now</string>
 
     <string name="loading">Loading the dashboard…</string>
+    <string name="test_alarm">Test alarm</string>
+    <string name="test_customer">Testing the alarm</string>
 
     <plurals name="items">
         <item quantity="one">%d item</item>
