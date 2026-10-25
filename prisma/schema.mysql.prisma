@@ -362,6 +362,10 @@ model OrderItem {
   variantName  String?
   addOnsJson   String    @default("[]") @db.VarChar(1500)
   unitPrice    Float
+  // What the menu asked for, when the owner charged something else for this
+  // one line. Null on an ordinary line, so a bill can show what was given
+  // away and the takings can be read against the menu.
+  listPrice    Float?
   qty          Int
   lineTotal    Float
   instructions String?   @db.Text

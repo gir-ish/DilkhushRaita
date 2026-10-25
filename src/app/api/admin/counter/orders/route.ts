@@ -3,7 +3,8 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { allowedBranchIds, handler, HttpError, requireStaff } from "@/lib/guard";
 import { audit } from "@/lib/audit";
-import { buildQuote } from "@/lib/quote";
+import { buildQuote, MAX_LINE_PRICE } from "@/lib/quote";
+import { canRepriceLines } from "@/lib/pricing-authority";
 import { normalizePhone } from "@/lib/utils";
 import { nextOrderNumber } from "@/lib/order-number";
 import { KHATA_METHODS, ON_KHATA, chargeToKhata } from "@/lib/khata";
@@ -20,6 +21,9 @@ const Body = z.object({
         addOnIds: z.array(z.string()).max(10).optional(),
         qty: z.number().int().min(1).max(999),
         instructions: z.string().max(300).nullish(),
+        // What to charge for one of these instead of the menu price.
+        // Honoured only for the roles allowed to reprice; see below.
+        priceOverride: z.number().min(0).max(MAX_LINE_PRICE).nullish(),
       })
     )
     .min(1)
@@ -76,6 +80,16 @@ export const POST = handler(async (req: Request) => {
   if (scope && !scope.includes(body.branchId))
     throw new HttpError(403, "You cannot take orders for that branch");
 
+  /*
+   * Repricing a dish is giving food away, or charging more than the menu
+   * says, and either way it is the owner's call rather than whoever happens
+   * to be on the till. Refused outright rather than quietly ignored: a bill
+   * that silently charges more than the screen showed is worse than an error.
+   */
+  const mayReprice = canRepriceLines(s.role);
+  if (!mayReprice && body.items.some((i) => i.priceOverride != null))
+    throw new HttpError(403, "Only the owner or a branch manager can change an item's price");
+
   // ---- resolve the customer -------------------------------------------
   let userId = body.guest ? await guestUserId() : body.userId ?? null;
   if (body.guest && body.paymentMethod === "KHATA")
@@ -131,6 +145,7 @@ export const POST = handler(async (req: Request) => {
       manualDiscount: body.discount ?? null,
       // No coupon or tier discount applies itself to a counter bill.
       autoOffers: false,
+      allowPriceOverride: mayReprice,
     },
     userId,
     false, // non-strict: staff is standing with the customer
@@ -200,6 +215,7 @@ export const POST = handler(async (req: Request) => {
             variantName: l.variantName,
             addOnsJson: JSON.stringify(l.addOns.map((a) => ({ name: a.name, price: a.price }))),
             unitPrice: l.unitPrice,
+            listPrice: l.listPrice ?? null,
             qty: l.qty,
             lineTotal: l.lineTotal,
             instructions: l.instructions,

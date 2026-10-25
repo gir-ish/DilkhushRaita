@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ErrorBox, Modal, Spinner, VegMark } from "@/components/ui";
 import { inr } from "@/lib/utils";
@@ -77,8 +77,22 @@ interface Line {
   variantName: string | null;
   addOnIds: string[];
   addOnNames: string[];
+  /** What the menu asks for one of these. Never changes. */
   unitPrice: number;
+  /**
+   * What the owner has decided to charge instead, for this bill only.
+   *
+   * Kept beside the menu price rather than replacing it, so the line can show
+   * both, the change can be undone, and nothing has to be looked up again to
+   * find out what the dish normally costs.
+   */
+  priceOverride: number | null;
   qty: number;
+}
+
+/** What a line is actually being charged at. */
+function charged(l: Line): number {
+  return l.priceOverride ?? l.unitPrice;
 }
 
 /**
@@ -124,6 +138,13 @@ function CounterInner() {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("all");
   const [lines, setLines] = useState<Line[]>([]);
+  /*
+   * Whether to offer the reprice button at all. The server refuses the price
+   * regardless; this only decides whether a button that would be refused is
+   * put in front of someone. Defaults to hidden, so a slow or failed answer
+   * shows one button too few rather than one too many.
+   */
+  const [mayReprice, setMayReprice] = useState(false);
   const [configuring, setConfiguring] = useState<MenuItem | null>(null);
   const [checkout, setCheckout] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -156,6 +177,18 @@ function CounterInner() {
    * device, so it is made once and not once per order.
    */
   const [listsOpen, setListsOpen] = useState(true);
+
+  // Asked once: who is on the till, and may they reprice a dish.
+  useEffect(() => {
+    let live = true;
+    fetch("/api/admin/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => live && setMayReprice(Boolean(d?.can?.repriceLines)))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -282,6 +315,7 @@ function CounterInner() {
           addOnIds: addOns.map((a) => a.id),
           addOnNames: addOns.map((a) => a.name),
           unitPrice,
+          priceOverride: null,
           qty: 1,
         },
       ];
@@ -299,6 +333,22 @@ function CounterInner() {
       cur
         .map((l) => (l.key === key ? { ...l, qty: l.qty + delta } : l))
         .filter((l) => l.qty > 0)
+    );
+
+  /**
+   * The owner's own price for one line of this bill.
+   *
+   * Null puts it back to the menu price. Nothing is validated here beyond
+   * refusing a negative: the point of the button is that the owner decides,
+   * and the server re-checks both the number and who asked.
+   */
+  const setPrice = (key: string, price: number | null) =>
+    setLines((cur) =>
+      cur.map((l) =>
+        l.key === key
+          ? { ...l, priceOverride: price === null ? null : Math.max(0, price) }
+          : l
+      )
     );
 
   /**
@@ -378,7 +428,7 @@ function CounterInner() {
       .filter((c) => c.items.length > 0);
   }, [menu, q, cat]);
 
-  const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.qty, 0);
+  const subtotal = lines.reduce((s, l) => s + charged(l) * l.qty, 0);
   const count = lines.reduce((s, l) => s + l.qty, 0);
 
   const submitLabel = addingTo
@@ -412,6 +462,7 @@ function CounterInner() {
               variantId: l.variantId,
               addOnIds: l.addOnIds,
               qty: l.qty,
+              priceOverride: l.priceOverride,
             })),
             // Paid already: only the new items are charged, and this is how.
             ...(!tab && addingTo.settled ? { extraPayment: extraMethod } : {}),
@@ -771,6 +822,7 @@ function CounterInner() {
               subtotal={subtotal}
               setQty={setQty}
               setQtyExact={setQtyExact}
+              setPrice={mayReprice ? setPrice : undefined}
               onClear={() => setLines([])}
               onSubmit={submit}
               submitLabel={submitLabel}
@@ -831,6 +883,7 @@ function CounterInner() {
             subtotal={subtotal}
             setQty={setQty}
             setQtyExact={setQtyExact}
+            setPrice={mayReprice ? setPrice : undefined}
             onClear={() => {
               setLines([]);
               setCartOpen(false);
@@ -904,11 +957,110 @@ function CounterInner() {
  * The cart body, shared by the desktop sidebar and the phone sheet so the two
  * can never drift apart.
  */
+/**
+ * Charging something other than the menu price, for this bill only.
+ *
+ * A regular who always gets the thali at two hundred, a dish sent back and
+ * put through at half, a plate comped to nothing, a special order that costs
+ * more to make. All of them happen at a counter, none of them is a change to
+ * the menu, and until now every one of them meant doing the sum in your head
+ * and taking it off the bill as a discount — which records the wrong thing.
+ *
+ * Deliberately allowed above the menu price as well as below it: the owner
+ * knows what they are charging. The menu price stays on the line, struck
+ * through, so the bill shows what was given away rather than hiding it, and
+ * one tap on Reset puts it back.
+ */
+function PriceButton({
+  line,
+  setPrice,
+}: {
+  line: Line;
+  setPrice: (key: string, price: number | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const boxRef = useRef<HTMLInputElement>(null);
+
+  // Opening starts from whatever is currently being charged, selected, so the
+  // common case is: tap, type the new number, Enter.
+  useEffect(() => {
+    if (!open) return;
+    setDraft(String(charged(line)));
+    const t = setTimeout(() => boxRef.current?.select(), 0);
+    return () => clearTimeout(t);
+    // Re-running on the price would fight the typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const commit = () => {
+    const n = Number(draft);
+    // An empty box or nonsense means "leave it as it was", not "free".
+    if (draft.trim() !== "" && Number.isFinite(n) && n >= 0)
+      setPrice(line.key, n === line.unitPrice ? null : n);
+    setOpen(false);
+  };
+
+  if (!open)
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className={`ml-auto h-10 sm:h-9 rounded-lg border px-2.5 text-xs font-bold active:scale-95 ${
+          line.priceOverride !== null
+            ? "border-mustard-500 bg-mustard-100 text-mustard-800"
+            : "border-cream-300 text-maroon-700 hover:bg-maroon-50"
+        }`}
+        title={`Charge something other than ${inr(line.unitPrice)} for ${line.name}`}
+      >
+        {line.priceOverride !== null ? `₹ ${inr(line.priceOverride)}` : "₹ Price"}
+      </button>
+    );
+
+  return (
+    <span className="ml-auto flex items-center gap-1">
+      <input
+        ref={boxRef}
+        className="w-20 h-10 sm:h-9 rounded-lg border-2 border-mustard-400 bg-white text-center text-base font-bold text-maroon-800 focus:outline-none focus:ring-2 focus:ring-mustard-400"
+        type="number"
+        inputMode="decimal"
+        min={0}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") setOpen(false);
+        }}
+        aria-label={`Price for one ${line.name}, normally ${inr(line.unitPrice)}`}
+        autoFocus
+      />
+      <button
+        onClick={commit}
+        className="h-10 sm:h-9 rounded-lg bg-maroon-700 px-2.5 text-xs font-bold text-cream-50 active:scale-95"
+      >
+        Set
+      </button>
+      {line.priceOverride !== null && (
+        <button
+          onClick={() => {
+            setPrice(line.key, null);
+            setOpen(false);
+          }}
+          className="h-10 sm:h-9 rounded-lg border border-cream-300 px-2.5 text-xs font-bold text-maroon-700 active:scale-95"
+          title={`Back to the menu price, ${inr(line.unitPrice)}`}
+        >
+          Reset
+        </button>
+      )}
+    </span>
+  );
+}
+
 function CartPanel({
   lines,
   subtotal,
   setQty,
   setQtyExact,
+  setPrice,
   onClear,
   onSubmit,
   submitLabel,
@@ -918,6 +1070,8 @@ function CartPanel({
   subtotal: number;
   setQty: (key: string, delta: number) => void;
   setQtyExact: (key: string, qty: number) => void;
+  /** Undefined for anyone not allowed to reprice: no button is drawn. */
+  setPrice?: (key: string, price: number | null) => void;
   onClear: () => void;
   onSubmit: () => void;
   submitLabel: string;
@@ -942,7 +1096,18 @@ function CartPanel({
                     <span className="block text-xs text-maroon-800/50">+ {l.addOnNames.join(", ")}</span>
                   )}
                 </span>
-                <span className="font-semibold shrink-0">{inr(l.unitPrice * l.qty)}</span>
+                <span className="shrink-0 text-right">
+                  {l.priceOverride !== null && (
+                    <span className="block text-xs text-maroon-800/40 line-through">
+                      {inr(l.unitPrice * l.qty)}
+                    </span>
+                  )}
+                  <span
+                    className={`font-semibold ${l.priceOverride !== null ? "text-mustard-700" : ""}`}
+                  >
+                    {inr(charged(l) * l.qty)}
+                  </span>
+                </span>
               </div>
               <div className="flex items-center gap-1 mt-1.5">
                 <button
@@ -971,6 +1136,8 @@ function CartPanel({
                 >
                   +
                 </button>
+
+                {setPrice && <PriceButton line={l} setPrice={setPrice} />}
               </div>
             </li>
           ))}
@@ -1168,6 +1335,7 @@ function CheckoutForm({
             variantId: l.variantId,
             addOnIds: l.addOnIds,
             qty: l.qty,
+            priceOverride: l.priceOverride,
           })),
           ...(guest
             ? { guest: true }

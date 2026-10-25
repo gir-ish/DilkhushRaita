@@ -3,7 +3,8 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { allowedBranchIds, handler, HttpError, requireStaff } from "@/lib/guard";
 import { audit } from "@/lib/audit";
-import { buildQuote } from "@/lib/quote";
+import { buildQuote, MAX_LINE_PRICE } from "@/lib/quote";
+import { canRepriceLines } from "@/lib/pricing-authority";
 import { computeTotals } from "@/lib/pricing";
 import { TAB_CLOSED_STATUSES } from "@/lib/constants";
 import type { SessionPayload } from "@/lib/session";
@@ -38,6 +39,8 @@ const AddBody = z.object({
         addOnIds: z.array(z.string()).max(10).optional(),
         qty: z.number().int().min(1).max(999),
         instructions: z.string().max(300).nullish(),
+        // The owner's own price for this line; refused for anyone else.
+        priceOverride: z.number().min(0).max(MAX_LINE_PRICE).nullish(),
       })
     )
     .min(1)
@@ -60,8 +63,19 @@ export const POST = handler(
     const body = AddBody.parse(await req.json());
     const order = await loadOpenTab(id, s);
 
+    // Repricing a dish is the owner's call, not the till's.
+    const mayReprice = canRepriceLines(s.role);
+    if (!mayReprice && body.items.some((i) => i.priceOverride != null))
+      throw new HttpError(403, "Only the owner or a branch manager can change an item's price");
+
     const quote = await buildQuote(
-      { branchId: order.branchId, orderType: "DINE_IN", items: body.items, autoOffers: false },
+      {
+        branchId: order.branchId,
+        orderType: "DINE_IN",
+        items: body.items,
+        autoOffers: false,
+        allowPriceOverride: mayReprice,
+      },
       order.userId,
       false,
       COUNTER_LIMITS
@@ -96,6 +110,7 @@ export const POST = handler(
           variantName: l.variantName,
           addOnsJson: JSON.stringify(l.addOns.map((a) => ({ name: a.name, price: a.price }))),
           unitPrice: l.unitPrice,
+          listPrice: l.listPrice ?? null,
           qty: l.qty,
           lineTotal: l.lineTotal,
           instructions: l.instructions,

@@ -13,12 +13,44 @@ import { checkServiceable, etaMins, isBranchOpen, roadKm } from "./geo";
 import { hhmm, parseJson, round2, withinTimeWindow } from "./utils";
 import { ACTIVE_STATUSES } from "./constants";
 
+/** The most one unit may be repriced to — a guard against a slipped finger. */
+export const MAX_LINE_PRICE = 100_000;
+
+/**
+ * What one of something actually costs on this bill.
+ *
+ * Separated from the quoting around it so that "may a cashier give food away
+ * by adding a field to a request" is a question answered by a test rather
+ * than by reading a four-hundred-line function. `listPrice` comes back only
+ * when the charge genuinely differs from the menu, which is what makes a
+ * repriced line visible on the bill and in the takings.
+ */
+export function effectiveUnitPrice(
+  menuPrice: number,
+  override: number | null | undefined,
+  allowed: boolean
+): { unitPrice: number; listPrice?: number } {
+  if (!allowed || override === null || override === undefined)
+    return { unitPrice: menuPrice };
+  if (!Number.isFinite(override) || override < 0) return { unitPrice: menuPrice };
+  const unitPrice = round2(Math.min(override, MAX_LINE_PRICE));
+  return unitPrice === menuPrice ? { unitPrice } : { unitPrice, listPrice: menuPrice };
+}
+
 export interface QuoteItemInput {
   menuItemId: string;
   variantId?: string | null;
   addOnIds?: string[];
   qty: number;
   instructions?: string | null;
+  /**
+   * What to charge for one of these instead of what the menu says.
+   *
+   * Only honoured when the request sets `allowPriceOverride` — a counter
+   * route with the right person signed in. Ignored everywhere else, so a
+   * customer cannot name their own price by adding a field to the request.
+   */
+  priceOverride?: number | null;
 }
 
 export interface QuoteRequest {
@@ -35,6 +67,14 @@ export interface QuoteRequest {
    * Never accepted from the website: only staff routes pass it.
    */
   manualDiscount?: { type: "FLAT" | "PERCENT"; value: number; reason?: string | null } | null;
+  /**
+   * Whether a line may be charged at a price the owner typed in.
+   *
+   * Off by default, and never set by the website. The counter sets it once it
+   * has checked who is signed in, which keeps "may this person reprice a
+   * dish" a question answered in one place rather than in the pricing.
+   */
+  allowPriceOverride?: boolean;
   /**
    * Whether the shop's standing offers apply by themselves — auto-apply
    * coupons and a customer's loyalty-tier discount. True for the website,
@@ -54,6 +94,13 @@ export interface QuotedLine {
   qty: number;
   lineTotal: number;
   instructions?: string | null;
+  /**
+   * What the menu asked for, when that is not what is being charged.
+   *
+   * Set only on a repriced line, so a bill can show the change and the day's
+   * takings can be read against the menu rather than quietly diverging.
+   */
+  listPrice?: number;
 }
 
 export interface QuoteResult {
@@ -237,6 +284,19 @@ export async function buildQuote(
       price += a.price;
     }
     price = round2(price);
+
+    /*
+     * The owner's own price for this one line: a regular who always gets the
+     * thali at two hundred, a dish sent back and recharged at half, a plate
+     * comped to nothing. Deliberately allowed above the menu price too — a
+     * special order of something costs what it costs.
+     *
+     * The menu price is kept beside it rather than thrown away, because a
+     * bill that cannot show what was given away is not much of a record.
+     */
+    const priced = effectiveUnitPrice(price, input.priceOverride, req.allowPriceOverride === true);
+    price = priced.unitPrice;
+
     lines.push({
       menuItemId: item.id,
       name: item.name,
@@ -247,6 +307,7 @@ export async function buildQuote(
       qty,
       lineTotal: round2(price * qty),
       instructions: input.instructions?.slice(0, 300) ?? null,
+      ...(priced.listPrice !== undefined ? { listPrice: priced.listPrice } : {}),
     });
   }
   if (strict && lines.length !== req.items.length)
